@@ -13,6 +13,7 @@ export const useFooterEditor = () => {
         updateSocialMedia,
         updateNewsletter,
         updateContact,
+        updateSEO,
         toggleFooter,
     } = useFooterStore();
 
@@ -166,6 +167,24 @@ export const useFooterEditor = () => {
         [updateContact]
     );
 
+    // Update SEO with toast
+    const updateSEOWithToast = useCallback(
+        async (seoData: any) => {
+            try {
+                await updateSEO(seoData);
+                toast.success("SEO settings updated", {
+                    duration: 2000,
+                });
+            } catch (error) {
+                toast.error("Failed to update SEO", {
+                    description: "Please check your inputs and try again.",
+                    duration: 3000,
+                });
+            }
+        },
+        [updateSEO]
+    );
+
     // Check if there are any unsaved changes (placeholder for future functionality)
     const isDirty = useMemo(() => {
         // Since changes are saved immediately, this is always false
@@ -197,6 +216,7 @@ export const useFooterEditor = () => {
         updateSocialMedia: updateSocialMediaWithToast,
         updateNewsletter: updateNewsletterWithToast,
         updateContact: updateContactWithToast,
+        updateSEO: updateSEOWithToast,
 
         // Raw actions (without toast) - for when component handles its own feedback
         updateLogoRaw: updateLogo,
@@ -204,6 +224,7 @@ export const useFooterEditor = () => {
         updateSocialMediaRaw: updateSocialMedia,
         updateNewsletterRaw: updateNewsletter,
         updateContactRaw: updateContact,
+        updateSEORaw: updateSEO,
 
         // Utils
         refresh: fetchActiveFooter,

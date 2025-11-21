@@ -39,7 +39,7 @@ interface FooterSEOEditorProps {
 }
 
 export function FooterSEOEditor({ footer }: FooterSEOEditorProps) {
-  const { updateFooter, isSaving } = useFooterEditor();
+  const { updateSEO, isSaving } = useFooterEditor();
   const [seoData, setSeoData] = useState(footer.seo);
   const [customSchema, setCustomSchema] = useState("");
   const [isValidSchema, setIsValidSchema] = useState(true);
@@ -88,7 +88,7 @@ export function FooterSEOEditor({ footer }: FooterSEOEditorProps) {
         updatedSeo.footerSchema = null;
       }
 
-      await updateFooter({ seo: updatedSeo });
+      await updateSEO(updatedSeo);
       toast.success("SEO configuration updated successfully!");
     } catch (error) {
       console.error("Failed to update SEO configuration:", error);

@@ -7,8 +7,6 @@ export const useSystemStatus = () => {
     queryFn: () => systemStatusApi.getStatus(),
     refetchInterval: 30000, // Refetch every 30 seconds
     staleTime: 20000, // Consider data stale after 20 seconds
-    cacheTime: 300000, // Keep in cache for 5 minutes (v4 uses cacheTime instead of gcTime)
     retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 };

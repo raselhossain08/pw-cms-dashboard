@@ -162,7 +162,7 @@ export const FooterLogoEditor: React.FC<FooterLogoEditorProps> = ({
 
       if (!data.src.startsWith("/uploads/") && !data.src.startsWith("http")) {
         console.warn("⚠️ Logo src might be invalid:", data.src);
-        toast.warn("Warning: Logo path might not be valid", {
+        toast("Warning: Logo path might not be valid", {
           description:
             "The logo path doesn't follow the expected format. Proceeding anyway...",
           duration: 3000,
@@ -171,11 +171,10 @@ export const FooterLogoEditor: React.FC<FooterLogoEditorProps> = ({
 
       const result = await updateLogo(data);
 
-      console.log("✅ Logo save result:", {
+      console.log("✅ Logo save completed:", {
         sentData: data,
-        result: result,
-        resultLogoSrc: result?.logo?.src,
-        pathPreserved: data.src === result?.logo?.src,
+        success: true,
+        timestamp: new Date().toISOString()
       });
 
       toast.success("Footer logo saved successfully! 🎉", {
