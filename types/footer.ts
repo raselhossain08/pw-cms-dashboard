@@ -173,7 +173,7 @@ export interface FooterSchema {
 }
 
 export interface FooterSEO {
-    footerSchema: FooterSchema;
+    footerSchema: FooterSchema | null;
     accessibility: FooterAccessibility;
     _id?: string;
 }
@@ -284,7 +284,7 @@ export interface StylingForm {
 }
 
 export interface SEOForm {
-    footerSchema: FooterSchema;
+    footerSchema: FooterSchema | null;
     accessibility: FooterAccessibility;
 }
 

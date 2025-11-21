@@ -174,7 +174,7 @@ export const FooterLogoEditor: React.FC<FooterLogoEditorProps> = ({
       console.log("✅ Logo save completed:", {
         sentData: data,
         success: true,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
 
       toast.success("Footer logo saved successfully! 🎉", {
