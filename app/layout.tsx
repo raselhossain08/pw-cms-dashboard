@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "@/components/ui/sonner";
-import { ThemeProvider } from "@/components/providers/theme-provider";
-import { QueryProvider } from "@/components/providers/query-provider";
+import { Inter, Geist_Mono, Montserrat } from "next/font/google";
 import "./globals.css";
+import "./tiptap.css";
+import { AuthProvider } from "@/context/AuthContext";
+import { ToastProvider } from "@/context/ToastContext";
+import Toaster from "@/components/Toaster";
+import { QueryProvider } from "@/app/providers/QueryProvider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -15,9 +17,18 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const montserrat = Montserrat({
+  variable: "--font-montserrat",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "Personal Wings CMS - Admin Dashboard",
-  description: "Manage your website content with Personal Wings CMS",
+  title: "Personal Wings Admin Dashboard",
+  description: "Personal Wings administrative dashboard",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -28,20 +39,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
+        className={`${inter.variable} ${geistMono.variable} ${montserrat.variable} antialiased`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <QueryProvider>
-            <Toaster position="top-center" />
-            {children}
-          </QueryProvider>
-        </ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <QueryProvider>
+              {children}
+              <Toaster />
+            </QueryProvider>
+          </AuthProvider>
+        </ToastProvider>
       </body>
     </html>
   );
