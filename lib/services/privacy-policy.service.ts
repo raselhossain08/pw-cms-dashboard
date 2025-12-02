@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getCookie } from "../cookie.service";
+import { cookieService } from "../cookie.service";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3333";
@@ -62,7 +62,7 @@ export interface PrivacyPolicyResponse {
 
 export class PrivacyPolicyService {
   private static getAuthHeader() {
-    const token = getCookie("token");
+    const token = cookieService.get("token");
     return {
       Authorization: `Bearer ${token}`,
     };
@@ -184,7 +184,7 @@ export class PrivacyPolicyService {
     formData: FormData
   ): Promise<PrivacyPolicyResponse> {
     try {
-      const token = getCookie("token");
+      const token = cookieService.get("token");
       const response = await axios.put<PrivacyPolicyResponse>(
         `${API_BASE_URL}/cms/privacy-policy/${id}/upload`,
         formData,

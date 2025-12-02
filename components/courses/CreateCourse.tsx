@@ -33,7 +33,7 @@ export default function CreateCourse() {
     const fetchInstructors = async () => {
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/users/instructors`
+          "http://localhost:5000/api/users/instructors"
         );
         const data = await response.json();
         setInstructors(data.data || []);

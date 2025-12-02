@@ -56,7 +56,7 @@ export interface CategoryResponse {
 class CourseCategoriesService {
     async getAllCategories(params?: GetCategoriesParams): Promise<GetCategoriesResponse> {
         try {
-            const { data } = await apiClient.get<GetCategoriesResponse>("/course-categories", { params });
+            const { data } = await apiClient.get<GetCategoriesResponse>("/course-categories", { params: params as any });
             return data;
         } catch (error) {
             console.error("Failed to fetch categories:", error);

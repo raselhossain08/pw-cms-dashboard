@@ -1,4 +1,4 @@
-import { getCookie } from "@/lib/cookie.service";
+import { cookieService } from "@/lib/cookie.service";
 
 export interface HeaderSection {
   title: string;
@@ -60,7 +60,7 @@ export class TermsConditionsService {
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
   private static getAuthHeader() {
-    const token = getCookie("token");
+    const token = cookieService.get("token");
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
@@ -195,7 +195,7 @@ export class TermsConditionsService {
     formData: FormData
   ): Promise<TermsConditionsResponse> {
     try {
-      const token = getCookie("token");
+      const token = cookieService.get("token");
       const response = await fetch(
         `${this.API_BASE_URL}/cms/terms-conditions/${id}/upload`,
         {

@@ -126,18 +126,10 @@ export function PrivacyPolicyEditor() {
       if (response.success && response.data) {
         setPrivacyPolicy(response.data as PrivacyPolicy);
       } else {
-        push({
-          title: "Error",
-          description: response.message || "Failed to fetch privacy policy",
-          variant: "error",
-        });
+        push({ message: response.message || "Failed to fetch privacy policy", type: "error" });
       }
     } catch (error) {
-      push({
-        title: "Error",
-        description: "Failed to fetch privacy policy",
-        variant: "error",
-      });
+      push({ message: "Failed to fetch privacy policy", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -157,11 +149,7 @@ export function PrivacyPolicyEditor() {
 
   const handleSave = async () => {
     if (!privacyPolicy?._id) {
-      push({
-        title: "Error",
-        description: "No privacy policy data found",
-        variant: "error",
-      });
+      push({ message: "No privacy policy data found", type: "error" });
       return;
     }
 
@@ -202,11 +190,7 @@ export function PrivacyPolicyEditor() {
         setUploadProgress(100);
 
         if (response.success) {
-          push({
-            title: "Success",
-            description: "Privacy policy updated successfully with image",
-            variant: "success",
-          });
+          push({ message: "Privacy policy updated successfully with image", type: "success" });
           setTimeout(() => {
             setUploadProgress(0);
             setImageFile(null);
@@ -221,22 +205,14 @@ export function PrivacyPolicyEditor() {
           formData
         );
         if (response.success) {
-          push({
-            title: "Success",
-            description: "Privacy policy updated successfully",
-            variant: "success",
-          });
+          push({ message: "Privacy policy updated successfully", type: "success" });
           await fetchPrivacyPolicy();
         } else {
           throw new Error(response.message);
         }
       }
     } catch (error: any) {
-      push({
-        title: "Error",
-        description: error.message || "Failed to save privacy policy",
-        variant: "error",
-      });
+      push({ message: error.message || "Failed to save privacy policy", type: "error" });
       setUploadProgress(0);
     } finally {
       setSaving(false);
@@ -281,11 +257,7 @@ export function PrivacyPolicyEditor() {
 
   const handleAddSubsection = () => {
     if (!subsectionForm.title || subsectionForm.content.length === 0) {
-      push({
-        title: "Error",
-        description: "Subsection title and at least one content item required",
-        variant: "error",
-      });
+      push({ message: "Subsection title and at least one content item required", type: "error" });
       return;
     }
 
@@ -310,10 +282,7 @@ export function PrivacyPolicyEditor() {
       sectionForm.content.length === 0
     ) {
       push({
-        title: "Error",
-        description:
-          "Section ID, title, and at least one content paragraph required",
-        variant: "error",
+        message: "Section ID, title, and at least one content paragraph required", type: "error",
       });
       return;
     }
@@ -341,11 +310,7 @@ export function PrivacyPolicyEditor() {
     });
     setEditingSection(null);
 
-    push({
-      title: "Success",
-      description: editingSection ? "Section updated" : "Section added",
-      variant: "success",
-    });
+    push({ message: editingSection ? "Section updated" : "Section added", type: "success" });
   };
 
   const handleEditSection = (section: PolicySection) => {
@@ -358,11 +323,7 @@ export function PrivacyPolicyEditor() {
       (s) => s.id !== sectionId
     );
     setFormData({ ...formData, sections: updatedSections });
-    push({
-      title: "Success",
-      description: "Section deleted",
-      variant: "success",
-    });
+    push({ message: "Section deleted", type: "success" });
   };
 
   const moveSectionUp = (index: number) => {
@@ -1112,3 +1073,5 @@ export function PrivacyPolicyEditor() {
     </div>
   );
 }
+
+

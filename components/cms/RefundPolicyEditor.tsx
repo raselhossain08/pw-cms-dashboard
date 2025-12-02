@@ -125,18 +125,10 @@ export function RefundPolicyEditor() {
       if (response.success && response.data) {
         setRefundPolicy(response.data);
       } else {
-        push({
-          title: "Error",
-          description: response.message || "Failed to fetch refund policy",
-          variant: "error",
-        });
+        push({ message: response.message || "Failed to fetch refund policy", type: "error" });
       }
     } catch (error) {
-      push({
-        title: "Error",
-        description: "Failed to fetch refund policy",
-        variant: "error",
-      });
+      push({ message: "Failed to fetch refund policy", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -156,11 +148,7 @@ export function RefundPolicyEditor() {
 
   const handleSave = async () => {
     if (!refundPolicy?._id) {
-      push({
-        title: "Error",
-        description: "No refund policy data found",
-        variant: "error",
-      });
+      push({ message: "No refund policy data found", type: "error" });
       return;
     }
 
@@ -200,11 +188,7 @@ export function RefundPolicyEditor() {
         setUploadProgress(100);
 
         if (response.success) {
-          push({
-            title: "Success",
-            description: "Refund policy updated successfully with image",
-            variant: "success",
-          });
+          push({ message: "Refund policy updated successfully with image", type: "success" });
           setTimeout(() => {
             setUploadProgress(0);
             setImageFile(null);
@@ -219,22 +203,14 @@ export function RefundPolicyEditor() {
           formData
         );
         if (response.success) {
-          push({
-            title: "Success",
-            description: "Refund policy updated successfully",
-            variant: "success",
-          });
+          push({ message: "Refund policy updated successfully", type: "success" });
           await fetchRefundPolicy();
         } else {
           throw new Error(response.message);
         }
       }
     } catch (error: any) {
-      push({
-        title: "Error",
-        description: error.message || "Failed to save refund policy",
-        variant: "error",
-      });
+      push({ message: error.message || "Failed to save refund policy", type: "error" });
       setUploadProgress(0);
     } finally {
       setSaving(false);
@@ -279,11 +255,7 @@ export function RefundPolicyEditor() {
 
   const handleAddSubsection = () => {
     if (!subsectionForm.title || subsectionForm.content.length === 0) {
-      push({
-        title: "Error",
-        description: "Subsection title and at least one content item required",
-        variant: "error",
-      });
+      push({ message: "Subsection title and at least one content item required", type: "error" });
       return;
     }
 
@@ -308,10 +280,7 @@ export function RefundPolicyEditor() {
       sectionForm.content.length === 0
     ) {
       push({
-        title: "Error",
-        description:
-          "Section ID, title, and at least one content paragraph required",
-        variant: "error",
+        message: "Section ID, title, and at least one content paragraph required", type: "error",
       });
       return;
     }
@@ -339,11 +308,7 @@ export function RefundPolicyEditor() {
     });
     setEditingSection(null);
 
-    push({
-      title: "Success",
-      description: editingSection ? "Section updated" : "Section added",
-      variant: "success",
-    });
+    push({ message: editingSection ? "Section updated" : "Section added", type: "success" });
   };
 
   const handleEditSection = (section: PolicySection) => {
@@ -356,11 +321,7 @@ export function RefundPolicyEditor() {
       (s) => s.id !== sectionId
     );
     setFormData({ ...formData, sections: updatedSections });
-    push({
-      title: "Success",
-      description: "Section deleted",
-      variant: "success",
-    });
+    push({ message: "Section deleted", type: "success" });
   };
 
   const moveSectionUp = (index: number) => {
@@ -1130,3 +1091,5 @@ export function RefundPolicyEditor() {
     </div>
   );
 }
+
+

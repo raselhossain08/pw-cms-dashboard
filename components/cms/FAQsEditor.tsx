@@ -141,16 +141,14 @@ export function FAQsEditor() {
         setFaqs(response.data);
       } else {
         push({
-          title: "Error",
-          description: response.message || "Failed to fetch FAQs",
-          variant: "error",
+          message: response.message || "Failed to fetch FAQs",
+          type: "error",
         });
       }
     } catch (error) {
       push({
-        title: "Error",
-        description: "Failed to fetch FAQs",
-        variant: "error",
+        message: "Failed to fetch FAQs",
+        type: "error",
       });
     } finally {
       setLoading(false);
@@ -172,9 +170,8 @@ export function FAQsEditor() {
   const handleSave = async () => {
     if (!faqs?._id) {
       push({
-        title: "Error",
-        description: "No FAQs data found",
-        variant: "error",
+        message: "No FAQs data found",
+        type: "error",
       });
       return;
     }
@@ -216,9 +213,8 @@ export function FAQsEditor() {
 
         if (response.success) {
           push({
-            title: "Success",
-            description: "FAQs updated successfully with image",
-            variant: "success",
+            message: "FAQs updated successfully with image",
+            type: "success",
           });
           setTimeout(() => {
             setUploadProgress(0);
@@ -232,9 +228,8 @@ export function FAQsEditor() {
         const response = await FaqsService.updateFaqs(faqs._id, formData);
         if (response.success) {
           push({
-            title: "Success",
-            description: "FAQs updated successfully",
-            variant: "success",
+            message: "FAQs updated successfully",
+            type: "success",
           });
           await fetchFaqs();
         } else {
@@ -243,9 +238,8 @@ export function FAQsEditor() {
       }
     } catch (error: any) {
       push({
-        title: "Error",
-        description: error.message || "Failed to save FAQs",
-        variant: "error",
+        message: error.message || "Failed to save FAQs",
+        type: "error",
       });
       setUploadProgress(0);
     } finally {
@@ -263,9 +257,8 @@ export function FAQsEditor() {
   const handleAddCategory = () => {
     if (!categoryForm.name) {
       push({
-        title: "Error",
-        description: "Category name is required",
-        variant: "error",
+        message: "Category name is required",
+        type: "error",
       });
       return;
     }
@@ -292,9 +285,8 @@ export function FAQsEditor() {
     setEditingCategory(null);
 
     push({
-      title: "Success",
-      description: editingCategory ? "Category updated" : "Category added",
-      variant: "success",
+      message: editingCategory ? "Category updated" : "Category added",
+      type: "success",
     });
   };
 
@@ -309,9 +301,8 @@ export function FAQsEditor() {
     );
     setFormData({ ...formData, categories: updatedCategories });
     push({
-      title: "Success",
-      description: "Category deleted",
-      variant: "success",
+      message: "Category deleted",
+      type: "success",
     });
   };
 
@@ -319,9 +310,8 @@ export function FAQsEditor() {
   const handleAddFaq = () => {
     if (!faqForm.question || !faqForm.answer) {
       push({
-        title: "Error",
-        description: "Question and answer are required",
-        variant: "error",
+        message: "Question and answer are required",
+        type: "error",
       });
       return;
     }
@@ -350,9 +340,8 @@ export function FAQsEditor() {
     setEditingFaq(null);
 
     push({
-      title: "Success",
-      description: editingFaq ? "FAQ updated" : "FAQ added",
-      variant: "success",
+      message: editingFaq ? "FAQ updated" : "FAQ added",
+      type: "success",
     });
   };
 
@@ -367,9 +356,8 @@ export function FAQsEditor() {
     );
     setFormData({ ...formData, faqs: updatedFaqs });
     push({
-      title: "Success",
-      description: "FAQ deleted",
-      variant: "success",
+      message: "FAQ deleted",
+      type: "success",
     });
   };
 
@@ -1118,3 +1106,5 @@ export function FAQsEditor() {
     </div>
   );
 }
+
+

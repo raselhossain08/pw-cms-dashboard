@@ -1,6 +1,6 @@
 "use client";
 
-import { AppLayout } from "@/components/layout/AppLayout";
+import AppLayout from "@/components/layout/AppLayout";
 import { RefundPolicyEditor } from "@/components/cms/RefundPolicyEditor";
 
 export default function RefundPolicyPage() {

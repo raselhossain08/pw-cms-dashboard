@@ -61,9 +61,8 @@ export default function CourseCategories() {
   });
 
   const categories: CategoryItem[] = React.useMemo(() => {
-    // Handle nested API response structure: data.data.data.categories
-    const apiData = data?.data?.data ?? data?.data ?? data;
-    const categoryList = apiData?.categories ?? [];
+    // Handle API response structure: data.data.categories
+    const categoryList = data?.data?.categories ?? [];
 
     return categoryList.map((cat: any) => ({
       name: cat.name,

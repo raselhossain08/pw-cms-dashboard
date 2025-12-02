@@ -34,7 +34,7 @@ import { TermsConditionsService } from "@/lib/services/terms-conditions.service"
 import type {
   TermsConditions,
   HeaderSection,
-  PolicySection,
+  TermsSection,
   SubSection,
   ContactInfo,
   SeoMeta,
@@ -63,7 +63,6 @@ export function TermsConditionsEditor() {
     sections: [],
     contactInfo: {
       email: "",
-      generalSupport: "",
       phone: "",
       address: "",
     },
@@ -79,10 +78,10 @@ export function TermsConditionsEditor() {
     isActive: true,
   });
 
-  const [editingSection, setEditingSection] = useState<PolicySection | null>(
+  const [editingSection, setEditingSection] = useState<TermsSection | null>(
     null
   );
-  const [sectionForm, setSectionForm] = useState<PolicySection>({
+  const [sectionForm, setSectionForm] = useState<TermsSection>({
     id: "",
     title: "",
     content: [],
@@ -126,17 +125,12 @@ export function TermsConditionsEditor() {
         setTermsConditions(response.data as TermsConditions);
       } else {
         push({
-          title: "Error",
-          description: response.message || "Failed to fetch Terms & Conditions",
-          variant: "error",
+          message: response.message || "Failed to fetch Terms & Conditions",
+          type: "error",
         });
       }
     } catch (error) {
-      push({
-        title: "Error",
-        description: "Failed to fetch Terms & Conditions",
-        variant: "error",
-      });
+      push({ message: "Failed to fetch Terms & Conditions", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -156,11 +150,7 @@ export function TermsConditionsEditor() {
 
   const handleSave = async () => {
     if (!TermsConditions?._id) {
-      push({
-        title: "Error",
-        description: "No Terms & Conditions data found",
-        variant: "error",
-      });
+      push({ message: "No Terms & Conditions data found", type: "error" });
       return;
     }
 
@@ -202,9 +192,8 @@ export function TermsConditionsEditor() {
 
         if (response.success) {
           push({
-            title: "Success",
-            description: "Terms & Conditions updated successfully with image",
-            variant: "success",
+            message: "Terms & Conditions updated successfully with image",
+            type: "success",
           });
           setTimeout(() => {
             setUploadProgress(0);
@@ -221,9 +210,8 @@ export function TermsConditionsEditor() {
         );
         if (response.success) {
           push({
-            title: "Success",
-            description: "Terms & Conditions updated successfully",
-            variant: "success",
+            message: "Terms & Conditions updated successfully",
+            type: "success",
           });
           await fetchTermsConditions();
         } else {
@@ -232,9 +220,8 @@ export function TermsConditionsEditor() {
       }
     } catch (error: any) {
       push({
-        title: "Error",
-        description: error.message || "Failed to save Terms & Conditions",
-        variant: "error",
+        message: error.message || "Failed to save Terms & Conditions",
+        type: "error",
       });
       setUploadProgress(0);
     } finally {
@@ -281,9 +268,8 @@ export function TermsConditionsEditor() {
   const handleAddSubsection = () => {
     if (!subsectionForm.title || subsectionForm.content.length === 0) {
       push({
-        title: "Error",
-        description: "Subsection title and at least one content item required",
-        variant: "error",
+        message: "Subsection title and at least one content item required",
+        type: "error",
       });
       return;
     }
@@ -309,10 +295,9 @@ export function TermsConditionsEditor() {
       sectionForm.content.length === 0
     ) {
       push({
-        title: "Error",
-        description:
+        message:
           "Section ID, title, and at least one content paragraph required",
-        variant: "error",
+        type: "error",
       });
       return;
     }
@@ -341,13 +326,12 @@ export function TermsConditionsEditor() {
     setEditingSection(null);
 
     push({
-      title: "Success",
-      description: editingSection ? "Section updated" : "Section added",
-      variant: "success",
+      message: editingSection ? "Section updated" : "Section added",
+      type: "success",
     });
   };
 
-  const handleEditSection = (section: PolicySection) => {
+  const handleEditSection = (section: TermsSection) => {
     setEditingSection(section);
     setSectionForm(section);
   };
@@ -357,11 +341,7 @@ export function TermsConditionsEditor() {
       (s) => s.id !== sectionId
     );
     setFormData({ ...formData, sections: updatedSections });
-    push({
-      title: "Success",
-      description: "Section deleted",
-      variant: "success",
-    });
+    push({ message: "Section deleted", type: "success" });
   };
 
   const moveSectionUp = (index: number) => {
