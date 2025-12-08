@@ -14,8 +14,10 @@ import {
   Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [chatOpen, setChatOpen] = React.useState(false);
   const [minimized, setMinimized] = React.useState(false);
   const [unread, setUnread] = React.useState(3);
@@ -167,6 +169,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                className="bg-white/10 text-white border-white/20 hover:bg-white/20 text-xs"
+                onClick={() => router.push("/ai-assitant")}
+              >
+                AI Assistant
+              </Button>
+              <Button
+                variant="outline"
+                className="bg-white/10 text-white border-white/20 hover:bg-white/20 text-xs"
+                onClick={() => router.push("/live-chat")}
+              >
+                Live Chat
+              </Button>
               <button
                 onClick={minimizeChat}
                 className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors"

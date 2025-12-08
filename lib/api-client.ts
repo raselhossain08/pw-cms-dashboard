@@ -101,7 +101,8 @@ async function http<T>(method: string, url: string, body?: unknown, options: Req
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
   if (options.onUploadProgress) options.onUploadProgress({ loaded: 1, total: 1 });
-  return { data: json as T };
+  const payload = (json && typeof json === 'object' && 'data' in json) ? (json.data as T) : (json as T);
+  return { data: payload };
 }
 
 export const apiClient = {

@@ -189,37 +189,6 @@ export function BannerEditor() {
       submitFormData.append("order", String(formData.order ?? 0));
       submitFormData.append("isActive", String(formData.isActive ?? true));
 
-      // Add SEO fields (only if they have values)
-      if (formData.seo) {
-        if (formData.seo.title) {
-          submitFormData.append("seo[title]", formData.seo.title);
-        }
-        if (formData.seo.description) {
-          submitFormData.append("seo[description]", formData.seo.description);
-        }
-        if (formData.seo.keywords) {
-          submitFormData.append("seo[keywords]", formData.seo.keywords);
-        }
-        if (formData.seo.ogImage && formData.seo.ogImage.startsWith("http")) {
-          submitFormData.append("seo[ogImage]", formData.seo.ogImage);
-        }
-        if (formData.seo.ogTitle) {
-          submitFormData.append("seo[ogTitle]", formData.seo.ogTitle);
-        }
-        if (formData.seo.ogDescription) {
-          submitFormData.append(
-            "seo[ogDescription]",
-            formData.seo.ogDescription
-          );
-        }
-        if (
-          formData.seo.canonicalUrl &&
-          formData.seo.canonicalUrl.startsWith("http")
-        ) {
-          submitFormData.append("seo[canonicalUrl]", formData.seo.canonicalUrl);
-        }
-      }
-
       if (editingBanner) {
         await updateBannerWithMedia(editingBanner._id, submitFormData);
       } else {
@@ -292,21 +261,6 @@ export function BannerEditor() {
           >
             <Edit3 className="w-4 h-4 sm:w-5 sm:h-5" />
             <span>{editingBanner ? "Edit" : "Create"} Banner</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="seo"
-            className={`
-              flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium
-              transition-all duration-200 ease-in-out min-w-[120px] sm:min-w-40
-              ${
-                activeTab === "seo"
-                  ? "bg-linear-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }
-            `}
-          >
-            <LinkIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span>SEO Settings</span>
           </TabsTrigger>
         </TabsList>
 
@@ -583,127 +537,6 @@ export function BannerEditor() {
                   </Button>
                 </div>
               </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="seo" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>SEO Settings</CardTitle>
-              <CardDescription>
-                Configure SEO metadata for this banner
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="seo-title">SEO Title</Label>
-                <Input
-                  id="seo-title"
-                  value={formData.seo?.title || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      seo: { ...formData.seo, title: e.target.value },
-                    })
-                  }
-                  placeholder="Banner SEO Title"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="seo-description">SEO Description</Label>
-                <Textarea
-                  id="seo-description"
-                  value={formData.seo?.description || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      seo: { ...formData.seo, description: e.target.value },
-                    })
-                  }
-                  placeholder="Banner description for search engines"
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="seo-keywords">Keywords</Label>
-                <Input
-                  id="seo-keywords"
-                  value={formData.seo?.keywords || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      seo: { ...formData.seo, keywords: e.target.value },
-                    })
-                  }
-                  placeholder="aviation, training, aircraft"
-                />
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="seo-og-title">OG Title</Label>
-                  <Input
-                    id="seo-og-title"
-                    value={formData.seo?.ogTitle || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        seo: { ...formData.seo, ogTitle: e.target.value },
-                      })
-                    }
-                    placeholder="Title for social media"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="seo-og-image">OG Image URL</Label>
-                  <Input
-                    id="seo-og-image"
-                    value={formData.seo?.ogImage || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        seo: { ...formData.seo, ogImage: e.target.value },
-                      })
-                    }
-                    placeholder="https://example.com/image.jpg"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="seo-og-description">OG Description</Label>
-                <Textarea
-                  id="seo-og-description"
-                  value={formData.seo?.ogDescription || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      seo: { ...formData.seo, ogDescription: e.target.value },
-                    })
-                  }
-                  placeholder="Description for social media"
-                  rows={2}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="seo-canonical">Canonical URL</Label>
-                <Input
-                  id="seo-canonical"
-                  value={formData.seo?.canonicalUrl || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      seo: { ...formData.seo, canonicalUrl: e.target.value },
-                    })
-                  }
-                  placeholder="https://personalwings.com/banner"
-                />
-              </div>
             </CardContent>
           </Card>
         </TabsContent>

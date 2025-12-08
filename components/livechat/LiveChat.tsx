@@ -15,6 +15,13 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  chatService,
+  type ChatConversation,
+  type ChatMessage,
+} from "@/services/chat.service";
+import type { Socket } from "socket.io-client";
+import { getProfile } from "@/services/auth.service";
 
 type Message = {
   id: string;
@@ -37,166 +44,58 @@ type Conversation = {
   messages: Message[];
 };
 
-const initialConversations: Conversation[] = [
-  {
-    id: "c1",
-    name: "Sarah Johnson",
-    topic: "Web Development Course",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg",
+type Participant =
+  | { _id: string; firstName?: string; lastName?: string; avatar?: string }
+  | string;
+function participantId(p: Participant) {
+  return typeof p === "string" ? p : p._id;
+}
+function toUiConversation(c: ChatConversation, selfId: string): Conversation {
+  const participants: Participant[] = Array.isArray(c.participants)
+    ? (c.participants as Participant[])
+    : [];
+  const other = participants.find((p) => participantId(p) !== selfId);
+  const name = other
+    ? `${typeof other === "string" ? "" : other.firstName || ""} ${
+        typeof other === "string" ? "" : other.lastName || ""
+      }`.trim() || "Unknown"
+    : c.title || "Conversation";
+  const avatarUrl =
+    typeof other === "string"
+      ? "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg"
+      : other?.avatar ||
+        "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg";
+  const lastMsg =
+    typeof c.lastMessage === "object"
+      ? (c.lastMessage as ChatMessage)
+      : undefined;
+  const lastMessage = lastMsg?.content || "";
+  const lastTime = new Date(c.createdAt || Date.now()).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return {
+    id: c._id,
+    name,
+    topic: c.title || "",
+    avatarUrl,
     online: true,
-    lastMessage: "Thanks for the help with the assignment!",
-    lastTime: "2 min ago",
-    unread: 1,
-    messages: [
-      {
-        id: "m1",
-        sender: "other",
-        content:
-          "Hi! I'm having trouble with the CSS grid layout in the portfolio project. Could you help me understand how to make it responsive?",
-        time: "10:30 AM",
-      },
-      {
-        id: "m2",
-        sender: "me",
-        content:
-          "Of course! CSS Grid can be tricky at first. Have you tried using the fr units and media queries for responsiveness?",
-        time: "10:32 AM",
-      },
-      {
-        id: "m3",
-        sender: "other",
-        content:
-          "I tried using fr units, but the columns aren't stacking properly on mobile. Here's my code:",
-        time: "10:34 AM",
-      },
-      {
-        id: "m4",
-        sender: "other",
-        type: "code",
-        codeLanguage: "css",
-        content: `.container {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 20px;
-}`,
-        time: "10:34 AM",
-      },
-      {
-        id: "m5",
-        sender: "me",
-        content:
-          "I see the issue! You need to add a media query for mobile devices. Try this:",
-        time: "10:35 AM",
-      },
-      {
-        id: "m6",
-        sender: "me",
-        type: "code",
-        codeLanguage: "css",
-        content: `@media (max-width: 768px) {
-  .container {
-    grid-template-columns: 1fr;
-  }
-}`,
-        time: "10:35 AM",
-      },
-      {
-        id: "m7",
-        sender: "other",
-        content: "That worked perfectly! Thank you so much! 😊",
-        time: "10:36 AM",
-      },
-    ],
-  },
-  {
-    id: "c2",
-    name: "Michael Chen",
-    topic: "Data Science Course",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-3.jpg",
-    online: true,
-    lastMessage: "I have a question about the data analysis project",
-    lastTime: "1 hour ago",
-    unread: 3,
-    messages: [
-      {
-        id: "m1",
-        sender: "other",
-        content: "I have a question about the data analysis project",
-        time: "09:45 AM",
-      },
-    ],
-  },
-  {
-    id: "c3",
-    name: "Emma Wilson",
-    topic: "UI/UX Design Course",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-4.jpg",
-    online: false,
-    lastMessage: "When is the next design review session?",
-    lastTime: "3 hours ago",
-    messages: [
-      {
-        id: "m1",
-        sender: "other",
-        content: "When is the next design review session?",
-        time: "08:02 AM",
-      },
-    ],
-  },
-  {
-    id: "c4",
-    name: "Dr. James Wilson",
-    topic: "Instructor",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-5.jpg",
-    online: true,
-    lastMessage: "Can we schedule a meeting about the new curriculum?",
-    lastTime: "Yesterday",
-    messages: [
-      {
-        id: "m1",
-        sender: "other",
-        content: "Can we schedule a meeting about the new curriculum?",
-        time: "Yesterday",
-      },
-    ],
-  },
-];
-
-const onlineUsers = [
-  {
-    id: "u1",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg",
-    name: "Sarah",
-  },
-  {
-    id: "u2",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-3.jpg",
-    name: "Michael",
-  },
-  {
-    id: "u3",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-5.jpg",
-    name: "James",
-  },
-];
+    lastMessage,
+    lastTime,
+    unread: c.unreadCount || 0,
+    messages: [],
+  };
+}
 
 export default function LiveChat() {
-  const [conversations, setConversations] =
-    React.useState<Conversation[]>(initialConversations);
-  const [selectedId, setSelectedId] = React.useState<string>(
-    initialConversations[0].id
-  );
+  const [conversations, setConversations] = React.useState<Conversation[]>([]);
+  const [selectedId, setSelectedId] = React.useState<string>("");
   const [messageInput, setMessageInput] = React.useState("");
   const [isTyping, setIsTyping] = React.useState(false);
   const [filterTab, setFilterTab] = React.useState<"all" | "unread">("all");
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const socketRef = React.useRef<Socket | null>(null);
+  const selfIdRef = React.useRef<string>("");
 
   const selected = conversations.find((c) => c.id === selectedId);
 
@@ -208,63 +107,170 @@ export default function LiveChat() {
     scrollToBottom();
   }, [selected?.messages, isTyping]);
 
+  React.useEffect(() => {
+    let mounted = true;
+    async function init() {
+      const profile = await getProfile();
+      if (!profile.success || !profile.data) return;
+      const me = profile.data;
+      selfIdRef.current = me.id;
+      const socket = chatService.connect();
+      socketRef.current = socket;
+
+      socket.on(
+        "conversations_list",
+        (payload: { conversations: ChatConversation[]; total: number }) => {
+          if (!mounted) return;
+          const list = (payload?.conversations || []).map((c) =>
+            toUiConversation(c, selfIdRef.current)
+          );
+          setConversations(list);
+          if (list.length && !selectedId) setSelectedId(list[0].id);
+        }
+      );
+
+      socket.on("new_conversation", (c: ChatConversation) => {
+        setConversations((prev) => [
+          toUiConversation(c, selfIdRef.current),
+          ...prev,
+        ]);
+      });
+
+      socket.on(
+        "conversation_updated",
+        (data: { conversationId: string; lastMessage: ChatMessage }) => {
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === data.conversationId
+                ? {
+                    ...c,
+                    lastMessage: data.lastMessage.content,
+                    lastTime: new Date().toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }),
+                  }
+                : c
+            )
+          );
+        }
+      );
+
+      socket.on("new_message", (msg: ChatMessage) => {
+        setConversations((prev) =>
+          prev.map((c) => {
+            const convId =
+              typeof msg.conversation === "string"
+                ? msg.conversation
+                : (msg.conversation as { _id: string })._id;
+            if (c.id !== convId) return c;
+            const m: Message = {
+              id: msg._id,
+              sender:
+                (typeof msg.sender === "object"
+                  ? (msg.sender as { _id: string })._id
+                  : msg.sender) === selfIdRef.current
+                  ? "me"
+                  : "other",
+              content: msg.content,
+              time: new Date(msg.createdAt || Date.now()).toLocaleTimeString(
+                [],
+                { hour: "2-digit", minute: "2-digit" }
+              ),
+            };
+            return {
+              ...c,
+              messages: [...c.messages, m],
+              lastMessage: msg.content,
+              lastTime: m.time,
+            };
+          })
+        );
+      });
+
+      socket.on(
+        "user_typing",
+        (data: { conversationId: string; typing: boolean }) => {
+          if (data.conversationId === selectedId) setIsTyping(!!data.typing);
+        }
+      );
+
+      socket.on("disconnect", () => {
+        socketRef.current = null;
+      });
+    }
+    void init();
+    return () => {
+      mounted = false;
+      if (socketRef.current) socketRef.current.disconnect();
+    };
+  }, [selectedId]);
+
+  React.useEffect(() => {
+    async function loadMessages() {
+      const socket = socketRef.current;
+      if (!socket || !selectedId) return;
+      const resp = await chatService.joinConversation(socket, selectedId);
+      if (resp.success && resp.messages) {
+        const msgs: Message[] = resp.messages.map((msg) => ({
+          id: msg._id,
+          sender:
+            (typeof msg.sender === "object"
+              ? (msg.sender as { _id: string })._id
+              : msg.sender) === selfIdRef.current
+              ? "me"
+              : "other",
+          content: msg.content,
+          time: new Date(msg.createdAt || Date.now()).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        }));
+        setConversations((prev) =>
+          prev.map((c) => (c.id === selectedId ? { ...c, messages: msgs } : c))
+        );
+      }
+    }
+    void loadMessages();
+  }, [selectedId]);
+
   const filteredConversations = conversations.filter((c) => {
     if (filterTab === "unread") return c.unread && c.unread > 0;
     return true;
   });
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const text = messageInput.trim();
-    if (!text || !selected) return;
+    if (!text || !selected || !socketRef.current) return;
     const now = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
-    const updated = conversations.map((c) => {
-      if (c.id !== selected.id) return c;
-      const newMsg: Message = {
-        id: Math.random().toString(36).slice(2),
-        sender: "me",
-        content: text,
-        time: now,
-      };
-      return {
-        ...c,
-        messages: [...c.messages, newMsg],
-        lastMessage: text,
-        lastTime: "Just now",
-      };
-    });
-    setConversations(updated);
+    const optimisticMsg: Message = {
+      id: Math.random().toString(36).slice(2),
+      sender: "me",
+      content: text,
+      time: now,
+    };
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === selected.id
+          ? {
+              ...c,
+              messages: [...c.messages, optimisticMsg],
+              lastMessage: text,
+              lastTime: "Just now",
+            }
+          : c
+      )
+    );
     setMessageInput("");
-
-    // Simulate typing indicator
-    setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
-      // Simulate receiving a response
-      const responseTime = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      const updatedWithResponse = updated.map((c) => {
-        if (c.id !== selected.id) return c;
-        const responseMsg: Message = {
-          id: Math.random().toString(36).slice(2),
-          sender: "other",
-          content:
-            "One more question - should I use CSS Grid or Flexbox for the navigation menu?",
-          time: responseTime,
-        };
-        return {
-          ...c,
-          messages: [...c.messages, responseMsg],
-          lastMessage: responseMsg.content,
-          lastTime: "Just now",
-        };
-      });
-      setConversations(updatedWithResponse);
-    }, 3000);
+    void chatService.sendMessageSocket(
+      socketRef.current,
+      selected.id,
+      text,
+      "text"
+    );
   };
 
   return (
@@ -379,24 +385,9 @@ export default function LiveChat() {
             ))}
           </div>
 
-          {/* Online Users */}
           <div className="p-4 border-t border-gray-200">
             <h4 className="font-medium text-secondary mb-3">Online Now</h4>
-            <div className="flex space-x-2">
-              {onlineUsers.map((user) => (
-                <div key={user.id} className="relative">
-                  <img
-                    src={user.avatarUrl}
-                    alt={user.name}
-                    className="w-8 h-8 rounded-full border-2 border-white"
-                  />
-                  <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />
-                </div>
-              ))}
-              <div className="w-8 h-8 bg-gray-100 rounded-full border-2 border-white flex items-center justify-center">
-                <span className="text-xs text-gray-600">+5</span>
-              </div>
-            </div>
+            <div className="text-xs text-gray-500">Connected</div>
           </div>
         </div>
 

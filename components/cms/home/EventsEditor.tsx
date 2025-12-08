@@ -187,16 +187,7 @@ export function EventsEditor() {
         }
       });
 
-      // Add SEO fields
-      if (formData.seo) {
-        submitFormData.append("seo[title]", formData.seo.title || "");
-        submitFormData.append(
-          "seo[description]",
-          formData.seo.description || ""
-        );
-        submitFormData.append("seo[keywords]", formData.seo.keywords || "");
-        submitFormData.append("seo[ogImage]", formData.seo.ogImage || "");
-      }
+      
 
       submitFormData.append("isActive", String(formData.isActive ?? true));
 
@@ -384,15 +375,7 @@ function EventsForm({
           event.description || ""
         );
       });
-      if (formData.seo) {
-        submitFormData.append("seo[title]", formData.seo.title || "");
-        submitFormData.append(
-          "seo[description]",
-          formData.seo.description || ""
-        );
-        submitFormData.append("seo[keywords]", formData.seo.keywords || "");
-        submitFormData.append("seo[ogImage]", formData.seo.ogImage || "");
-      }
+      
       submitFormData.append("isActive", String(formData.isActive ?? true));
       await updateEventsWithMedia(submitFormData);
       setEventImageFiles({});
@@ -470,13 +453,6 @@ function EventsForm({
           >
             <MapPin className="w-4 h-4" />
             <span>Events</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="seo"
-            className="flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white min-w-20 sm:min-w-0 px-2 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
-          >
-            <Search className="w-4 h-4" />
-            <span>SEO</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1538,102 +1514,7 @@ function EventsForm({
             </Card>
           </TabsContent>
 
-          <TabsContent value="seo" className="space-y-6">
-            <Card className="shadow-xl border-0 bg-white dark:bg-gray-800">
-              <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-t-lg py-3">
-                <CardTitle className="text-2xl">SEO Optimization</CardTitle>
-                <CardDescription className="text-purple-100">
-                  Optimize your events section for search engines
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6 space-y-6">
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="seo-title"
-                    className="text-base font-semibold"
-                  >
-                    SEO Title
-                  </Label>
-                  <Input
-                    id="seo-title"
-                    value={formData.seo?.title || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        seo: { ...formData.seo!, title: e.target.value },
-                      })
-                    }
-                    placeholder="Upcoming Aviation Events | Personal Wings"
-                    className="text-base h-10"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="seo-description"
-                    className="text-base font-semibold"
-                  >
-                    SEO Description
-                  </Label>
-                  <Textarea
-                    id="seo-description"
-                    value={formData.seo?.description || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        seo: { ...formData.seo!, description: e.target.value },
-                      })
-                    }
-                    placeholder="Join our upcoming aviation training events..."
-                    rows={4}
-                    className="text-base"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="seo-keywords"
-                    className="text-base font-semibold"
-                  >
-                    Keywords
-                  </Label>
-                  <Input
-                    id="seo-keywords"
-                    value={formData.seo?.keywords || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        seo: { ...formData.seo!, keywords: e.target.value },
-                      })
-                    }
-                    placeholder="aviation events, flight training, pilot workshops"
-                    className="text-base h-10"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="seo-ogImage"
-                    className="text-base font-semibold"
-                  >
-                    Open Graph Image URL
-                  </Label>
-                  <Input
-                    id="seo-ogImage"
-                    value={formData.seo?.ogImage || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        seo: { ...formData.seo!, ogImage: e.target.value },
-                      })
-                    }
-                    placeholder="https://example.com/og-image.jpg"
-                    className="text-base h-10"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          
 
           {uploadProgress > 0 && uploadProgress < 100 && (
             <Card className="shadow-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20">

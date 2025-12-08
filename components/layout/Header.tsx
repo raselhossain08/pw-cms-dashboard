@@ -13,6 +13,14 @@ import {
   Settings,
   LogOut,
   Clock,
+  Book,
+  Users as UsersIcon,
+  Video,
+  Calendar,
+  Heart,
+  MessageSquare,
+  Newspaper,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +44,18 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api-client";
 import type { NotificationItem } from "@/services/profile.service";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 const MotionButton = motion(Button);
 
@@ -47,6 +67,96 @@ export default function Header() {
     []
   );
   const [unreadCount, setUnreadCount] = React.useState(0);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [suggestOpen, setSuggestOpen] = React.useState(false);
+  const anchorRef = React.useRef<HTMLDivElement>(null);
+  const [anchorWidth, setAnchorWidth] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    const updateWidth = () => {
+      if (anchorRef.current) setAnchorWidth(anchorRef.current.offsetWidth);
+    };
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
+
+  const suggestions = React.useMemo(
+    () => [
+      {
+        label: "AI Assistant",
+        href: "/ai-assitant",
+        icon: Bot,
+        keywords: ["ai", "assistant", "chat"],
+      },
+      {
+        label: "Courses",
+        href: "/courses",
+        icon: Book,
+        keywords: ["course", "courses", "lms"],
+      },
+      {
+        label: "Users",
+        href: "/users",
+        icon: UsersIcon,
+        keywords: ["user", "users"],
+      },
+      {
+        label: "Home Banner",
+        href: "/cms/home/banner",
+        icon: Video,
+        keywords: ["banner", "home banner", "video"],
+      },
+      {
+        label: "About Section",
+        href: "/cms/home/about-section",
+        icon: Heart,
+        keywords: ["about"],
+      },
+      {
+        label: "Events",
+        href: "/cms/home/events",
+        icon: Calendar,
+        keywords: ["event", "events"],
+      },
+      {
+        label: "Testimonials",
+        href: "/cms/home/testimonials",
+        icon: MessageSquare,
+        keywords: ["testimonial", "testimonials"],
+      },
+      {
+        label: "Blog",
+        href: "/cms/home/blog",
+        icon: Newspaper,
+        keywords: ["blog", "blogs"],
+      },
+      {
+        label: "Header",
+        href: "/cms/header",
+        icon: ImageIcon,
+        keywords: ["header", "navbar"],
+      },
+      {
+        label: "Footer",
+        href: "/cms/footer",
+        icon: ImageIcon,
+        keywords: ["footer"],
+      },
+    ],
+    []
+  );
+
+  const filteredSuggestions = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return suggestions.slice(0, 6);
+    return suggestions.filter(
+      (s) =>
+        s.label.toLowerCase().includes(q) ||
+        s.keywords.some((k) => k.includes(q))
+    );
+  }, [searchQuery, suggestions]);
 
   React.useEffect(() => {
     let mounted = true;
@@ -124,17 +234,130 @@ export default function Header() {
             </div>
             <h1 className="text-xl font-bold text-secondary">Personal Wings</h1>
           </div>
+          <div className="md:hidden">
+            <Sheet open={searchOpen} onOpenChange={setSearchOpen}>
+              <SheetTrigger asChild>
+                <MotionButton
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Open search"
+                  className="text-muted-foreground hover:text-white hover:bg-primary transition-all duration-200"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Search className="w-5 h-5" />
+                </MotionButton>
+              </SheetTrigger>
+              <SheetContent side="top" className="p-6 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const q = searchQuery.trim().toLowerCase();
+                        if (q) {
+                          const match = suggestions.find(
+                            (s) =>
+                              s.label.toLowerCase().includes(q) ||
+                              s.keywords.some((k) => k.includes(q))
+                          );
+                          router.push(match?.href || "/cms");
+                          setSearchOpen(false);
+                        }
+                      }
+                    }}
+                    placeholder="Search..."
+                    className="w-full pl-10 pr-4 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted-foreground"
+                  />
+                </div>
+                <Command>
+                  <CommandList>
+                    <CommandEmpty>No results found.</CommandEmpty>
+                    <CommandGroup heading="Quick Links">
+                      {filteredSuggestions.map((s) => (
+                        <CommandItem
+                          key={s.href}
+                          onSelect={() => {
+                            router.push(s.href);
+                            setSearchOpen(false);
+                          }}
+                        >
+                          <s.icon className="w-4 h-4" />
+                          <span>{s.label}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
 
         <div className="flex-1 max-w-md mx-8 hidden md:block">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search... (Cmd+K)"
-              className="w-full pl-10 pr-4 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted-foreground"
-            />
-          </div>
+          <Popover open={suggestOpen} onOpenChange={setSuggestOpen}>
+            <PopoverTrigger asChild>
+              <div ref={anchorRef} className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setSuggestOpen(true);
+                  }}
+                  onFocus={() => setSuggestOpen(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const q = searchQuery.trim().toLowerCase();
+                      if (q) {
+                        const match = suggestions.find(
+                          (s) =>
+                            s.label.toLowerCase().includes(q) ||
+                            s.keywords.some((k) => k.includes(q))
+                        );
+                        router.push(match?.href || "/cms");
+                        setSuggestOpen(false);
+                      }
+                    }
+                  }}
+                  placeholder="Search... (Cmd+K)"
+                  className="w-full pl-10 pr-4 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted-foreground"
+                />
+              </div>
+            </PopoverTrigger>
+            <PopoverContent
+              style={{ width: anchorWidth || undefined }}
+              className="p-0"
+              align="start"
+              onOpenAutoFocus={(e) => {
+                e.preventDefault();
+              }}
+            >
+              <Command>
+                <CommandList>
+                  <CommandEmpty>No results found.</CommandEmpty>
+                  <CommandGroup heading="Quick Links">
+                    {filteredSuggestions.map((s) => (
+                      <CommandItem
+                        key={s.href}
+                        onMouseDown={() => {
+                          router.push(s.href);
+                          setSuggestOpen(false);
+                        }}
+                      >
+                        <s.icon className="w-4 h-4" />
+                        <span>{s.label}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -174,6 +397,7 @@ export default function Header() {
                     <DropdownMenuItem
                       key={i}
                       className="cursor-pointer hover:bg-primary/5 focus:bg-primary/10 px-4 py-3"
+                      onSelect={() => router.push("/activity-logs")}
                     >
                       <div className="flex gap-3 w-full">
                         <div className="shrink-0 w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
@@ -212,7 +436,7 @@ export default function Header() {
             size="icon"
             aria-label="AI Assistant"
             className="text-muted-foreground hover:text-white hover:bg-primary transition-all duration-200"
-            onClick={() => router.push("/ai-agents")}
+            onClick={() => router.push("/ai-assitant")}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
@@ -255,11 +479,17 @@ export default function Header() {
                 </div>
               </div>
               <div className="py-1">
-                <DropdownMenuItem className="cursor-pointer px-3 py-2">
+                <DropdownMenuItem
+                  className="cursor-pointer px-3 py-2"
+                  onSelect={() => router.push("/profile")}
+                >
                   <User className="w-4 h-4 mr-3" />
                   <span className="text-sm">My Profile</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer px-3 py-2">
+                <DropdownMenuItem
+                  className="cursor-pointer px-3 py-2"
+                  onSelect={() => router.push("/my-settings")}
+                >
                   <Settings className="w-4 h-4 mr-3" />
                   <span className="text-sm">Settings</span>
                 </DropdownMenuItem>

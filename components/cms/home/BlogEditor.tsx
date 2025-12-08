@@ -261,14 +261,7 @@ export function BlogEditor() {
         submitFormData.append(`avatar_${index}`, file);
       });
 
-      // Add SEO as proper JSON object
-      const seoData = {
-        title: formData.seo?.title || "",
-        description: formData.seo?.description || "",
-        keywords: formData.seo?.keywords || "",
-        ogImage: formData.seo?.ogImage || "",
-      };
-      submitFormData.append("seo", JSON.stringify(seoData));
+      
 
       await updateBlogWithMedia(submitFormData);
       setImageFiles({});
@@ -474,13 +467,6 @@ export function BlogEditor() {
               >
                 <FileText className="w-4 h-4" />
                 <span>Categories ({categories.length})</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="seo"
-                className="flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white min-w-20 sm:min-w-0 px-2 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
-              >
-                <Search className="w-4 h-4" />
-                <span>SEO</span>
               </TabsTrigger>
             </TabsList>
 
@@ -1396,126 +1382,7 @@ export function BlogEditor() {
               </Card>
             </TabsContent>
 
-            {/* SEO Tab */}
-            <TabsContent value="seo" className="space-y-6 mt-4">
-              <Card className="border-0 shadow-lg pt-0 bg-white dark:bg-gray-800">
-                <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-t-lg py-3">
-                  <CardTitle className="text-2xl">SEO Optimization</CardTitle>
-                  <CardDescription className="text-purple-100">
-                    Optimize your blog section for search engines
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-6 space-y-6">
-                  <div className="grid gap-4">
-                    <div>
-                      <Label htmlFor="seo-title">SEO Title</Label>
-                      <Input
-                        id="seo-title"
-                        value={formData.seo?.title}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            seo: {
-                              ...formData.seo,
-                              title: e.target.value,
-                            } as SeoMeta,
-                          })
-                        }
-                        placeholder="Aviation Blog | Personal Wings Flight Training Insights"
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="seo-description">SEO Description</Label>
-                      <Textarea
-                        id="seo-description"
-                        value={formData.seo?.description}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            seo: {
-                              ...formData.seo,
-                              description: e.target.value,
-                            } as SeoMeta,
-                          })
-                        }
-                        placeholder="Read the latest aviation news, pilot training tips..."
-                        rows={3}
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="seo-keywords">SEO Keywords</Label>
-                      <Input
-                        id="seo-keywords"
-                        value={formData.seo?.keywords}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            seo: {
-                              ...formData.seo,
-                              keywords: e.target.value,
-                            } as SeoMeta,
-                          })
-                        }
-                        placeholder="aviation blog, flight training articles, pilot resources"
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="seo-ogImage">OG Image URL</Label>
-                      <Input
-                        id="seo-ogImage"
-                        value={formData.seo?.ogImage}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            seo: {
-                              ...formData.seo,
-                              ogImage: e.target.value,
-                            } as SeoMeta,
-                          })
-                        }
-                        placeholder="https://example.com/blog-og-image.jpg"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Upload Progress */}
-                  {uploadProgress > 0 && uploadProgress < 100 && (
-                    <div className="mt-4">
-                      <Label>Upload Progress</Label>
-                      <Progress value={uploadProgress} className="mt-2" />
-                      <p className="text-sm text-gray-500 mt-1">
-                        {uploadProgress}%
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between items-center mt-6">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={fetchBlog}
-                      className="h-12 px-6 text-base"
-                    >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Reset
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={uploadProgress > 0 && uploadProgress < 100}
-                      className="h-12 px-8 text-base bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
-                    >
-                      <Save className="w-4 h-4 mr-2" />
-                      {uploadProgress > 0 && uploadProgress < 100
-                        ? "Uploading..."
-                        : "Save Changes"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+            
           </Tabs>
         </CardContent>
       </Card>

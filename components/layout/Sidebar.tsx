@@ -33,8 +33,10 @@ import {
   GraduationCap,
   User,
   Newspaper,
+  ChevronDown,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { useState } from "react";
 
 const navItems = {
   learningManagement: [
@@ -108,6 +110,9 @@ const navItems = {
 export default function Sidebar() {
   const pathname = usePathname();
   const isDashboard = pathname === "/";
+  const [cmsHomeOpen, setCmsHomeOpen] = useState(() =>
+    pathname.startsWith("/cms/home")
+  );
 
   return (
     <motion.aside
@@ -233,24 +238,97 @@ export default function Sidebar() {
             <div className="text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider px-4 py-2">
               Content & Media
             </div>
-            {navItems.contentMedia.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-primary text-white"
-                      : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
-                </Link>
+            {(() => {
+              const all = navItems.contentMedia;
+              const homeItems = all.filter((i) =>
+                i.href.startsWith("/cms/home")
               );
-            })}
+              const cmsLink = all.find((i) => i.href === "/cms");
+              const others = all.filter(
+                (i) => !i.href.startsWith("/cms/home") && i.href !== "/cms"
+              );
+
+              return (
+                <>
+                  {cmsLink && (
+                    <Link
+                      key={cmsLink.href}
+                      href={cmsLink.href}
+                      className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                        pathname === cmsLink.href
+                          ? "bg-primary text-white"
+                          : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                      }`}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>{cmsLink.label}</span>
+                    </Link>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setCmsHomeOpen((v) => !v)}
+                    className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition-all duration-200 ${
+                      pathname.startsWith("/cms/home")
+                        ? "bg-primary text-white"
+                        : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                    }`}
+                  >
+                    <span className="flex items-center space-x-3">
+                      <PlayCircle className="w-4 h-4" />
+                      <span>Home</span>
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 transition-transform ${
+                        cmsHomeOpen ? "rotate-180" : "rotate-0"
+                      }`}
+                    />
+                  </button>
+
+                  {cmsHomeOpen && (
+                    <div className="pl-8 space-y-1">
+                      {homeItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = pathname === item.href;
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                              isActive
+                                ? "bg-primary text-white"
+                                : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                            }`}
+                          >
+                            <Icon className="w-4 h-4" />
+                            <span>{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {others.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                          isActive
+                            ? "bg-primary text-white"
+                            : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </>
+              );
+            })()}
           </div>
 
           <div className="space-y-1 mt-6">
@@ -309,9 +387,10 @@ export default function Sidebar() {
 export function SidebarMobile() {
   const pathname = usePathname();
   const isDashboard = pathname === "/";
+  const [cmsHomeOpen, setCmsHomeOpen] = useState(true);
 
   return (
-    <div className="bg-sidebar text-white h-full">
+    <div className="bg-sidebar text-white h-full overflow-y-auto">
       <motion.nav
         className="p-6"
         initial={{ opacity: 0, x: -8 }}
@@ -434,24 +513,97 @@ export function SidebarMobile() {
             <div className="text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider px-4 py-2">
               Content & Media
             </div>
-            {navItems.contentMedia.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-primary text-white"
-                      : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
-                </Link>
+            {(() => {
+              const all = navItems.contentMedia;
+              const homeItems = all.filter((i) =>
+                i.href.startsWith("/cms/home")
               );
-            })}
+              const cmsLink = all.find((i) => i.href === "/cms");
+              const others = all.filter(
+                (i) => !i.href.startsWith("/cms/home") && i.href !== "/cms"
+              );
+
+              return (
+                <>
+                  {cmsLink && (
+                    <Link
+                      key={cmsLink.href}
+                      href={cmsLink.href}
+                      className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                        pathname === cmsLink.href
+                          ? "bg-primary text-white"
+                          : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                      }`}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>{cmsLink.label}</span>
+                    </Link>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setCmsHomeOpen((v) => !v)}
+                    className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition-all duration-200 ${
+                      pathname.startsWith("/cms/home")
+                        ? "bg-primary text-white"
+                        : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                    }`}
+                  >
+                    <span className="flex items-center space-x-3">
+                      <PlayCircle className="w-4 h-4" />
+                      <span>Home</span>
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 transition-transform ${
+                        cmsHomeOpen ? "rotate-180" : "rotate-0"
+                      }`}
+                    />
+                  </button>
+
+                  {cmsHomeOpen && (
+                    <div className="pl-8 space-y-1">
+                      {homeItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = pathname === item.href;
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                              isActive
+                                ? "bg-primary text-white"
+                                : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                            }`}
+                          >
+                            <Icon className="w-4 h-4" />
+                            <span>{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {others.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                          isActive
+                            ? "bg-primary text-white"
+                            : "text-sidebar-foreground/70 hover:text-white hover:bg-primary"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </>
+              );
+            })()}
           </div>
 
           <div className="space-y-1 mt-6">
