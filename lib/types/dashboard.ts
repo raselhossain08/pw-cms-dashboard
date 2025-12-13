@@ -35,4 +35,6 @@ export type DashboardData = {
     categories: string[]
     series: { name: string; values: number[] }[]
   }
+  shopRevenue?: string
+  aircraftForSale?: number
 }

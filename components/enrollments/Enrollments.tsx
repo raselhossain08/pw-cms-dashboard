@@ -13,6 +13,20 @@ import {
   CheckCircle,
   Clock,
   EllipsisVertical,
+  Eye,
+  Edit,
+  Trash2,
+  X,
+  Check,
+  Ban,
+  Loader2,
+  AlertCircle,
+  UserCheck,
+  Calendar,
+  Mail,
+  Book,
+  GraduationCap,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +35,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -35,119 +50,332 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-type EnrollmentItem = {
-  id: string;
-  studentName: string;
-  studentEmail: string;
-  course: string;
-  courseDetail?: string;
-  instructor: string;
-  progressPercent: number;
-  status: "active" | "pending" | "completed" | "dropped";
-  enrolledDate: string;
-  avatarUrl: string;
-  modulesCount?: number;
-};
-
-const initialEnrollments: EnrollmentItem[] = [
-  {
-    id: "e1",
-    studentName: "Sarah Johnson",
-    studentEmail: "sarah.j@example.com",
-    course: "Web Development",
-    courseDetail: "Complete Bootcamp",
-    instructor: "Dr. James Wilson",
-    progressPercent: 85,
-    status: "active",
-    enrolledDate: "Jan 12, 2023",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg",
-    modulesCount: 8,
-  },
-  {
-    id: "e2",
-    studentName: "Michael Chen",
-    studentEmail: "michael.c@example.com",
-    course: "Data Science",
-    courseDetail: "ML Specialization",
-    instructor: "Dr. Maria Rodriguez",
-    progressPercent: 72,
-    status: "pending",
-    enrolledDate: "Mar 8, 2023",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-3.jpg",
-    modulesCount: 6,
-  },
-  {
-    id: "e3",
-    studentName: "Emily Davis",
-    studentEmail: "emily.d@example.com",
-    course: "UI/UX Design",
-    courseDetail: "Interface Foundations",
-    instructor: "Prof. David Kim",
-    progressPercent: 45,
-    status: "dropped",
-    enrolledDate: "Jun 20, 2023",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=48&q=80",
-    modulesCount: 4,
-  },
-];
+import { Checkbox } from "@/components/ui/checkbox";
+import { useEnrollments } from "@/hooks/useEnrollments";
+import { useToast } from "@/context/ToastContext";
+import { Enrollment } from "@/services/enrollments.service";
+import { coursesService } from "@/services/courses.service";
+import { usersService } from "@/services/users.service";
 
 export default function Enrollments() {
-  const [items] = React.useState<EnrollmentItem[]>(initialEnrollments);
+  const {
+    enrollments,
+    stats,
+    distribution,
+    loading,
+    statsLoading,
+    distributionLoading,
+    total,
+    fetchEnrollments,
+    fetchStats,
+    fetchDistribution,
+    getEnrollmentById,
+    createEnrollment,
+    updateEnrollment,
+    deleteEnrollment,
+    bulkDeleteEnrollments,
+    approveEnrollment,
+    cancelEnrollment,
+    exportEnrollments,
+  } = useEnrollments();
+
+  const { push } = useToast();
+
   const [search, setSearch] = React.useState("");
-  const [courseFilter, setCourseFilter] = React.useState("All Courses");
-  const [statusFilter, setStatusFilter] = React.useState("All Status");
-  const [instructorFilter, setInstructorFilter] =
-    React.useState("All Instructors");
-  const [sortBy, setSortBy] = React.useState("Date (Newest)");
+  const [courseFilter, setCourseFilter] = React.useState("all");
+  const [statusFilter, setStatusFilter] = React.useState("all");
+  const [instructorFilter, setInstructorFilter] = React.useState("all");
+  const [sortBy, setSortBy] = React.useState("createdAt");
+  const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("desc");
+  const [page, setPage] = React.useState(1);
+  const [limit] = React.useState(10);
+  const [viewMode, setViewMode] = React.useState<"grid" | "table">("grid");
+
+  // Dialog states
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [viewOpen, setViewOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [cancelOpen, setCancelOpen] = React.useState(false);
+
+  // Selection
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [selectedEnrollment, setSelectedEnrollment] =
+    React.useState<Enrollment | null>(null);
+
+  // Form states
+  const [formLoading, setFormLoading] = React.useState(false);
+  const [createForm, setCreateForm] = React.useState({
+    studentId: "",
+    courseId: "",
+    status: "active" as "active" | "pending",
+  });
+  const [editForm, setEditForm] = React.useState({
+    status: "",
+    notes: "",
+  });
+  const [cancelReason, setCancelReason] = React.useState("");
+
+  // Dropdown data
+  const [courses, setCourses] = React.useState<any[]>([]);
+  const [students, setStudents] = React.useState<any[]>([]);
+  const [instructors, setInstructors] = React.useState<any[]>([]);
+  const [coursesLoading, setCoursesLoading] = React.useState(false);
+  const [studentsLoading, setStudentsLoading] = React.useState(false);
+
+  // Load initial data
+  React.useEffect(() => {
+    loadData();
+  }, [
+    page,
+    search,
+    courseFilter,
+    statusFilter,
+    instructorFilter,
+    sortBy,
+    sortOrder,
+  ]);
+
+  React.useEffect(() => {
+    fetchStats();
+    fetchDistribution();
+    loadDropdownData();
+  }, []);
+
+  const loadData = async () => {
+    const params: any = { page, limit, sortBy, sortOrder };
+    if (search) params.search = search;
+    if (courseFilter !== "all") params.courseId = courseFilter;
+    if (statusFilter !== "all") params.status = statusFilter;
+    if (instructorFilter !== "all") params.instructorId = instructorFilter;
+
+    await fetchEnrollments(params);
+  };
+
+  const loadDropdownData = async () => {
+    try {
+      setCoursesLoading(true);
+      setStudentsLoading(true);
+
+      const [coursesData, studentsData, instructorsData] = await Promise.all([
+        coursesService.getAllCourses({ limit: 100 }),
+        usersService.getAllUsers({ role: "student", limit: 100 }),
+        usersService.getAllUsers({ role: "instructor", limit: 100 }),
+      ]);
+
+      setCourses((coursesData as any).courses || []);
+      setStudents((studentsData as any).users || []);
+      setInstructors((instructorsData as any).users || []);
+    } catch (error) {
+      push({ type: "error", message: "Failed to load dropdown data" });
+    } finally {
+      setCoursesLoading(false);
+      setStudentsLoading(false);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormLoading(true);
+    try {
+      await createEnrollment(createForm);
+      setCreateOpen(false);
+      setCreateForm({ studentId: "", courseId: "", status: "active" });
+      loadData();
+    } catch (error) {
+      // Error handled by hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleView = async (enrollment: Enrollment) => {
+    setFormLoading(true);
+    try {
+      const detailed = await getEnrollmentById(enrollment._id);
+      setSelectedEnrollment(detailed);
+      setViewOpen(true);
+    } catch (error) {
+      // Error handled by hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleEdit = (enrollment: Enrollment) => {
+    setSelectedEnrollment(enrollment);
+    setEditForm({
+      status: enrollment.status,
+      notes: enrollment.notes?.join("\n") || "",
+    });
+    setEditOpen(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEnrollment) return;
+
+    setFormLoading(true);
+    try {
+      await updateEnrollment(selectedEnrollment._id, {
+        status: editForm.status as any,
+        notes: editForm.notes.split("\n").filter(Boolean),
+      });
+      setEditOpen(false);
+      setSelectedEnrollment(null);
+      loadData();
+    } catch (error) {
+      // Error handled by hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedEnrollment) return;
+
+    setFormLoading(true);
+    try {
+      await deleteEnrollment(selectedEnrollment._id);
+      setDeleteOpen(false);
+      setSelectedEnrollment(null);
+      loadData();
+    } catch (error) {
+      // Error handled by hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setFormLoading(true);
+    try {
+      await bulkDeleteEnrollments(selectedIds);
+      setBulkDeleteOpen(false);
+      setSelectedIds([]);
+      loadData();
+    } catch (error) {
+      // Error handled by hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleApprove = async (enrollment: Enrollment) => {
+    try {
+      await approveEnrollment(enrollment._id);
+      loadData();
+    } catch (error) {
+      // Error handled by hook
+    }
+  };
+
+  const handleCancelEnrollment = async () => {
+    if (!selectedEnrollment) return;
+
+    setFormLoading(true);
+    try {
+      await cancelEnrollment(selectedEnrollment._id, cancelReason);
+      setCancelOpen(false);
+      setSelectedEnrollment(null);
+      setCancelReason("");
+      loadData();
+    } catch (error) {
+      // Error handled by hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleExport = async (format: "csv" | "xlsx" | "pdf") => {
+    try {
+      await exportEnrollments({
+        format,
+        courseId: courseFilter !== "all" ? courseFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+      });
+    } catch (error) {
+      // Error handled by hook
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === enrollments.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(enrollments.map((e) => e._id));
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const badges: any = {
+      active: { label: "Active", className: "bg-green-600" },
+      pending: { label: "Pending", className: "bg-yellow-500" },
+      completed: { label: "Completed", className: "bg-blue-600" },
+      dropped: { label: "Dropped", className: "bg-red-600" },
+      cancelled: { label: "Cancelled", className: "bg-gray-600" },
+      expired: { label: "Expired", className: "bg-orange-600" },
+    };
+    const badge = badges[status] || badges.active;
+    return (
+      <span
+        className={`text-white text-xs font-medium px-2 py-1 rounded-full ${badge.className}`}
+      >
+        {badge.label}
+      </span>
+    );
+  };
+
+  const formatDate = (date: string | Date | undefined) => {
+    if (!date) return "N/A";
+    return new Date(date).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const getStudentName = (enrollment: Enrollment) => {
+    const student = enrollment.student;
+    return (
+      student?.name ||
+      `${student?.firstName || ""} ${student?.lastName || ""}`.trim() ||
+      student?.email ||
+      "Unknown"
+    );
+  };
+
+  const getCourseName = (enrollment: Enrollment) => {
+    return enrollment.course?.title || "Unknown Course";
+  };
+
+  const getInstructorName = (enrollment: Enrollment) => {
+    const instructor = enrollment.course?.instructor as any;
+    return (
+      instructor?.name ||
+      `${instructor?.firstName || ""} ${instructor?.lastName || ""}`.trim() ||
+      "Unknown"
+    );
+  };
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isCmdK = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
       if (isCmdK) {
-        const el = document.getElementById(
-          "enrollment-search"
-        ) as HTMLInputElement | null;
-        el?.focus();
+        e.preventDefault();
+        document.getElementById("enrollment-search")?.focus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-
-  const filtered = items
-    .filter((it) => {
-      const q = search.toLowerCase();
-      const matchesSearch =
-        q === "" ||
-        it.studentName.toLowerCase().includes(q) ||
-        it.studentEmail.toLowerCase().includes(q) ||
-        it.course.toLowerCase().includes(q);
-      const matchesCourse =
-        courseFilter === "All Courses" || it.course === courseFilter;
-      const matchesStatus =
-        statusFilter === "All Status" ||
-        it.status === statusFilter.toLowerCase();
-      const matchesInstructor =
-        instructorFilter === "All Instructors" ||
-        it.instructor === instructorFilter;
-      return (
-        matchesSearch && matchesCourse && matchesStatus && matchesInstructor
-      );
-    })
-    .sort((a, b) => {
-      if (sortBy.startsWith("Date (Newest)"))
-        return a.enrolledDate < b.enrolledDate ? 1 : -1;
-      if (sortBy.startsWith("Date (Oldest)"))
-        return a.enrolledDate > b.enrolledDate ? 1 : -1;
-      if (sortBy.startsWith("Progress"))
-        return b.progressPercent - a.progressPercent;
-      return 0;
-    });
 
   return (
     <main className="p-6">
@@ -162,74 +390,125 @@ export default function Enrollments() {
           </p>
         </div>
         <div className="flex space-x-3">
-          <Button variant="outline" className="border-gray-300">
-            <Download className="w-4 h-4 mr-2" /> Export Data
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="border-gray-300">
+                <Download className="w-4 h-4 mr-2" /> Export Data
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleExport("csv")}>
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                Export as Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={() => setCreateOpen(true)}>
             <UserPlus className="w-4 h-4 mr-2" /> New Enrollment
           </Button>
+          {selectedIds.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> Delete ({selectedIds.length})
+            </Button>
+          )}
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Total Enrollments
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">3,847</p>
-              <p className="text-accent text-sm mt-1">
-                <ArrowUp className="inline w-3 h-3" /> +10% from last month
-              </p>
+        {statsLoading ? (
+          <>
+            {[...Array(4)].map((_, i) => (
+              <div
+                key={i}
+                className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 animate-pulse"
+              >
+                <div className="h-20 bg-gray-200 rounded"></div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    Total Enrollments
+                  </p>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.totalEnrollments?.toLocaleString() || 0}
+                  </p>
+                  <p className="text-accent text-sm mt-1">
+                    <ArrowUp className="inline w-3 h-3" /> Growing steadily
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <Users className="text-primary w-6 h-6" />
+                </div>
+              </div>
             </div>
-            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-              <Users className="text-primary w-6 h-6" />
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    Active Enrollments
+                  </p>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.activeEnrollments?.toLocaleString() || 0}
+                  </p>
+                  <p className="text-accent text-sm mt-1">Currently learning</p>
+                </div>
+                <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="text-accent w-6 h-6" />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Active Enrollments
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">2,384</p>
-              <p className="text-accent text-sm mt-1">+7% active rate</p>
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    Completion Rate
+                  </p>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.completionRate || 0}%
+                  </p>
+                  <p className="text-accent text-sm mt-1">Improving steadily</p>
+                </div>
+                <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <BarChart2 className="text-yellow-600 w-6 h-6" />
+                </div>
+              </div>
             </div>
-            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center">
-              <CheckCircle className="text-accent w-6 h-6" />
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    Pending Approvals
+                  </p>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.pendingEnrollments || 0}
+                  </p>
+                  <p className="text-accent text-sm mt-1">
+                    {stats?.pendingEnrollments
+                      ? "Action required"
+                      : "All clear"}
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <Clock className="text-purple-600 w-6 h-6" />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Completion Rate
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">64%</p>
-              <p className="text-accent text-sm mt-1">Improving steadily</p>
-            </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-              <BarChart2 className="text-yellow-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Pending Approvals
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">48</p>
-              <p className="text-accent text-sm mt-1">Action required</p>
-            </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Clock className="text-purple-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
@@ -376,23 +655,23 @@ export default function Enrollments() {
 
       {/* Grid Cards - Always Visible */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        {filtered.map((it) => (
+        {enrollments.map((it: Enrollment) => (
           <div
-            key={it.id}
+            key={it._id}
             className="bg-card rounded-xl p-6 shadow-sm border border-gray-100"
           >
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center space-x-3">
                 <img
-                  src={it.avatarUrl}
-                  alt={it.studentName}
+                  src={it.student?.avatar || "/avatar-placeholder.png"}
+                  alt={getStudentName(it)}
                   className="w-12 h-12 rounded-full"
                 />
                 <div>
                   <h3 className="font-semibold text-secondary">
-                    {it.studentName}
+                    {getStudentName(it)}
                   </h3>
-                  <p className="text-sm text-gray-500">{it.course} Course</p>
+                  <p className="text-sm text-gray-500">{getCourseName(it)}</p>
                 </div>
               </div>
               <DropdownMenu>
@@ -414,53 +693,38 @@ export default function Enrollments() {
             </div>
             <div className="mb-4">
               <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
-                <span>{it.courseDetail}</span>
-                {it.status === "active" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-green-600">
-                    Active
-                  </span>
-                )}
-                {it.status === "pending" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-yellow-500">
-                    Pending
-                  </span>
-                )}
-                {it.status === "completed" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-blue-600">
-                    Completed
-                  </span>
-                )}
-                {it.status === "dropped" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-red-600">
-                    Dropped
-                  </span>
-                )}
+                <span>{it.course?.description || "No description"}</span>
+                {getStatusBadge(it.status)}
               </div>
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <span>Enrolled:</span>
-                <span className="font-medium">{it.enrolledDate}</span>
+                <span className="font-medium">{formatDate(it.createdAt)}</span>
               </div>
             </div>
             <div className="mb-4">
               <div className="flex justify-between text-sm text-gray-600 mb-2">
                 <span>Progress</span>
-                <span className="font-medium">{it.progressPercent}%</span>
+                <span className="font-medium">{it.progress}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div
                   className="bg-accent h-2 rounded-full"
-                  style={{ width: `${it.progressPercent}%` }}
+                  style={{ width: `${it.progress}%` }}
                 ></div>
               </div>
             </div>
             <div className="flex justify-between items-center text-sm text-gray-600">
               <div className="flex items-center space-x-2">
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-primary/10 text-primary">
-                  {it.instructor}
+                  {getInstructorName(it)}
                 </span>
-                <span>{it.modulesCount} modules</span>
+                <span>
+                  {Object.keys(it.completedLessons || {}).length} lessons
+                </span>
               </div>
-              <div className="text-primary font-medium">{it.studentEmail}</div>
+              <div className="text-primary font-medium">
+                {it.student?.email}
+              </div>
             </div>
           </div>
         ))}
@@ -504,78 +768,69 @@ export default function Enrollments() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filtered.map((it) => (
-                <tr key={it.id} className="hover:bg-gray-50">
+              {enrollments.map((it: Enrollment) => (
+                <tr key={it._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <img
                         className="h-8 w-8 rounded-full"
-                        src={it.avatarUrl}
+                        src={it.student?.avatar || "/avatar-placeholder.png"}
                         alt=""
                       />
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">
-                          {it.studentName}
+                          {getStudentName(it)}
                         </div>
                         <div className="text-sm text-gray-500">
-                          {it.studentEmail}
+                          {it.student?.email}
                         </div>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{it.course}</div>
+                    <div className="text-sm text-gray-900">
+                      {getCourseName(it)}
+                    </div>
                     <div className="text-sm text-gray-500">
-                      {it.courseDetail}
+                      {it.course?.description || "No description"}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.instructor}
+                    {getInstructorName(it)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
                         <div
                           className="bg-yellow-500 h-2 rounded-full"
-                          style={{ width: `${it.progressPercent}%` }}
+                          style={{ width: `${it.progress}%` }}
                         ></div>
                       </div>
                       <span className="text-sm text-gray-900">
-                        {it.progressPercent}%
+                        {it.progress}%
                       </span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.enrolledDate}
+                    {formatDate(it.createdAt)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {it.status === "active" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        Active
-                      </span>
-                    )}
-                    {it.status === "pending" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                        Pending
-                      </span>
-                    )}
-                    {it.status === "completed" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                        Completed
-                      </span>
-                    )}
-                    {it.status === "dropped" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                        Dropped
-                      </span>
-                    )}
+                    {getStatusBadge(it.status)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-primary hover:text-primary/80 mr-3">
-                      Approve
-                    </button>
-                    <button className="text-gray-600 hover:text-primary">
-                      Review
+                    {it.status === "pending" && (
+                      <button
+                        onClick={() => handleApprove(it)}
+                        className="text-primary hover:text-primary/80 mr-3"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleView(it)}
+                      className="text-gray-600 hover:text-primary"
+                    >
+                      View
                     </button>
                   </td>
                 </tr>
@@ -585,8 +840,8 @@ export default function Enrollments() {
         </div>
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
           <div className="text-sm text-gray-600">
-            Showing <span className="font-medium">1-{filtered.length}</span> of{" "}
-            <span className="font-medium">3,847</span> enrollments
+            Showing <span className="font-medium">1-{enrollments.length}</span>{" "}
+            of <span className="font-medium">{total}</span> enrollments
           </div>
           <div className="flex space-x-2">
             <Button variant="outline" size="sm" className="border-gray-300">

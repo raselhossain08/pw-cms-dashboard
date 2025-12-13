@@ -22,9 +22,10 @@ import {
   List,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { productsService } from "@/lib/services/products.service";
+import { useProducts } from "@/hooks/useProducts";
 import type { Product } from "@/lib/types/product";
 import ProductForm from "./ProductForm";
+import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import {
   Select,
   SelectContent,
@@ -68,9 +69,13 @@ type OrderItem = {
 // Orders will be loaded from API when implemented
 
 export default function Shop() {
-  const [products, setProducts] = React.useState<ProductItem[]>([]);
-  const [apiProducts, setApiProducts] = React.useState<Product[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const {
+    products: apiProducts,
+    loading,
+    deleteProduct,
+    refreshProducts,
+  } = useProducts();
+
   const [orders] = React.useState<OrderItem[]>([]);
   const [search, setSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] = React.useState("All Products");
@@ -78,6 +83,10 @@ export default function Shop() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
   const [viewOpen, setViewOpen] = React.useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [deletingProduct, setDeletingProduct] = React.useState<string | null>(
+    null
+  );
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(
     null
   );
@@ -86,42 +95,13 @@ export default function Shop() {
 
   // Handle product created callback
   const handleProductCreated = (newProduct: Product) => {
-    const mappedProduct: ProductItem = {
-      id: newProduct._id,
-      title: newProduct.title,
-      description: newProduct.description,
-      price: newProduct.price,
-      category: mapProductType(newProduct.type),
-      status: mapProductStatus(newProduct.status),
-      rating: newProduct.rating || 5,
-      sales: newProduct.soldCount || 0,
-      imageUrl:
-        newProduct.images && newProduct.images.length > 0
-          ? newProduct.images[0]
-          : undefined,
-    };
-    setProducts([mappedProduct, ...products]);
+    refreshProducts();
+    setCreateOpen(false);
   };
 
   // Handle product updated callback
   const handleProductUpdated = (updatedProduct: Product) => {
-    const mappedProduct: ProductItem = {
-      id: updatedProduct._id,
-      title: updatedProduct.title,
-      description: updatedProduct.description,
-      price: updatedProduct.price,
-      category: mapProductType(updatedProduct.type),
-      status: mapProductStatus(updatedProduct.status),
-      rating: updatedProduct.rating || 5,
-      sales: updatedProduct.soldCount || 0,
-      imageUrl:
-        updatedProduct.images && updatedProduct.images.length > 0
-          ? updatedProduct.images[0]
-          : undefined,
-    };
-    setProducts(
-      products.map((p) => (p.id === mappedProduct.id ? mappedProduct : p))
-    );
+    refreshProducts();
     setEditOpen(false);
     setSelectedProduct(null);
   };
@@ -152,67 +132,21 @@ export default function Shop() {
     }
   };
 
-  // Handle delete product
+  // Handle delete product with confirmation
   const handleDeleteProduct = async (productId: string) => {
-    if (!confirm("Are you sure you want to delete this product?")) return;
-
-    try {
-      await productsService.deleteProduct(productId);
-      setProducts(products.filter((p) => p.id !== productId));
-      setApiProducts(apiProducts.filter((p) => p._id !== productId));
-    } catch (error) {
-      console.error("Failed to delete product:", error);
-      alert("Failed to delete product. Please try again.");
-    }
+    setDeletingProduct(productId);
+    setDeleteDialogOpen(true);
   };
 
-  // Fetch products from API
-  React.useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        setLoading(true);
-        const response = await productsService.getAllProducts({ limit: 100 });
-        console.log("API Response:", response);
-        console.log("Products from API:", response.products);
+  const confirmDelete = async () => {
+    if (!deletingProduct) return;
 
-        setApiProducts(response.products || []);
-
-        // Map API products to existing ProductItem format to preserve UI
-        const mappedProducts: ProductItem[] = (response.products || []).map(
-          (p) => ({
-            id: p._id,
-            title: p.title,
-            description: p.description,
-            price: p.price,
-            category: mapProductType(p.type),
-            status: mapProductStatus(p.status),
-            rating: p.rating || 5,
-            sales: p.soldCount || 0,
-            imageUrl: p.images && p.images.length > 0 ? p.images[0] : undefined,
-          })
-        );
-
-        console.log("Mapped products:", mappedProducts);
-
-        if (mappedProducts.length > 0) {
-          setProducts(mappedProducts);
-        } else {
-          console.warn(
-            "No products received from API, keeping initial products"
-          );
-          // Keep initialProducts as fallback
-        }
-      } catch (error) {
-        console.error("Failed to fetch products:", error);
-        console.error("Error details:", error);
-        // Keep initialProducts as fallback
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProducts();
-  }, []);
+    const success = await deleteProduct(deletingProduct);
+    if (success) {
+      setDeleteDialogOpen(false);
+      setDeletingProduct(null);
+    }
+  };
 
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -246,37 +180,46 @@ export default function Shop() {
     return "active";
   };
 
-  const filtered = products
-    .filter((p) => {
-      const q = search.trim().toLowerCase();
-      const matchesSearch =
-        !q ||
-        p.title.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q);
-      const matchesCat =
-        categoryFilter === "All Products" ||
-        (categoryFilter === "Courses" && p.category === "Course") ||
-        (categoryFilter === "E-books" && p.category === "E-book") ||
-        (categoryFilter === "Merchandise" && p.category === "Merchandise");
-      return matchesSearch && matchesCat;
-    })
-    .sort((a, b) => {
-      if (sortBy.includes("Newest")) return a.id < b.id ? 1 : -1;
-      if (sortBy.includes("Oldest")) return a.id > b.id ? 1 : -1;
-      if (sortBy.includes("Price: High")) return b.price - a.price;
-      if (sortBy.includes("Price: Low")) return a.price - b.price;
-      if (sortBy.includes("Rating")) return b.rating - a.rating;
-      return 0;
-    });
+  // Convert API products to UI format
+  const products: ProductItem[] = React.useMemo(() => {
+    return apiProducts.map((p) => ({
+      id: p._id,
+      title: p.title,
+      description: p.description,
+      price: p.price,
+      category: mapProductType(p.type),
+      status: mapProductStatus(p.status),
+      rating: p.rating || 5,
+      sales: p.soldCount || 0,
+      imageUrl: p.images && p.images.length > 0 ? p.images[0] : undefined,
+    }));
+  }, [apiProducts]);
 
-  // Debug logging
-  React.useEffect(() => {
-    console.log("Total products:", products.length);
-    console.log("Filtered products:", filtered.length);
-    console.log("View mode:", viewMode);
-    console.log("Loading:", loading);
-  }, [products, filtered, viewMode, loading]);
+  const filtered = React.useMemo(() => {
+    return products
+      .filter((p) => {
+        const q = search.trim().toLowerCase();
+        const matchesSearch =
+          !q ||
+          p.title.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q);
+        const matchesCat =
+          categoryFilter === "All Products" ||
+          (categoryFilter === "Courses" && p.category === "Course") ||
+          (categoryFilter === "E-books" && p.category === "E-book") ||
+          (categoryFilter === "Merchandise" && p.category === "Merchandise");
+        return matchesSearch && matchesCat;
+      })
+      .sort((a, b) => {
+        if (sortBy.includes("Newest")) return a.id < b.id ? 1 : -1;
+        if (sortBy.includes("Oldest")) return a.id > b.id ? 1 : -1;
+        if (sortBy.includes("Price: High")) return b.price - a.price;
+        if (sortBy.includes("Price: Low")) return a.price - b.price;
+        if (sortBy.includes("Rating")) return (b.rating || 0) - (a.rating || 0);
+        return 0;
+      });
+  }, [products, search, categoryFilter, sortBy]);
 
   const statusBadge = (s: ProductStatus) =>
     s === "active"
@@ -797,6 +740,19 @@ export default function Shop() {
         onProductCreated={handleProductUpdated}
         initialData={selectedProduct || undefined}
         mode="edit"
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={confirmDelete}
+        title="Delete Product"
+        description="Are you sure you want to delete this product? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        loading={loading}
       />
 
       {/* Product View Dialog */}

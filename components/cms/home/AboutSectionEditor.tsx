@@ -170,6 +170,22 @@ export function AboutSectionEditor() {
         submitFormData.append(`stats[${index}][label]`, stat.label || "");
       });
 
+      // Add SEO fields
+      if (formData.seo?.title)
+        submitFormData.append("seo[title]", formData.seo.title);
+      if (formData.seo?.description)
+        submitFormData.append("seo[description]", formData.seo.description);
+      if (formData.seo?.keywords)
+        submitFormData.append("seo[keywords]", formData.seo.keywords);
+      if (formData.seo?.ogImage)
+        submitFormData.append("seo[ogImage]", formData.seo.ogImage);
+      if (formData.seo?.ogTitle)
+        submitFormData.append("seo[ogTitle]", formData.seo.ogTitle);
+      if (formData.seo?.ogDescription)
+        submitFormData.append("seo[ogDescription]", formData.seo.ogDescription);
+      if (formData.seo?.canonicalUrl)
+        submitFormData.append("seo[canonicalUrl]", formData.seo.canonicalUrl);
+
       submitFormData.append("isActive", String(formData.isActive ?? true));
 
       await updateAboutSectionWithMedia(submitFormData);
@@ -274,6 +290,14 @@ export function AboutSectionEditor() {
             <Award className="w-4 h-4" />
             <span className="hidden sm:inline">Highlights & Stats</span>
             <span className="sm:hidden">Highlights</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="seo"
+            className="flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-purple-600 data-[state=active]:text-white min-w-[80px] sm:min-w-0 px-2 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+          >
+            <Search className="w-4 h-4" />
+            <span className="hidden sm:inline">SEO</span>
+            <span className="sm:hidden">SEO</span>
           </TabsTrigger>
         </TabsList>
 
@@ -638,6 +662,137 @@ export function AboutSectionEditor() {
                 <Save className="w-4 h-4 mr-2" />
                 Save All Changes
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* SEO Tab */}
+        <TabsContent value="seo" className="space-y-6">
+          <Card className="border-0 shadow-lg pt-0">
+            <CardHeader className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white rounded-t-lg py-4">
+              <CardTitle className="flex items-center gap-2">
+                <Search className="w-5 h-5" />
+                SEO Settings
+              </CardTitle>
+              <CardDescription className="text-purple-100">
+                Optimize your About page for search engines
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-3 sm:p-6 space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="seoTitle">Page Title</Label>
+                <Input
+                  id="seoTitle"
+                  value={formData.seo?.title || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      seo: { ...formData.seo!, title: e.target.value },
+                    })
+                  }
+                  placeholder="About Us - Personal Wings"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="seoDescription">Meta Description</Label>
+                <Textarea
+                  id="seoDescription"
+                  rows={3}
+                  value={formData.seo?.description || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      seo: { ...formData.seo!, description: e.target.value },
+                    })
+                  }
+                  placeholder="Learn more about Personal Wings, our mission, and aviation training excellence."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="seoKeywords">Keywords</Label>
+                <Input
+                  id="seoKeywords"
+                  value={formData.seo?.keywords || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      seo: { ...formData.seo!, keywords: e.target.value },
+                    })
+                  }
+                  placeholder="about personal wings, aviation training, flight school"
+                />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ogTitle">Open Graph Title</Label>
+                  <Input
+                    id="ogTitle"
+                    value={formData.seo?.ogTitle || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        seo: { ...formData.seo!, ogTitle: e.target.value },
+                      })
+                    }
+                    placeholder="About Personal Wings"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ogImage">Open Graph Image URL</Label>
+                  <Input
+                    id="ogImage"
+                    value={formData.seo?.ogImage || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        seo: { ...formData.seo!, ogImage: e.target.value },
+                      })
+                    }
+                    placeholder="https://personalwings.com/images/about-og.jpg"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="ogDescription">Open Graph Description</Label>
+                <Textarea
+                  id="ogDescription"
+                  rows={3}
+                  value={formData.seo?.ogDescription || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      seo: { ...formData.seo!, ogDescription: e.target.value },
+                    })
+                  }
+                  placeholder="Discover our aviation training approach and values."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="canonicalUrl">Canonical URL</Label>
+                <Input
+                  id="canonicalUrl"
+                  value={formData.seo?.canonicalUrl || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      seo: { ...formData.seo!, canonicalUrl: e.target.value },
+                    })
+                  }
+                  placeholder="https://personalwings.com/about-us"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={handleSubmit}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save SEO Settings
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -101,14 +101,28 @@ export default function Modules() {
     staleTime: 30000,
   });
 
+  // Fetch courses for module creation
+  const { data: coursesData } = useQuery({
+    queryKey: ["courses"],
+    queryFn: () => coursesService.getAllCourses({ page: 1, limit: 100 }),
+    staleTime: 60000,
+  });
+
   const modules: ModuleItem[] = React.useMemo(() => {
     const responseData: any = data;
-    const courses = Array.isArray(responseData?.data)
+    // Handle different API response structures
+    // API returns: { data: { modules: [...] } }
+    const modulesList = Array.isArray(responseData?.data?.modules)
+      ? responseData.data.modules
+      : Array.isArray(responseData?.modules)
+      ? responseData.modules
+      : Array.isArray(responseData?.data)
       ? responseData.data
       : Array.isArray(data)
       ? data
       : [];
-    return courses.map((m: any) => {
+
+    return modulesList.map((m: any) => {
       const lessonsCount = Array.isArray(m.lessons)
         ? m.lessons.length
         : m.lessonsCount || 0;
@@ -120,11 +134,16 @@ export default function Modules() {
             )}m`
           : `${Math.round(durationHours * 60)}m`;
 
+      // Extract course information
+      const courseObj = typeof m.course === "object" ? m.course : null;
+      const courseId = courseObj?._id || m.course || "";
+      const courseTitle = courseObj?.title || "No Course";
+
       return {
         id: m._id || m.id,
         title: m.title,
-        course: m._id || m.id,
-        courseTitle: m.title,
+        course: courseId,
+        courseTitle: courseTitle,
         lessons: lessonsCount,
         duration: durationStr,
         durationHours,
@@ -146,9 +165,18 @@ export default function Modules() {
     });
   }, [data]);
 
+  const availableCourses = React.useMemo(() => {
+    const apiData = (coursesData as any)?.data || coursesData;
+    const list = apiData?.courses || [];
+    return list.map((c: any) => ({
+      id: c._id || c.id,
+      title: c.title,
+    }));
+  }, [coursesData]);
+
   React.useEffect(() => {
     if (error) {
-      push({ type: "error", message: "Failed to load courses" });
+      push({ type: "error", message: "Failed to load modules" });
     }
   }, [error, push]);
   const [search, setSearch] = React.useState("");
@@ -156,6 +184,7 @@ export default function Modules() {
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [sortBy, setSortBy] = React.useState<string>("newest");
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [editModule, setEditModule] = React.useState<ModuleItem | null>(null);
   const [previewModule, setPreviewModule] = React.useState<ModuleItem | null>(
     null
@@ -260,7 +289,7 @@ export default function Modules() {
         {/* Filters and Search */}
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 mb-6">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-3">
+            <div className="hidden md:flex flex-wrap gap-3">
               <Select value={levelFilter} onValueChange={setLevelFilter}>
                 <SelectTrigger className="bg-slate-50 border-slate-200 rounded-lg px-4 py-2 text-sm w-44 hover:bg-slate-100 transition-colors">
                   <SelectValue placeholder="All Levels" />
@@ -309,6 +338,14 @@ export default function Modules() {
                 />
                 <Database className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
               </div>
+              <Button
+                variant="outline"
+                className="md:hidden border-slate-200"
+                onClick={() => setFiltersOpen(true)}
+              >
+                <Filter className="w-4 h-4 mr-2" />
+                Filters
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -455,7 +492,7 @@ export default function Modules() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 mb-8">
             {filtered.map((m) => (
               <div
                 key={m.id}
@@ -489,6 +526,13 @@ export default function Modules() {
                           <span className="text-xs font-medium text-slate-500 capitalize">
                             {m.level} Level
                           </span>
+                        )}
+                        {m.courseTitle && (
+                          <div className="mt-1">
+                            <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                              {m.courseTitle}
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -646,11 +690,10 @@ export default function Modules() {
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-bold text-slate-900">
-                Create New Training Course
+                Create New Module
               </DialogTitle>
               <DialogDescription className="text-slate-600">
-                Create a professional aviation training course for Personal
-                Wings
+                Create a new training module within an existing course
               </DialogDescription>
             </DialogHeader>
             <form
@@ -658,48 +701,82 @@ export default function Modules() {
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget as HTMLFormElement);
                 const title = String(fd.get("title") || "");
+                const courseId = String(fd.get("course") || "");
                 const description = String(fd.get("description") || "");
-                const level = String(fd.get("level") || "beginner");
-                const type = String(fd.get("type") || "combined");
-                const durationHours = Number(fd.get("durationHours") || 0);
+                const duration = Number(fd.get("duration") || 0);
                 const status = String(fd.get("status") || "draft");
-                const price = Number(fd.get("price") || 0);
-                const maxStudents = Number(fd.get("maxStudents") || 10);
+                const order = Number(fd.get("order") || 1);
+
+                if (!courseId) {
+                  push({ type: "error", message: "Please select a course" });
+                  return;
+                }
 
                 try {
-                  await coursesService.createCourse({
+                  await modulesService.createModule({
                     title,
+                    courseId,
                     description,
-                    level: level as any,
-                    type: type as any,
-                    price,
-                    maxStudents,
-                    durationHours,
-                    isPublished: status === "published",
+                    duration,
+                    status: status as "published" | "draft",
+                    order,
                   });
                   push({
                     type: "success",
-                    message: "Training course created successfully",
+                    message: "Module created successfully",
                   });
                   setCreateOpen(false);
                   queryClient.invalidateQueries({ queryKey: ["modules"] });
-                } catch {
-                  push({ type: "error", message: "Failed to create course" });
+                } catch (err) {
+                  console.error(err);
+                  push({ type: "error", message: "Failed to create module" });
                 }
               }}
               className="space-y-5"
             >
               <div className="space-y-2">
                 <Label
+                  htmlFor="course"
+                  className="text-sm font-semibold text-slate-700"
+                >
+                  Course *
+                </Label>
+                <Select name="course" required>
+                  <SelectTrigger id="course">
+                    <SelectValue placeholder="Select a course" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCourses.length > 0 ? (
+                      availableCourses.map((course: any) => (
+                        <SelectItem key={course.id} value={course.id}>
+                          {course.title}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="" disabled>
+                        No courses available
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {availableCourses.length === 0 && (
+                  <p className="text-xs text-amber-600">
+                    Please create a course first before adding modules.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label
                   htmlFor="title"
                   className="text-sm font-semibold text-slate-700"
                 >
-                  Course Title *
+                  Module Title *
                 </Label>
                 <Input
                   id="title"
                   name="title"
-                  placeholder="e.g., Citation Jet Training Course"
+                  placeholder="e.g., Introduction to Citation Jet"
                   className="w-full"
                   required
                 />
@@ -710,129 +787,69 @@ export default function Modules() {
                   htmlFor="description"
                   className="text-sm font-semibold text-slate-700"
                 >
-                  Description *
+                  Description
                 </Label>
                 <Textarea
                   id="description"
                   name="description"
                   rows={4}
-                  placeholder="Describe the training course objectives and what pilots will learn..."
+                  placeholder="Describe what this module covers..."
                   className="w-full"
-                  required
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="level"
-                    className="text-sm font-semibold text-slate-700"
-                  >
-                    Level *
-                  </Label>
-                  <Select name="level" defaultValue="beginner">
-                    <SelectTrigger id="level">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="beginner">Beginner</SelectItem>
-                      <SelectItem value="intermediate">Intermediate</SelectItem>
-                      <SelectItem value="advanced">Advanced</SelectItem>
-                      <SelectItem value="expert">Expert</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="type"
-                    className="text-sm font-semibold text-slate-700"
-                  >
-                    Type *
-                  </Label>
-                  <Select name="type" defaultValue="combined">
-                    <SelectTrigger id="type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="theoretical">Theoretical</SelectItem>
-                      <SelectItem value="practical">Practical</SelectItem>
-                      <SelectItem value="simulator">Simulator</SelectItem>
-                      <SelectItem value="combined">Combined</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label
-                    htmlFor="durationHours"
+                    htmlFor="duration"
                     className="text-sm font-semibold text-slate-700"
                   >
-                    Duration (hours) *
+                    Duration (hours)
                   </Label>
                   <Input
-                    id="durationHours"
-                    name="durationHours"
+                    id="duration"
+                    name="duration"
                     type="number"
                     min="0"
                     step="0.5"
-                    placeholder="40"
-                    required
+                    placeholder="2"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label
-                    htmlFor="price"
+                    htmlFor="order"
                     className="text-sm font-semibold text-slate-700"
                   >
-                    Price ($)
+                    Order
                   </Label>
                   <Input
-                    id="price"
-                    name="price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="2999.00"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="maxStudents"
-                    className="text-sm font-semibold text-slate-700"
-                  >
-                    Max Students
-                  </Label>
-                  <Input
-                    id="maxStudents"
-                    name="maxStudents"
+                    id="order"
+                    name="order"
                     type="number"
                     min="1"
-                    defaultValue={10}
+                    placeholder="1"
+                    defaultValue={1}
                   />
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label
-                  htmlFor="status"
-                  className="text-sm font-semibold text-slate-700"
-                >
-                  Status
-                </Label>
-                <Select name="status" defaultValue="draft">
-                  <SelectTrigger id="status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="published">Published</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="status"
+                    className="text-sm font-semibold text-slate-700"
+                  >
+                    Status
+                  </Label>
+                  <Select name="status" defaultValue="draft">
+                    <SelectTrigger id="status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="published">Published</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
@@ -846,12 +863,79 @@ export default function Modules() {
                 <Button
                   type="submit"
                   className="bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={availableCourses.length === 0}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Create Course
+                  Create Module
                 </Button>
               </div>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold">Filters</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Select value={levelFilter} onValueChange={setLevelFilter}>
+                <SelectTrigger className="bg-slate-50 border-slate-200 rounded-lg px-4 py-2 text-sm">
+                  <SelectValue placeholder="All Levels" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Levels</SelectItem>
+                  <SelectItem value="beginner">Beginner</SelectItem>
+                  <SelectItem value="intermediate">Intermediate</SelectItem>
+                  <SelectItem value="advanced">Advanced</SelectItem>
+                  <SelectItem value="expert">Expert</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="bg-slate-50 border-slate-200 rounded-lg px-4 py-2 text-sm">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="published">Published</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="bg-slate-50 border-slate-200 rounded-lg px-4 py-2 text-sm">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest First</SelectItem>
+                  <SelectItem value="oldest">Oldest First</SelectItem>
+                  <SelectItem value="name">Name (A-Z)</SelectItem>
+                  <SelectItem value="lessons">Most Lessons</SelectItem>
+                  <SelectItem value="duration">Longest Duration</SelectItem>
+                  <SelectItem value="price">Highest Price</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 bg-primary text-primary-foreground"
+                  onClick={() => setFiltersOpen(false)}
+                >
+                  Apply
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setLevelFilter("all");
+                    setStatusFilter("all");
+                    setSortBy("newest");
+                    setFiltersOpen(false);
+                  }}
+                >
+                  Reset
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

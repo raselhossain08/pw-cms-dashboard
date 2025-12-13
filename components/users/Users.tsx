@@ -14,6 +14,11 @@ import {
   ShieldCheck,
   Check,
   X,
+  Loader2,
+  MoreHorizontal,
+  UserCheck,
+  UserX,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,13 +39,6 @@ import {
   PaginationNext,
 } from "@/components/ui/pagination";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -50,219 +48,222 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-
-type UserStatus = "active" | "inactive" | "pending";
-
-type UserItem = {
-  id: string;
-  name: string;
-  email: string;
-  role:
-    | "Administrator"
-    | "Instructor"
-    | "Student"
-    | "Content Manager"
-    | "Support Staff";
-  status: UserStatus;
-  courses: number;
-  lastActive: string;
-  avatarUrl?: string;
-};
-
-const initialUsers: UserItem[] = [
-  {
-    id: "u1",
-    name: "Alex Johnson",
-    email: "alex.johnson@personalwings.com",
-    role: "Administrator",
-    status: "active",
-    courses: 42,
-    lastActive: "2 hours ago",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg",
-  },
-  {
-    id: "u2",
-    name: "Sarah Williams",
-    email: "sarah.williams@personalwings.com",
-    role: "Instructor",
-    status: "active",
-    courses: 12,
-    lastActive: "Today",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg",
-  },
-  {
-    id: "u3",
-    name: "Michael Chen",
-    email: "michael.chen@personalwings.com",
-    role: "Student",
-    status: "pending",
-    courses: 7,
-    lastActive: "3 days ago",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-3.jpg",
-  },
-  {
-    id: "u4",
-    name: "Priya Patel",
-    email: "priya.patel@personalwings.com",
-    role: "Content Manager",
-    status: "inactive",
-    courses: 18,
-    lastActive: "1 week ago",
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-4.jpg",
-  },
-];
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useUsers } from "@/hooks/useUsers";
+import { UserFormDialog } from "./UserFormDialog";
+import { UserViewDialog } from "./UserViewDialog";
+import { User, CreateUserDto, UpdateUserDto } from "@/services/users.service";
+import { Badge } from "@/components/ui/badge";
 
 export default function Users() {
-  const [users, setUsers] = React.useState<UserItem[]>(initialUsers);
+  const {
+    users,
+    stats,
+    loading,
+    statsLoading,
+    total,
+    fetchUsers,
+    createUser,
+    updateUser,
+    deleteUser,
+    activateUser,
+    deactivateUser,
+    bulkDeleteUsers,
+    exportUsers,
+  } = useUsers();
+
   const [search, setSearch] = React.useState("");
-  const [roleFilter, setRoleFilter] = React.useState("All Roles");
-  const [statusFilter, setStatusFilter] = React.useState("All Status");
-  // const [page, setPage] = React.useState(1);
-  const [addUserOpen, setAddUserOpen] = React.useState(false);
-  const [addRoleOpen, setAddRoleOpen] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState("All Users");
+  const [roleFilter, setRoleFilter] = React.useState("all");
+  const [statusFilter, setStatusFilter] = React.useState("all");
+  const [page, setPage] = React.useState(1);
+  const [limit] = React.useState(10);
+  const [activeTab, setActiveTab] = React.useState("all");
+
+  const [formDialogOpen, setFormDialogOpen] = React.useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = React.useState(false);
+  const [selectedUser, setSelectedUser] = React.useState<User | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(
     null
   );
-  const [alertMsg, setAlertMsg] = React.useState<{
-    type: "success" | "error";
-    title: string;
-    desc?: string;
-  } | null>(null);
+  const [selectedUsers, setSelectedUsers] = React.useState<string[]>([]);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = React.useState(false);
+  const [addUserOpen, setAddUserOpen] = React.useState(false);
+  const [addRoleOpen, setAddRoleOpen] = React.useState(false);
 
-  const filtered = users.filter((u) => {
-    const matchesSearch =
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase());
-    const matchesRole = roleFilter === "All Roles" || u.role === roleFilter;
-    const matchesStatus =
-      statusFilter === "All Status" || u.status === statusFilter;
-    return matchesSearch && matchesRole && matchesStatus;
+  // Debounced search
+  const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  React.useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setPage(1);
+      loadUsers();
+    }, 500);
+  }, [search]);
+
+  React.useEffect(() => {
+    loadUsers();
+  }, [page, roleFilter, statusFilter, activeTab]);
+
+  const loadUsers = () => {
+    const params: any = {
+      page,
+      limit,
+    };
+
+    if (search) params.search = search;
+    if (roleFilter !== "all") params.role = roleFilter;
+    if (statusFilter !== "all") params.isActive = statusFilter === "active";
+
+    // Apply tab-specific filtering
+    if (activeTab === "students") params.role = "student";
+    else if (activeTab === "instructors") params.role = "instructor";
+    else if (activeTab === "admins") params.role = "admin";
+
+    fetchUsers(params);
+  };
+
+  const handleCreateUser = async (data: CreateUserDto) => {
+    await createUser(data);
+    loadUsers();
+  };
+
+  const handleUpdateUser = async (data: UpdateUserDto) => {
+    if (selectedUser) {
+      await updateUser(selectedUser._id, data);
+      loadUsers();
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (confirmDeleteId) {
+      await deleteUser(confirmDeleteId);
+      setConfirmDeleteId(null);
+      loadUsers();
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    await bulkDeleteUsers(selectedUsers);
+    setSelectedUsers([]);
+    setBulkDeleteConfirm(false);
+    loadUsers();
+  };
+
+  const handleToggleUserStatus = async (user: User) => {
+    if (user.isActive) {
+      await deactivateUser(user._id);
+    } else {
+      await activateUser(user._id);
+    }
+    loadUsers();
+  };
+
+  const handleExport = async () => {
+    await exportUsers();
+  };
+
+  const handleSelectAll = () => {
+    if (selectedUsers.length === filteredUsers.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(filteredUsers.map((u) => u._id));
+    }
+  };
+
+  const handleSelectUser = (userId: string) => {
+    setSelectedUsers((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const getRoleBadge = (role: string) => {
+    switch (role) {
+      case "super_admin":
+        return "bg-purple-600 text-white";
+      case "admin":
+        return "bg-red-500 text-white";
+      case "instructor":
+        return "bg-blue-500 text-white";
+      case "student":
+        return "bg-green-500 text-white";
+      case "affiliate":
+        return "bg-yellow-600 text-white";
+      default:
+        return "bg-gray-500 text-white";
+    }
+  };
+
+  const getStatusBadge = (status: string, isActive: boolean) => {
+    if (!isActive) return "bg-gray-500 text-white";
+    switch (status) {
+      case "active":
+        return "bg-green-500 text-white";
+      case "inactive":
+        return "bg-gray-500 text-white";
+      case "pending":
+        return "bg-yellow-500 text-white";
+      case "suspended":
+        return "bg-red-500 text-white";
+      default:
+        return "bg-gray-500 text-white";
+    }
+  };
+
+  const filteredUsers = users.filter((u) => {
+    if (activeTab === "students" && u.role !== "student") return false;
+    if (activeTab === "instructors" && u.role !== "instructor") return false;
+    if (activeTab === "admins" && !["admin", "super_admin"].includes(u.role))
+      return false;
+    return true;
   });
 
-  const statusBadge = (s: UserStatus) =>
-    s === "active"
-      ? "bg-accent text-white"
-      : s === "inactive"
-      ? "bg-gray-500 text-white"
-      : "bg-yellow-500 text-white";
+  const totalPages = Math.ceil(total / limit);
 
-  const roleBadge = (r: UserItem["role"]) =>
-    r === "Administrator"
-      ? "bg-red-500 text-white"
-      : r === "Instructor"
-      ? "bg-purple-500 text-white"
-      : r === "Student"
-      ? "bg-accent text-white"
-      : r === "Content Manager"
-      ? "bg-blue-500 text-white"
-      : "bg-yellow-600 text-white";
+  const renderPaginationItems = () => {
+    const items = [];
+    const maxVisible = 5;
+    let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
 
-  const totalUsers = users.length;
-  const activeCount = users.filter((u) => u.status === "active").length;
-  const pendingCount = users.filter((u) => u.status === "pending").length;
-  const adminManagerCount = users.filter((u) =>
-    ["Administrator", "Content Manager", "Support Staff"].includes(u.role)
-  ).length;
+    if (endPage - startPage + 1 < maxVisible) {
+      startPage = Math.max(1, endPage - maxVisible + 1);
+    }
 
-  React.useEffect(() => {
-    if (!alertMsg) return;
-    const t = setTimeout(() => setAlertMsg(null), 3000);
-    return () => clearTimeout(t);
-  }, [alertMsg]);
-
-  const filteredAll = filtered;
-  const filteredStudents = users
-    .filter((u) => u.role === "Student")
-    .filter((u) => {
-      const matchesSearch =
-        u.name.toLowerCase().includes(search.toLowerCase()) ||
-        u.email.toLowerCase().includes(search.toLowerCase());
-      const matchesRole = roleFilter === "All Roles" || u.role === roleFilter;
-      const matchesStatus =
-        statusFilter === "All Status" || u.status === statusFilter;
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  const filteredInstructors = users
-    .filter((u) => u.role === "Instructor")
-    .filter((u) => {
-      const matchesSearch =
-        u.name.toLowerCase().includes(search.toLowerCase()) ||
-        u.email.toLowerCase().includes(search.toLowerCase());
-      const matchesRole = roleFilter === "All Roles" || u.role === roleFilter;
-      const matchesStatus =
-        statusFilter === "All Status" || u.status === statusFilter;
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  const filteredAdminStaff = users
-    .filter((u) =>
-      ["Administrator", "Support Staff", "Content Manager"].includes(u.role)
-    )
-    .filter((u) => {
-      const matchesSearch =
-        u.name.toLowerCase().includes(search.toLowerCase()) ||
-        u.email.toLowerCase().includes(search.toLowerCase());
-      const matchesRole = roleFilter === "All Roles" || u.role === roleFilter;
-      const matchesStatus =
-        statusFilter === "All Status" || u.status === statusFilter;
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  const tableData =
-    activeTab === "All Users"
-      ? filteredAll
-      : activeTab === "Students"
-      ? filteredStudents
-      : activeTab === "Instructors"
-      ? filteredInstructors
-      : activeTab === "Admin Staff"
-      ? filteredAdminStaff
-      : [];
-
-  React.useEffect(() => {
-    if (!alertMsg) return;
-    const t = setTimeout(() => setAlertMsg(null), 3000);
-    return () => clearTimeout(t);
-  }, [alertMsg]);
+    for (let i = startPage; i <= endPage; i++) {
+      items.push(
+        <PaginationItem key={i}>
+          <PaginationLink
+            onClick={() => setPage(i)}
+            isActive={page === i}
+            className="cursor-pointer"
+          >
+            {i}
+          </PaginationLink>
+        </PaginationItem>
+      );
+    }
+    return items;
+  };
 
   return (
     <main className="p-6">
-      {alertMsg && (
-        <div className="mb-4">
-          <Alert
-            className={
-              alertMsg.type === "success"
-                ? "border-green-200"
-                : "border-red-200"
-            }
-          >
-            <AlertTitle>{alertMsg.title}</AlertTitle>
-            {alertMsg.desc && (
-              <AlertDescription>{alertMsg.desc}</AlertDescription>
-            )}
-          </Alert>
-        </div>
-      )}
-      {alertMsg && (
-        <div className="mb-4">
-          <Alert
-            className={
-              alertMsg.type === "success"
-                ? "border-green-200"
-                : "border-red-200"
-            }
-          >
-            <AlertTitle>{alertMsg.title}</AlertTitle>
-            {alertMsg.desc && (
-              <AlertDescription>{alertMsg.desc}</AlertDescription>
-            )}
-          </Alert>
-        </div>
-      )}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 gap-4">
         <div>
           <h2 className="text-3xl font-bold text-secondary mb-2">
@@ -273,97 +274,130 @@ export default function Users() {
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <Button variant="outline" className="border-gray-300">
-            <Download className="w-4 h-4 mr-2" /> Export Users
+          <Button
+            variant="outline"
+            className="border-gray-300"
+            onClick={handleExport}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            Export Users
           </Button>
-          <Button onClick={() => setAddUserOpen(true)}>
+          <Button
+            onClick={() => {
+              setSelectedUser(null);
+              setFormDialogOpen(true);
+            }}
+          >
             <Plus className="w-4 h-4 mr-2" /> Invite User
           </Button>
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Total Users</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {totalUsers}
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 text-primary animate-spin mt-1" />
+              ) : (
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.totalUsers || 0}
+                </p>
+              )}
+              <p className="text-accent text-sm mt-1">
+                +{stats?.recentUsers || 0} this week
               </p>
-              <p className="text-accent text-sm mt-1">+5 this week</p>
             </div>
             <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
               <UsersIcon className="text-primary w-6 h-6" />
             </div>
           </div>
         </div>
+
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Active Users</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {activeCount}
-              </p>
-              <p className="text-accent text-sm mt-1">+3 today</p>
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 text-green-600 animate-spin mt-1" />
+              ) : (
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.activeUsers || 0}
+                </p>
+              )}
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
               <CheckCircle className="text-green-600 w-6 h-6" />
             </div>
           </div>
         </div>
+
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Pending Approvals
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {pendingCount}
-              </p>
-              <p className="text-yellow-600 text-sm mt-1">Review needed</p>
+              <p className="text-gray-600 text-sm font-medium">Students</p>
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin mt-1" />
+              ) : (
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.students || 0}
+                </p>
+              )}
             </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-              <Clock className="text-yellow-600 w-6 h-6" />
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <UsersIcon className="text-blue-600 w-6 h-6" />
             </div>
           </div>
         </div>
+
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Admins & Managers
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {adminManagerCount}
-              </p>
-              <p className="text-accent text-sm mt-1">Stable</p>
+              <p className="text-gray-600 text-sm font-medium">Instructors</p>
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 text-purple-600 animate-spin mt-1" />
+              ) : (
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.instructors || 0}
+                </p>
+              )}
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <ShieldCheck className="text-red-600 w-6 h-6" />
+            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+              <ShieldCheck className="text-purple-600 w-6 h-6" />
             </div>
           </div>
         </div>
       </div>
 
+      {/* Tabs */}
       <div className="border-b border-gray-200 mb-6">
         <nav className="flex space-x-8">
           {[
-            "All Users",
-            "Students",
-            "Instructors",
-            "Admin Staff",
-            "Roles & Permissions",
-          ].map((t) => (
+            { key: "all", label: "All Users" },
+            { key: "students", label: "Students" },
+            { key: "instructors", label: "Instructors" },
+            { key: "admins", label: "Admins" },
+          ].map((tab) => (
             <button
-              key={t}
-              onClick={() => setActiveTab(t)}
-              className={`py-4 px-1 font-medium text-sm ${
-                activeTab === t
+              key={tab.key}
+              onClick={() => {
+                setActiveTab(tab.key);
+                setPage(1);
+              }}
+              className={`py-4 px-1 font-medium text-sm transition-colors ${
+                activeTab === tab.key
                   ? "border-b-2 border-primary text-primary"
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              {t}
+              {tab.label}
             </button>
           ))}
         </nav>
@@ -380,14 +414,12 @@ export default function Users() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="All Roles">All Roles</SelectItem>
-                    <SelectItem value="Administrator">Administrator</SelectItem>
-                    <SelectItem value="Instructor">Instructor</SelectItem>
-                    <SelectItem value="Student">Student</SelectItem>
-                    <SelectItem value="Content Manager">
-                      Content Manager
-                    </SelectItem>
-                    <SelectItem value="Support Staff">Support Staff</SelectItem>
+                    <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="super_admin">Super Admin</SelectItem>
+                    <SelectItem value="admin">Administrator</SelectItem>
+                    <SelectItem value="instructor">Instructor</SelectItem>
+                    <SelectItem value="student">Student</SelectItem>
+                    <SelectItem value="affiliate">Affiliate</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -398,10 +430,9 @@ export default function Users() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="All Status">All Status</SelectItem>
+                    <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -425,138 +456,186 @@ export default function Users() {
 
       {activeTab !== "Roles & Permissions" && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                  <Checkbox />
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                  User
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                  Role
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                  Status
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                  Courses
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                  Last Active
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableData.map((u, idx) => (
-                <tr
-                  key={u.id}
-                  className={`border-b border-gray-100 ${
-                    idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-                  }`}
-                >
-                  <td className="py-4 px-4">
-                    <Checkbox />
-                  </td>
-                  <td className="py-4 px-4 text-sm text-gray-600">
-                    <div className="flex items-center space-x-3">
-                      <Avatar>
-                        <AvatarImage src={u.avatarUrl} alt={u.name} />
-                        <AvatarFallback>{u.name.slice(0, 2)}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <div className="font-medium text-secondary">
-                          {u.name}
-                        </div>
-                        <div className="text-xs text-gray-500">{u.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full ${roleBadge(
-                        u.role
-                      )}`}
-                    >
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4">
-                    <span
-                      className={`text-white text-xs px-2 py-1 rounded-full ${statusBadge(
-                        u.status
-                      )}`}
-                    >
-                      {u.status === "active"
-                        ? "Active"
-                        : u.status === "inactive"
-                        ? "Inactive"
-                        : "Pending"}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 text-sm text-gray-600">
-                    {u.courses} courses
-                  </td>
-                  <td className="py-4 px-4 text-sm text-gray-600">
-                    {u.lastActive}
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="ghost"
-                        className="text-primary hover:text-primary/80"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="text-primary hover:text-primary/80"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => setConfirmDeleteId(u.id)}
-                      >
-                        <Trash className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </td>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <UsersIcon className="w-12 h-12 text-gray-400 mb-4" />
+              <p className="text-gray-600 font-medium">No users found</p>
+              <p className="text-gray-500 text-sm">
+                Try adjusting your filters or search term
+              </p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                    <Checkbox
+                      checked={
+                        selectedUsers.length === filteredUsers.length &&
+                        filteredUsers.length > 0
+                      }
+                      onCheckedChange={handleSelectAll}
+                    />
+                  </th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                    User
+                  </th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                    Role
+                  </th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                    Status
+                  </th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                    Courses
+                  </th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                    Last Active
+                  </th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredUsers.map((u, idx) => (
+                  <tr
+                    key={u._id}
+                    className={`border-b border-gray-100 ${
+                      idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+                    }`}
+                  >
+                    <td className="py-4 px-4">
+                      <Checkbox
+                        checked={selectedUsers.includes(u._id)}
+                        onCheckedChange={() => handleSelectUser(u._id)}
+                      />
+                    </td>
+                    <td className="py-4 px-4 text-sm text-gray-600">
+                      <div className="flex items-center space-x-3">
+                        <Avatar>
+                          <AvatarImage src={u.avatar} alt={u.name || u.email} />
+                          <AvatarFallback>
+                            {(u.name || u.email || "U")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium text-secondary">
+                            {u.name || u.email || "Unknown User"}
+                          </div>
+                          <div className="text-xs text-gray-500">{u.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <Badge className={getRoleBadge(u.role)}>{u.role}</Badge>
+                    </td>
+                    <td className="py-4 px-4">
+                      <Badge className={getStatusBadge(u.status, u.isActive)}>
+                        {u.isActive ? u.status || "Active" : "Inactive"}
+                      </Badge>
+                    </td>
+                    <td className="py-4 px-4 text-sm text-gray-600">
+                      {u.enrolledCourses || 0} courses
+                    </td>
+                    <td className="py-4 px-4 text-sm text-gray-600">
+                      {u.lastLogin
+                        ? new Date(u.lastLogin).toLocaleDateString()
+                        : "Never"}
+                    </td>
+                    <td className="py-4 px-4">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setViewDialogOpen(true);
+                            }}
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setFormDialogOpen(true);
+                            }}
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit User
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleToggleUserStatus(u)}
+                          >
+                            {u.isActive ? (
+                              <>
+                                <UserX className="w-4 h-4 mr-2" />
+                                Deactivate
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="w-4 h-4 mr-2" />
+                                Activate
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => setConfirmDeleteId(u._id)}
+                            className="text-red-600"
+                          >
+                            <Trash className="w-4 h-4 mr-2" />
+                            Delete User
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
       {activeTab !== "Roles & Permissions" && (
         <div className="flex justify-between items-center mt-6 pt-6 border-t border-gray-200">
           <p className="text-sm text-gray-600">
-            Showing {filtered.length} of {initialUsers.length} users
+            Showing {filteredUsers.length} of {total} users
           </p>
           <Pagination>
             <PaginationContent>
               <PaginationItem>
-                <PaginationPrevious href="#" />
+                <PaginationPrevious
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  className={
+                    page === 1
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
               </PaginationItem>
+              {renderPaginationItems()}
               <PaginationItem>
-                <PaginationLink href="#" isActive>
-                  1
-                </PaginationLink>
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationLink href="#">2</PaginationLink>
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationLink href="#">3</PaginationLink>
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationNext href="#" />
+                <PaginationNext
+                  onClick={() => setPage(Math.min(totalPages, page + 1))}
+                  className={
+                    page === totalPages
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
               </PaginationItem>
             </PaginationContent>
           </Pagination>
@@ -574,81 +653,80 @@ export default function Users() {
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {["Administrator", "Instructor", "Content Manager", "Student"].map(
-              (role) => {
-                const count = users.filter((u) => u.role === role).length;
-                const desc =
-                  role === "Administrator"
-                    ? "Full system access"
-                    : role === "Instructor"
-                    ? "Course management"
-                    : role === "Content Manager"
-                    ? "Content editing"
-                    : "Learning access";
-                return (
-                  <div
-                    key={role}
-                    className="border border-gray-200 rounded-lg p-4"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h4 className="font-semibold text-secondary">{role}</h4>
-                        <p className="text-sm text-gray-600">{desc}</p>
-                      </div>
-                      <span
-                        className={`text-white text-xs px-2 py-1 rounded-full ${roleBadge(
-                          role as UserItem["role"]
-                        )}`}
-                      >
-                        {count} users
+            {[
+              {
+                key: "admin",
+                label: "Administrator",
+                desc: "Full system access",
+              },
+              {
+                key: "instructor",
+                label: "Instructor",
+                desc: "Course management",
+              },
+              { key: "student", label: "Student", desc: "Learning access" },
+              {
+                key: "affiliate",
+                label: "Affiliate",
+                desc: "Marketing access",
+              },
+            ].map((role) => {
+              const count = users.filter((u) => u.role === role.key).length;
+              return (
+                <div
+                  key={role.key}
+                  className="border border-gray-200 rounded-lg p-4"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h4 className="font-semibold text-secondary">
+                        {role.label}
+                      </h4>
+                      <p className="text-sm text-gray-600">{role.desc}</p>
+                    </div>
+                    <Badge className={getRoleBadge(role.key)}>
+                      {count} users
+                    </Badge>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Users</span>
+                      <span className="text-accent">
+                        {role.key === "admin" || role.key === "super_admin"
+                          ? "Full Access"
+                          : "View Only"}
                       </span>
                     </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span>Users</span>
-                        <span className="text-accent">
-                          {role === "Administrator"
-                            ? "Full Access"
-                            : role === "Instructor"
-                            ? "View Only"
-                            : role === "Content Manager"
-                            ? "No Access"
-                            : "View Only"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Courses</span>
-                        <span className="text-accent">
-                          {role === "Administrator"
-                            ? "Full Access"
-                            : role === "Instructor"
-                            ? "Manage Own"
-                            : role === "Content Manager"
-                            ? "Edit Content"
-                            : "Enroll"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Settings</span>
-                        <span className="text-gray-500">
-                          {role === "Administrator"
-                            ? "Full Access"
-                            : "No Access"}
-                        </span>
-                      </div>
+                    <div className="flex justify-between">
+                      <span>Courses</span>
+                      <span className="text-accent">
+                        {role.key === "admin" || role.key === "super_admin"
+                          ? "Full Access"
+                          : role.key === "instructor"
+                          ? "Manage Own"
+                          : "Enroll"}
+                      </span>
                     </div>
-                    <div className="flex space-x-2 mt-4">
-                      <Button variant="ghost" className="text-primary">
-                        Edit
-                      </Button>
-                      <Button variant="ghost" className="text-red-500">
-                        Delete
-                      </Button>
+                    <div className="flex justify-between">
+                      <span>Settings</span>
+                      <span className="text-gray-500">
+                        {role.key === "admin" || role.key === "super_admin"
+                          ? "Full Access"
+                          : "No Access"}
+                      </span>
                     </div>
                   </div>
-                );
-              }
-            )}
+                  <div className="flex space-x-2 mt-4">
+                    <Button variant="ghost" className="text-primary">
+                      Edit
+                    </Button>
+                    <Button variant="ghost" className="text-red-500">
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="overflow-x-auto">
@@ -715,180 +793,27 @@ export default function Users() {
         </div>
       )}
 
-      <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Invite User</DialogTitle>
-            <DialogDescription>Enter user details</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Name
-              </label>
-              <input
-                type="text"
-                id="new-user-name"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Full name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                id="new-user-email"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="email@example.com"
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Role
-                </label>
-                <Select defaultValue="Student" onValueChange={() => {}}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Administrator">Administrator</SelectItem>
-                    <SelectItem value="Instructor">Instructor</SelectItem>
-                    <SelectItem value="Student">Student</SelectItem>
-                    <SelectItem value="Content Manager">
-                      Content Manager
-                    </SelectItem>
-                    <SelectItem value="Support Staff">Support Staff</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <Select defaultValue="active" onValueChange={() => {}}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                className="border-gray-300"
-                onClick={() => setAddUserOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  const nameInput = document.getElementById(
-                    "new-user-name"
-                  ) as HTMLInputElement | null;
-                  const emailInput = document.getElementById(
-                    "new-user-email"
-                  ) as HTMLInputElement | null;
-                  const name = nameInput?.value?.trim() || "New User";
-                  const email =
-                    emailInput?.value?.trim() || "new.user@example.com";
-                  const newItem: UserItem = {
-                    id: `u${Date.now()}`,
-                    name,
-                    email,
-                    role: "Student",
-                    status: "pending",
-                    courses: 0,
-                    lastActive: "Just now",
-                    avatarUrl: undefined,
-                  };
-                  setUsers((prev) => [newItem, ...prev]);
-                  setAddUserOpen(false);
-                  setAlertMsg({
-                    type: "success",
-                    title: "User invited",
-                    desc: `${name} has been added to the list.`,
-                  });
-                }}
-              >
-                Add User
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* User Form Dialog */}
+      <UserFormDialog
+        open={formDialogOpen}
+        onOpenChange={setFormDialogOpen}
+        user={selectedUser}
+        onSubmit={(data) => {
+          if (selectedUser) {
+            return handleUpdateUser(data as UpdateUserDto);
+          } else {
+            return handleCreateUser(data as CreateUserDto);
+          }
+        }}
+      />
 
-      <Dialog open={addRoleOpen} onOpenChange={setAddRoleOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add Role</DialogTitle>
-            <DialogDescription>Define role and permissions</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Role Name
-              </label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Enter role name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description
-              </label>
-              <textarea
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                rows={3}
-                placeholder="Role description"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                "User Management",
-                "Course Management",
-                "Content Editing",
-                "Analytics",
-                "Settings",
-              ].map((g) => (
-                <label
-                  key={g}
-                  className="flex items-center space-x-2 border border-gray-200 rounded-lg p-3"
-                >
-                  <Checkbox />
-                  <span className="text-sm text-gray-700">{g}</span>
-                </label>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                className="border-gray-300"
-                onClick={() => setAddRoleOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  setAddRoleOpen(false);
-                  setAlertMsg({ type: "success", title: "Role saved" });
-                }}
-              >
-                Save Role
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* User View Dialog */}
+      <UserViewDialog
+        open={viewDialogOpen}
+        onOpenChange={setViewDialogOpen}
+        user={selectedUser}
+      />
+      {/* Delete Confirmation Dialog */}
       <AlertDialog
         open={!!confirmDeleteId}
         onOpenChange={(o) => !o && setConfirmDeleteId(null)}
@@ -897,25 +822,39 @@ export default function Users() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete user?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone.
+              This action cannot be undone. The user will be permanently
+              deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmDeleteId(null)}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (confirmDeleteId) {
-                  setUsers((prev) =>
-                    prev.filter((x) => x.id !== confirmDeleteId)
-                  );
-                  setAlertMsg({ type: "success", title: "User deleted" });
-                }
-                setConfirmDeleteId(null);
-              }}
-            >
+            <AlertDialogAction onClick={handleDeleteUser}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteConfirm} onOpenChange={setBulkDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedUsers.length} users?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. All selected users will be
+              permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setBulkDeleteConfirm(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete}>
+              Delete All
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

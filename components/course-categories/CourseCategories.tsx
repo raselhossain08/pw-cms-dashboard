@@ -4,6 +4,8 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
 import { courseCategoriesService } from "@/services/course-categories.service";
+import { uploadService } from "@/services/upload.service";
+import Image from "next/image";
 import {
   FolderTree,
   Plus,
@@ -15,6 +17,9 @@ import {
   Edit3,
   Search,
   Filter,
+  ImageIcon,
+  X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,16 +48,25 @@ interface CategoryItem {
   slug: string;
   count?: number;
   isActive?: boolean;
+  image?: string;
 }
 
 export default function CourseCategories() {
   const { push } = useToast();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editCategory, setEditCategory] = React.useState<CategoryItem | null>(
+    null
+  );
   const [deleteCategory, setDeleteCategory] = React.useState<string | null>(
     null
   );
   const [search, setSearch] = React.useState("");
+  const [imageFile, setImageFile] = React.useState<File | null>(null);
+  const [imagePreview, setImagePreview] = React.useState<string>("");
+  const [uploadProgress, setUploadProgress] = React.useState<number>(0);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["course-categories"],
@@ -65,9 +79,12 @@ export default function CourseCategories() {
     const categoryList = data?.data?.categories ?? [];
 
     return categoryList.map((cat: any) => ({
+      _id: cat._id,
       name: cat.name,
       slug: cat.slug,
       count: cat.courseCount || 0,
+      image: cat.image,
+      isActive: cat.isActive,
     }));
   }, [data]);
 
@@ -96,13 +113,144 @@ export default function CourseCategories() {
     }
 
     try {
-      await courseCategoriesService.createCategory({ name });
+      let imageUrl = "";
+
+      // Upload image if selected
+      if (imageFile) {
+        setIsUploading(true);
+        try {
+          const uploadResult = await uploadService.uploadFile(imageFile, {
+            type: "image",
+            description: "Category image",
+            tags: ["category", "image"],
+            onProgress: (progress) => {
+              setUploadProgress(progress.percentage);
+            },
+          });
+          imageUrl = uploadResult.url;
+        } catch (uploadError) {
+          console.error("Image upload failed:", uploadError);
+          push({
+            type: "error",
+            message: "Failed to upload image. Creating category without image.",
+          });
+        } finally {
+          setIsUploading(false);
+        }
+      }
+
+      const payload: any = { name };
+      if (imageUrl) {
+        payload.image = imageUrl;
+      }
+
+      await courseCategoriesService.createCategory(payload);
       push({ type: "success", message: "Category created successfully" });
       setCreateOpen(false);
+      setImageFile(null);
+      setImagePreview("");
+      setUploadProgress(0);
       queryClient.invalidateQueries({ queryKey: ["course-categories"] });
     } catch {
       push({ type: "error", message: "Failed to create category" });
+      setIsUploading(false);
     }
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      push({ type: "error", message: "Please select an image file" });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      push({ type: "error", message: "Image size must be less than 5MB" });
+      return;
+    }
+
+    setImageFile(file);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearImage = () => {
+    setImageFile(null);
+    setImagePreview("");
+    setUploadProgress(0);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editCategory) return;
+
+    const formData = new FormData(e.currentTarget);
+    const name = String(formData.get("name") || "").trim();
+
+    if (!name) {
+      push({ type: "error", message: "Category name is required" });
+      return;
+    }
+
+    try {
+      let imageUrl = editCategory.image || "";
+
+      // Upload new image if selected
+      if (imageFile) {
+        setIsUploading(true);
+        try {
+          const uploadResult = await uploadService.uploadFile(imageFile, {
+            type: "image",
+            description: "Category image",
+            tags: ["category", "image"],
+            onProgress: (progress) => {
+              setUploadProgress(progress.percentage);
+            },
+          });
+          imageUrl = uploadResult.url;
+        } catch (uploadError) {
+          console.error("Image upload failed:", uploadError);
+          push({
+            type: "error",
+            message:
+              "Failed to upload image. Updating category without new image.",
+          });
+        } finally {
+          setIsUploading(false);
+        }
+      }
+
+      const payload: any = { name };
+      if (imageUrl) {
+        payload.image = imageUrl;
+      }
+
+      await courseCategoriesService.updateCategory(editCategory.slug, payload);
+      push({ type: "success", message: "Category updated successfully" });
+      setEditCategory(null);
+      setImageFile(null);
+      setImagePreview("");
+      setUploadProgress(0);
+      queryClient.invalidateQueries({ queryKey: ["course-categories"] });
+    } catch {
+      push({ type: "error", message: "Failed to update category" });
+      setIsUploading(false);
+    }
+  };
+
+  const openEditDialog = (category: CategoryItem) => {
+    setEditCategory(category);
+    setImagePreview(category.image || "");
+    setImageFile(null);
   };
 
   const handleDelete = async () => {
@@ -275,8 +423,18 @@ export default function CourseCategories() {
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                      <Tag className="text-primary w-6 h-6" />
+                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors overflow-hidden">
+                      {category.image ? (
+                        <Image
+                          src={category.image}
+                          alt={category.name}
+                          width={48}
+                          height={48}
+                          className="object-cover w-full h-full"
+                        />
+                      ) : (
+                        <Tag className="text-primary w-6 h-6" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 text-lg truncate">
@@ -287,14 +445,24 @@ export default function CourseCategories() {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-slate-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
-                    onClick={() => setDeleteCategory(category.slug)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-slate-400 hover:text-primary hover:bg-primary/10 flex-shrink-0"
+                      onClick={() => openEditDialog(category)}
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-slate-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
+                      onClick={() => setDeleteCategory(category.slug)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="pt-4 border-t border-slate-100">
@@ -317,7 +485,13 @@ export default function CourseCategories() {
         )}
 
         {/* Create Dialog */}
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog
+          open={createOpen}
+          onOpenChange={(open) => {
+            setCreateOpen(open);
+            if (!open) clearImage();
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="text-2xl font-bold text-slate-900">
@@ -349,20 +523,239 @@ export default function CourseCategories() {
                 </p>
               </div>
 
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">
+                  Category Image (Optional)
+                </Label>
+                <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 hover:border-primary/50 transition-colors">
+                  {imagePreview ? (
+                    <div className="relative">
+                      <div className="relative w-full h-48 rounded-lg overflow-hidden">
+                        <Image
+                          src={imagePreview}
+                          alt="Category preview"
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={clearImage}
+                        className="absolute top-2 right-2 bg-white/90 hover:bg-white shadow-md"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                      {isUploading && (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-sm text-slate-600 mb-1">
+                            <span>Uploading...</span>
+                            <span>{uploadProgress}%</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2">
+                            <div
+                              className="bg-primary h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className="flex flex-col items-center justify-center py-8 cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-3">
+                        <ImageIcon className="w-8 h-8 text-slate-400" />
+                      </div>
+                      <p className="text-sm text-slate-600 mb-1">
+                        Click to upload or drag and drop
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        PNG, JPG or WEBP (MAX. 5MB)
+                      </p>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setCreateOpen(false)}
+                  onClick={() => {
+                    setCreateOpen(false);
+                    clearImage();
+                  }}
+                  disabled={isUploading}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                  disabled={isUploading}
                 >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Category
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Category
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Dialog */}
+        <Dialog
+          open={!!editCategory}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditCategory(null);
+              clearImage();
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold text-slate-900">
+                Edit Category
+              </DialogTitle>
+              <DialogDescription className="text-slate-600">
+                Update the category details
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleEdit} className="space-y-5">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="edit-name"
+                  className="text-sm font-semibold text-slate-700"
+                >
+                  Category Name *
+                </Label>
+                <Input
+                  id="edit-name"
+                  name="name"
+                  defaultValue={editCategory?.name}
+                  placeholder="e.g., Jet Transition Training"
+                  className="w-full"
+                  required
+                  autoFocus
+                />
+                <p className="text-xs text-slate-500">
+                  Update the category name
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">
+                  Category Image (Optional)
+                </Label>
+                <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 hover:border-primary/50 transition-colors">
+                  {imagePreview ? (
+                    <div className="relative">
+                      <div className="relative w-full h-48 rounded-lg overflow-hidden">
+                        <Image
+                          src={imagePreview}
+                          alt="Category preview"
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={clearImage}
+                        className="absolute top-2 right-2 bg-white/90 hover:bg-white shadow-md"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                      {isUploading && (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-sm text-slate-600 mb-1">
+                            <span>Uploading...</span>
+                            <span>{uploadProgress}%</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2">
+                            <div
+                              className="bg-primary h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className="flex flex-col items-center justify-center py-8 cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-3">
+                        <ImageIcon className="w-8 h-8 text-slate-400" />
+                      </div>
+                      <p className="text-sm text-slate-600 mb-1">
+                        Click to upload or drag and drop
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        PNG, JPG or WEBP (MAX. 5MB)
+                      </p>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditCategory(null);
+                    clearImage();
+                  }}
+                  disabled={isUploading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Update Category
+                    </>
+                  )}
                 </Button>
               </div>
             </form>

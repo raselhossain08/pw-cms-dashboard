@@ -22,6 +22,11 @@ import {
   Star,
   ChevronLeft,
   ChevronRight,
+  Loader2,
+  Trash2,
+  UserCheck,
+  UserX,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,91 +49,72 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useStudents } from "@/hooks/useStudents";
 
 type StudentItem = {
-  id: string;
+  _id: string;
   name: string;
   email: string;
-  course: string;
+  course?: string;
   courseDetail?: string;
-  status: "active" | "inactive" | "probation" | "suspended";
-  progressPercent: number;
-  scorePercent: number;
-  enrolledText: string;
-  joinedDate: string;
-  rating: number;
-  location: string;
-  courseCount: number;
-  avatarUrl: string;
+  status: "active" | "inactive" | "pending" | "suspended";
+  progressPercent?: number;
+  scorePercent?: number;
+  enrolledText?: string;
+  joinedDate?: string;
+  rating?: number;
+  location?: string;
+  courseCount?: number;
+  avatarUrl?: string;
 };
 
-const initialStudents: StudentItem[] = [
-  {
-    id: "s1",
-    name: "Sarah Johnson",
-    email: "sarah.j@example.com",
-    course: "Web Development",
-    courseDetail: "Complete Bootcamp",
-    status: "active",
-    progressPercent: 85,
-    scorePercent: 92,
-    enrolledText: "Enrolled: Mar 15, 2023",
-    joinedDate: "Mar 15, 2023",
-    rating: 4.8,
-    location: "New York, US",
-    courseCount: 3,
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg",
-  },
-  {
-    id: "s2",
-    name: "Michael Chen",
-    email: "michael.c@example.com",
-    course: "Data Science",
-    courseDetail: "ML Specialization",
-    status: "active",
-    progressPercent: 72,
-    scorePercent: 88,
-    enrolledText: "Enrolled: Feb 28, 2023",
-    joinedDate: "Feb 28, 2023",
-    rating: 4.6,
-    location: "Toronto, CA",
-    courseCount: 2,
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-3.jpg",
-  },
-  {
-    id: "s3",
-    name: "Emma Wilson",
-    email: "emma.w@example.com",
-    course: "UI/UX Design",
-    courseDetail: "Advanced Course",
-    status: "probation",
-    progressPercent: 45,
-    scorePercent: 76,
-    enrolledText: "Enrolled: Apr 5, 2023",
-    joinedDate: "Apr 5, 2023",
-    rating: 3.9,
-    location: "London, UK",
-    courseCount: 1,
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-4.jpg",
-  },
-];
-
 export default function Students() {
-  const [items] = React.useState<StudentItem[]>(initialStudents);
+  const {
+    students,
+    stats,
+    loading,
+    statsLoading,
+    total,
+    fetchStudents,
+    createStudent,
+    updateStudent,
+    deleteStudent,
+    updateStudentStatus,
+    exportStudents,
+  } = useStudents();
+
   const [search, setSearch] = React.useState("");
   const [courseFilter, setCourseFilter] = React.useState("All Courses");
   const [statusFilter, setStatusFilter] = React.useState("All Status");
   const [countryFilter, setCountryFilter] = React.useState("All Countries");
   const [sortBy, setSortBy] = React.useState("Newest");
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [viewOpen, setViewOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [selectedStudent, setSelectedStudent] =
+    React.useState<StudentItem | null>(null);
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [pageSize] = React.useState(10);
+
+  // Form state
+  const [formData, setFormData] = React.useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    country: "",
+    course: "",
+    status: "active",
+    enrollmentDate: "",
+    notes: "",
+  });
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isCmdK = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
       if (isCmdK) {
+        e.preventDefault();
         const el = document.getElementById(
           "student-search"
         ) as HTMLInputElement | null;
@@ -139,24 +125,143 @@ export default function Students() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const filtered = items
+  // Fetch students when filters change
+  React.useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchStudents({
+        page: currentPage,
+        limit: pageSize,
+        search: search || undefined,
+        status:
+          statusFilter !== "All Status"
+            ? statusFilter.toLowerCase()
+            : undefined,
+      });
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [search, statusFilter, currentPage]);
+
+  const filtered = students
     .filter((it) => {
-      const matchesSearch =
-        search === "" ||
-        it.name.toLowerCase().includes(search.toLowerCase()) ||
-        it.email.toLowerCase().includes(search.toLowerCase());
       const matchesCourse =
         courseFilter === "All Courses" || it.course === courseFilter;
-      const matchesStatus =
-        statusFilter === "All Status" ||
-        it.status === statusFilter.toLowerCase();
-      return matchesSearch && matchesCourse && matchesStatus;
+      return matchesCourse;
     })
     .sort((a, b) => {
-      if (sortBy === "Progress") return b.progressPercent - a.progressPercent;
-      if (sortBy === "Score") return b.scorePercent - a.scorePercent;
+      if (sortBy === "Progress")
+        return (b.progressPercent || 0) - (a.progressPercent || 0);
+      if (sortBy === "Score")
+        return (b.scorePercent || 0) - (a.scorePercent || 0);
       return 0;
     });
+
+  const totalPages = Math.ceil(total / pageSize);
+
+  const handleCreateStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await createStudent({
+        name: `${formData.firstName} ${formData.lastName}`,
+        email: formData.email,
+        password: Math.random().toString(36).slice(-8), // Generate temporary password
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phone: formData.phone,
+        status: formData.status as any,
+      });
+      setCreateOpen(false);
+      setFormData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        country: "",
+        course: "",
+        status: "active",
+        enrollmentDate: "",
+        notes: "",
+      });
+    } catch (error) {
+      console.error("Failed to create student:", error);
+    }
+  };
+
+  const handleUpdateStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent) return;
+    try {
+      await updateStudent(selectedStudent._id, {
+        name: `${formData.firstName} ${formData.lastName}`,
+        email: formData.email,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phone: formData.phone,
+        status: formData.status as any,
+      });
+      setEditOpen(false);
+      setSelectedStudent(null);
+    } catch (error) {
+      console.error("Failed to update student:", error);
+    }
+  };
+
+  const handleDeleteStudent = async () => {
+    if (!selectedStudent) return;
+    try {
+      await deleteStudent(selectedStudent._id);
+      setDeleteOpen(false);
+      setSelectedStudent(null);
+    } catch (error) {
+      console.error("Failed to delete student:", error);
+    }
+  };
+
+  const handleStatusChange = async (
+    id: string,
+    status: "active" | "inactive" | "suspended"
+  ) => {
+    try {
+      await updateStudentStatus(id, status);
+    } catch (error) {
+      console.error("Failed to update status:", error);
+    }
+  };
+
+  const openEditDialog = (student: StudentItem) => {
+    setSelectedStudent(student);
+    const names = student.name.split(" ");
+    setFormData({
+      firstName: names[0] || "",
+      lastName: names.slice(1).join(" ") || "",
+      email: student.email,
+      phone: "",
+      country: "",
+      course: student.course || "",
+      status: student.status,
+      enrollmentDate: "",
+      notes: "",
+    });
+    setEditOpen(true);
+  };
+
+  const openViewDialog = (student: StudentItem) => {
+    setSelectedStudent(student);
+    setViewOpen(true);
+  };
+
+  const openDeleteDialog = (student: StudentItem) => {
+    setSelectedStudent(student);
+    setDeleteOpen(true);
+  };
+
+  const handleExport = async () => {
+    try {
+      await exportStudents();
+    } catch (error) {
+      console.error("Failed to export students:", error);
+    }
+  };
 
   return (
     <main className="p-6">
@@ -168,80 +273,117 @@ export default function Students() {
           </p>
         </div>
         <div className="flex space-x-3">
-          <Button variant="outline" className="border-gray-300">
-            <Download className="w-4 h-4 mr-2" /> Export Data
+          <Button
+            variant="outline"
+            className="border-gray-300"
+            onClick={handleExport}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            Export Data
           </Button>
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => setCreateOpen(true)} disabled={loading}>
             <UserPlus className="w-4 h-4 mr-2" /> Add Student
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Total Students
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">2,847</p>
-              <p className="text-accent text-sm mt-1">
-                <ArrowUp className="inline w-3 h-3" /> +12% from last month
-              </p>
+      {statsLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 animate-pulse"
+            >
+              <div className="h-20 bg-gray-200 rounded"></div>
             </div>
-            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-              <Users className="text-primary w-6 h-6" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">
+                  Total Students
+                </p>
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.totalStudents || 0}
+                </p>
+                <p className="text-accent text-sm mt-1">
+                  <ArrowUp className="inline w-3 h-3" /> +12% from last month
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                <Users className="text-primary w-6 h-6" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">
+                  Active Students
+                </p>
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.activeStudents || 0}
+                </p>
+                <p className="text-accent text-sm mt-1">
+                  <span className="inline-block w-2 h-2 bg-accent rounded-full mr-1"></span>{" "}
+                  {stats?.totalStudents
+                    ? (
+                        (stats.activeStudents / stats.totalStudents) *
+                        100
+                      ).toFixed(1)
+                    : 0}
+                  % active rate
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center">
+                <CheckCircle className="text-accent w-6 h-6" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">
+                  Avg. Completion
+                </p>
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.avgCompletion || 0}%
+                </p>
+                <p className="text-accent text-sm mt-1">
+                  <ArrowUp className="inline w-3 h-3" /> +8% from last month
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <ChartLine className="text-yellow-600 w-6 h-6" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Avg. Score</p>
+                <p className="text-2xl font-bold text-secondary mt-1">
+                  {stats?.avgScore || 0}%
+                </p>
+                <p className="text-accent text-sm mt-1">
+                  <ArrowUp className="inline w-3 h-3" /> +5% from last month
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                <GraduationCap className="text-purple-600 w-6 h-6" />
+              </div>
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Active Students
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">2,154</p>
-              <p className="text-accent text-sm mt-1">
-                <span className="inline-block w-2 h-2 bg-accent rounded-full mr-1"></span>{" "}
-                75.6% active rate
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center">
-              <CheckCircle className="text-accent w-6 h-6" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Avg. Completion
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">78%</p>
-              <p className="text-accent text-sm mt-1">
-                <ArrowUp className="inline w-3 h-3" /> +8% from last month
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-              <ChartLine className="text-yellow-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">Avg. Score</p>
-              <p className="text-2xl font-bold text-secondary mt-1">84%</p>
-              <p className="text-accent text-sm mt-1">
-                <ArrowUp className="inline w-3 h-3" /> +5% from last month
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <GraduationCap className="text-purple-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
       <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
@@ -346,112 +488,141 @@ export default function Students() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        {filtered.map((it) => (
-          <div
-            key={`card-${it.id}`}
-            className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 transition-all duration-300 hover:-translate-y-0.5"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center space-x-3">
-                <img
-                  src={it.avatarUrl}
-                  alt={it.name}
-                  className="w-12 h-12 rounded-full"
-                />
-                <div>
-                  <h3 className="font-semibold text-secondary">{it.name}</h3>
-                  <p className="text-sm text-gray-500">{it.email}</p>
+        {loading ? (
+          <div className="col-span-full flex justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="col-span-full text-center py-12 text-gray-500">
+            No students found
+          </div>
+        ) : (
+          filtered.map((it) => (
+            <div
+              key={`card-${it._id}`}
+              className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 transition-all duration-300 hover:-translate-y-0.5"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center space-x-3">
+                  <img
+                    src={it.avatarUrl}
+                    alt={it.name}
+                    className="w-12 h-12 rounded-full"
+                  />
+                  <div>
+                    <h3 className="font-semibold text-secondary">{it.name}</h3>
+                    <p className="text-sm text-gray-500">{it.email}</p>
+                  </div>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="p-1 text-gray-400 hover:text-primary rounded">
+                      <EllipsisVertical className="w-5 h-5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem onClick={() => openViewDialog(it)}>
+                      <Eye className="w-4 h-4 mr-2" /> View Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openEditDialog(it)}>
+                      <Pencil className="w-4 h-4 mr-2" /> Edit Student
+                    </DropdownMenuItem>
+                    <DropdownMenuItem>
+                      <Mail className="w-4 h-4 mr-2" /> Send Message
+                    </DropdownMenuItem>
+                    <DropdownMenuItem>
+                      <ChartLine className="w-4 h-4 mr-2" /> View Progress
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600 focus:text-red-700"
+                      onClick={() =>
+                        it.status === "active"
+                          ? handleStatusChange(it._id, "inactive")
+                          : handleStatusChange(it._id, "active")
+                      }
+                    >
+                      {it.status === "active" ? (
+                        <UserX className="w-4 h-4 mr-2" />
+                      ) : (
+                        <UserCheck className="w-4 h-4 mr-2" />
+                      )}
+                      {it.status === "active" ? "Deactivate" : "Activate"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600 focus:text-red-700"
+                      onClick={() => openDeleteDialog(it)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <div className="mb-4">
+                <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
+                  <span>{it.course || "General"} Course</span>
+                  {it.status === "pending" && (
+                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-yellow-500">
+                      Pending
+                    </span>
+                  )}
+                  {it.status === "inactive" && (
+                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-gray-500">
+                      Inactive
+                    </span>
+                  )}
+                  {it.status === "active" && (
+                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-green-600">
+                      Active
+                    </span>
+                  )}
+                  {it.status === "suspended" && (
+                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-red-600">
+                      Suspended
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2 text-sm text-gray-600">
+                  <span>Joined: </span>
+                  <span className="font-medium">{it.joinedDate}</span>
                 </div>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="p-1 text-gray-400 hover:text-primary rounded">
-                    <EllipsisVertical className="w-5 h-5" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem>
-                    <Eye className="w-4 h-4 mr-2" /> View Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Pencil className="w-4 h-4 mr-2" /> Edit Student
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Mail className="w-4 h-4 mr-2" /> Send Message
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <ChartLine className="w-4 h-4 mr-2" /> View Progress
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="text-red-600 focus:text-red-700">
-                    <Slash className="w-4 h-4 mr-2" /> Deactivate
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
 
-            <div className="mb-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
-                <span>{it.course} Course</span>
-                {it.status === "probation" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-yellow-500">
-                    Probation
-                  </span>
-                )}
-                {it.status === "inactive" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-gray-500">
-                    Inactive
-                  </span>
-                )}
-                {it.status === "active" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-green-600">
-                    Active
-                  </span>
-                )}
-                {it.status === "suspended" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-red-600">
-                    Suspended
-                  </span>
-                )}
+              <div className="mb-4">
+                <div className="flex justify-between text-sm text-gray-600 mb-1">
+                  <span>Course Progress</span>
+                  <span>{it.progressPercent || 0}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full ${
+                      (it.progressPercent || 0) >= 80
+                        ? "bg-accent"
+                        : (it.progressPercent || 0) >= 60
+                        ? "bg-yellow-500"
+                        : "bg-red-500"
+                    }`}
+                    style={{ width: `${it.progressPercent || 0}%` }}
+                  />
+                </div>
               </div>
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <span>Joined: </span>
-                <span className="font-medium">{it.joinedDate}</span>
-              </div>
-            </div>
 
-            <div className="mb-4">
-              <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>Course Progress</span>
-                <span>{it.progressPercent}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className={`h-2 rounded-full ${
-                    it.progressPercent >= 80
-                      ? "bg-accent"
-                      : it.progressPercent >= 60
-                      ? "bg-yellow-500"
-                      : "bg-red-500"
-                  }`}
-                  style={{ width: `${it.progressPercent}%` }}
-                />
+              <div className="flex justify-between items-center text-sm text-gray-600">
+                <div className="flex items-center space-x-2">
+                  <span className="flex items-center">
+                    <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />{" "}
+                    {it.rating || 0}
+                  </span>
+                  <span>{it.location || "Unknown"}</span>
+                </div>
+                <div className="text-primary font-medium">
+                  {it.courseCount || 0}{" "}
+                  {(it.courseCount || 0) === 1 ? "course" : "courses"}
+                </div>
               </div>
             </div>
-
-            <div className="flex justify-between items-center text-sm text-gray-600">
-              <div className="flex items-center space-x-2">
-                <span className="flex items-center">
-                  <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />{" "}
-                  {it.rating}
-                </span>
-                <span>{it.location}</span>
-              </div>
-              <div className="text-primary font-medium">
-                {it.courseCount} {it.courseCount === 1 ? "course" : "courses"}
-              </div>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* All Students Table */}
@@ -492,7 +663,7 @@ export default function Students() {
             <tbody className="bg-white divide-y divide-gray-200">
               {filtered.map((it) => (
                 <tr
-                  key={`row-${it.id}`}
+                  key={`row-${it._id}`}
                   className="hover:bg-gray-50 transition-colors"
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -511,9 +682,11 @@ export default function Students() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{it.course}</div>
+                    <div className="text-sm text-gray-900">
+                      {it.course || "General"}
+                    </div>
                     <div className="text-sm text-gray-500">
-                      {it.courseDetail}
+                      {it.courseDetail || "Course Details"}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -521,22 +694,22 @@ export default function Students() {
                       <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
                         <div
                           className={`h-2 rounded-full ${
-                            it.progressPercent >= 80
+                            (it.progressPercent || 0) >= 80
                               ? "bg-accent"
-                              : it.progressPercent >= 60
+                              : (it.progressPercent || 0) >= 60
                               ? "bg-yellow-500"
                               : "bg-red-500"
                           }`}
-                          style={{ width: `${it.progressPercent}%` }}
+                          style={{ width: `${it.progressPercent || 0}%` }}
                         />
                       </div>
                       <span className="text-sm text-gray-900">
-                        {it.progressPercent}%
+                        {it.progressPercent || 0}%
                       </span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.scorePercent}%
+                    {it.scorePercent || 0}%
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {it.status === "active" && (
@@ -549,9 +722,9 @@ export default function Students() {
                         Inactive
                       </span>
                     )}
-                    {it.status === "probation" && (
+                    {it.status === "pending" && (
                       <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                        Probation
+                        Pending
                       </span>
                     )}
                     {it.status === "suspended" && (
@@ -561,14 +734,26 @@ export default function Students() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {it.joinedDate}
+                    {it.joinedDate || "N/A"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-primary hover:text-primary/80 mr-3">
+                    <button
+                      className="text-primary hover:text-primary/80 mr-3"
+                      onClick={() => openViewDialog(it)}
+                    >
                       View
                     </button>
-                    <button className="text-gray-600 hover:text-primary">
-                      Message
+                    <button
+                      className="text-primary hover:text-primary/80 mr-3"
+                      onClick={() => openEditDialog(it)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="text-red-600 hover:text-red-700"
+                      onClick={() => openDeleteDialog(it)}
+                    >
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -578,23 +763,43 @@ export default function Students() {
         </div>
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
           <div className="text-sm text-gray-600">
-            Showing <span className="font-medium">1-{filtered.length}</span> of{" "}
-            <span className="font-medium">2,847</span> students
+            Showing{" "}
+            <span className="font-medium">
+              {(currentPage - 1) * pageSize + 1}-
+              {Math.min(currentPage * pageSize, total)}
+            </span>{" "}
+            of <span className="font-medium">{total}</span> students
           </div>
           <div className="flex space-x-2">
-            <button className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+            <button
+              className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1 || loading}
+            >
               <ChevronLeft className="w-4 h-4 inline" /> Previous
             </button>
-            <button className="px-3 py-1 bg-primary text-white rounded text-sm">
-              1
-            </button>
-            <button className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-              2
-            </button>
-            <button className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-              3
-            </button>
-            <button className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+            {[...Array(Math.min(5, totalPages))].map((_, i) => {
+              const page = i + 1;
+              return (
+                <button
+                  key={page}
+                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                    currentPage === page
+                      ? "bg-primary text-white"
+                      : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                  }`}
+                  onClick={() => setCurrentPage(page)}
+                  disabled={loading}
+                >
+                  {page}
+                </button>
+              );
+            })}
+            <button
+              className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || loading}
+            >
               Next <ChevronRight className="w-4 h-4 inline" />
             </button>
           </div>
@@ -679,19 +884,21 @@ export default function Students() {
         </div>
       </div>
 
+      {/* Create Student Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Add New Student</DialogTitle>
-            <DialogDescription>Create a student account</DialogDescription>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                <UserPlus className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <DialogTitle>Add New Student</DialogTitle>
+                <DialogDescription>Create a student account</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setCreateOpen(false);
-            }}
-            className="space-y-6"
-          >
+          <form onSubmit={handleCreateStudent} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -701,6 +908,10 @@ export default function Students() {
                   type="text"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   placeholder="Enter first name"
+                  value={formData.firstName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, firstName: e.target.value })
+                  }
                   required
                 />
               </div>
@@ -712,6 +923,10 @@ export default function Students() {
                   type="text"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   placeholder="Enter last name"
+                  value={formData.lastName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, lastName: e.target.value })
+                  }
                   required
                 />
               </div>
@@ -725,6 +940,10 @@ export default function Students() {
                   type="email"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   placeholder="student@example.com"
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
                   required
                 />
               </div>
@@ -736,6 +955,10 @@ export default function Students() {
                   type="tel"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   placeholder="+1 (555) 123-4567"
+                  value={formData.phone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, phone: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -744,7 +967,13 @@ export default function Students() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Country
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.country}
+                  onChange={(e) =>
+                    setFormData({ ...formData, country: e.target.value })
+                  }
+                >
                   <option value="">Select country</option>
                   <option value="us">United States</option>
                   <option value="uk">United Kingdom</option>
@@ -759,6 +988,10 @@ export default function Students() {
                 </label>
                 <select
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.course}
+                  onChange={(e) =>
+                    setFormData({ ...formData, course: e.target.value })
+                  }
                   required
                 >
                   <option value="">Select course</option>
@@ -774,10 +1007,16 @@ export default function Students() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Status
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.status}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                  <option value="probation">Probation</option>
+                  <option value="pending">Pending</option>
                   <option value="suspended">Suspended</option>
                 </select>
               </div>
@@ -788,6 +1027,10 @@ export default function Students() {
                 <input
                   type="date"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.enrollmentDate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, enrollmentDate: e.target.value })
+                  }
                   required
                 />
               </div>
@@ -800,6 +1043,10 @@ export default function Students() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 rows={3}
                 placeholder="Any additional info"
+                value={formData.notes}
+                onChange={(e) =>
+                  setFormData({ ...formData, notes: e.target.value })
+                }
               />
             </div>
             <div className="space-y-3">
@@ -841,12 +1088,292 @@ export default function Students() {
                 type="button"
                 variant="ghost"
                 onClick={() => setCreateOpen(false)}
+                disabled={loading}
               >
                 Cancel
               </Button>
-              <Button type="submit">Add Student</Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Add Student
+                  </>
+                )}
+              </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Student Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                <Pencil className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <DialogTitle>Edit Student</DialogTitle>
+                <DialogDescription>
+                  Update student information
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <form onSubmit={handleUpdateStudent} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  First Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.firstName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, firstName: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Last Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.lastName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, lastName: e.target.value })
+                  }
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                value={formData.status}
+                onChange={(e) =>
+                  setFormData({ ...formData, status: e.target.value })
+                }
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="pending">Pending</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setEditOpen(false)}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Update Student
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Student Dialog */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+                <Eye className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <DialogTitle>Student Details</DialogTitle>
+                <DialogDescription>
+                  View complete student information
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          {selectedStudent && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                <img
+                  src={
+                    selectedStudent.avatarUrl ||
+                    "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg"
+                  }
+                  alt={selectedStudent.name}
+                  className="w-16 h-16 rounded-full"
+                />
+                <div>
+                  <h3 className="text-lg font-semibold text-secondary">
+                    {selectedStudent.name}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {selectedStudent.email}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    Status
+                  </label>
+                  <p className="text-base font-medium text-secondary capitalize mt-1">
+                    {selectedStudent.status}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    Joined Date
+                  </label>
+                  <p className="text-base font-medium text-secondary mt-1">
+                    {selectedStudent.joinedDate || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    Course Progress
+                  </label>
+                  <p className="text-base font-medium text-secondary mt-1">
+                    {selectedStudent.progressPercent || 0}%
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    Average Score
+                  </label>
+                  <p className="text-base font-medium text-secondary mt-1">
+                    {selectedStudent.scorePercent || 0}%
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    Rating
+                  </label>
+                  <p className="text-base font-medium text-secondary mt-1">
+                    <Star className="w-4 h-4 inline text-yellow-400 fill-yellow-400" />{" "}
+                    {selectedStudent.rating || 0}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    Enrolled Courses
+                  </label>
+                  <p className="text-base font-medium text-secondary mt-1">
+                    {selectedStudent.courseCount || 0}
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button variant="ghost" onClick={() => setViewOpen(false)}>
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setViewOpen(false);
+                    openEditDialog(selectedStudent);
+                  }}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit Student
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <DialogTitle>Delete Student</DialogTitle>
+                <DialogDescription>
+                  This action cannot be undone
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          {selectedStudent && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold">{selectedStudent.name}</span>?
+                This will permanently remove their account and all associated
+                data.
+              </p>
+              <div className="flex justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDeleteOpen(false)}
+                  disabled={loading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteStudent}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Student
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </main>

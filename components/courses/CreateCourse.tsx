@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
 import { coursesService } from "@/services/courses.service";
 import { uploadService } from "@/services/upload.service";
-import { useQueryClient } from "@tanstack/react-query";
+import { courseCategoriesService } from "@/services/course-categories.service";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { CheckCircle, Plus, X, ImageIcon, ArrowLeft } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -44,26 +45,19 @@ export default function CreateCourse() {
     fetchInstructors();
   }, []);
 
-  const personalWingsCategories = [
-    "Citation Jet Training",
-    "Eclipse Jet Training",
-    "Pro Line 21 Training",
-    "Pro Line Fusion Training",
-    "Jet Transition Training",
-    "High Performance Aircraft",
-    "Turboprop Training",
-    "Light Jet Training",
-    "Avionics Training",
-    "Aircraft Brokerage",
-    "Flight Instruction",
-    "Type Rating",
-    "Instrument Rating",
-    "Aviation Ground School",
-    "Simulator Training",
-    "Aircraft Systems",
-    "Aviation Safety",
-    "Aircraft Products",
-  ];
+  // Fetch categories from API
+  const { data: categoriesData } = useQuery({
+    queryKey: ["course-categories"],
+    queryFn: () => courseCategoriesService.getAllCategories(),
+    staleTime: 60000,
+  });
+
+  const availableCategories = React.useMemo(() => {
+    const categoryList = categoriesData?.data?.categories ?? [];
+    return categoryList
+      .filter((cat: any) => cat.isActive !== false)
+      .map((cat: any) => cat.name);
+  }, [categoriesData]);
 
   const handleThumbnailSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -128,7 +122,7 @@ export default function CreateCourse() {
               originalPriceRaw && Number(originalPriceRaw) > 0
                 ? Number(originalPriceRaw)
                 : undefined;
-            const duration = Number(fd.get("duration") || 0);
+            const duration = Number(fd.get("duration") || 1);
             const maxStudents = Number(fd.get("maxStudents") || 1);
             const status = String(fd.get("status") || "draft");
             const instructor = String(fd.get("instructor") || "").trim();
@@ -204,8 +198,8 @@ export default function CreateCourse() {
                 type: type as any,
                 price,
                 originalPrice,
-                duration,
-                durationHours: duration,
+                duration: Math.max(duration, 1),
+                durationHours: Math.max(duration, 1),
                 maxStudents,
                 isPublished: status === "published",
                 tags,
@@ -540,28 +534,37 @@ export default function CreateCourse() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded-lg">
-                  {personalWingsCategories.map((cat) => {
-                    const isSelected = selectedCats.includes(cat);
-                    return (
-                      <Badge
-                        key={cat}
-                        variant={isSelected ? "default" : "outline"}
-                        className={`cursor-pointer transition-all hover:scale-105 ${
-                          isSelected ? "bg-primary text-white" : ""
-                        }`}
-                        onClick={() => {
-                          setSelectedCats((prev) =>
-                            prev.includes(cat)
-                              ? prev.filter((c) => c !== cat)
-                              : [...prev, cat]
-                          );
-                        }}
-                      >
-                        {isSelected && <CheckCircle className="w-3 h-3 mr-1" />}
-                        {cat}
-                      </Badge>
-                    );
-                  })}
+                  {availableCategories.length > 0 ? (
+                    availableCategories.map((cat) => {
+                      const isSelected = selectedCats.includes(cat);
+                      return (
+                        <Badge
+                          key={cat}
+                          variant={isSelected ? "default" : "outline"}
+                          className={`cursor-pointer transition-all hover:scale-105 ${
+                            isSelected ? "bg-primary text-white" : ""
+                          }`}
+                          onClick={() => {
+                            setSelectedCats((prev) =>
+                              prev.includes(cat)
+                                ? prev.filter((c) => c !== cat)
+                                : [...prev, cat]
+                            );
+                          }}
+                        >
+                          {isSelected && (
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                          )}
+                          {cat}
+                        </Badge>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-500 py-2">
+                      No categories available. Create categories first in the
+                      Course Categories section.
+                    </p>
+                  )}
                 </div>
 
                 {selectedCats.length > 0 && (

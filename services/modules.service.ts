@@ -36,7 +36,7 @@ export interface ModuleDto {
 
 export interface CreateModuleDto {
   title: string;
-  course: string;
+  courseId: string;
   description?: string;
   duration?: number;
   status?: "published" | "draft";
@@ -46,16 +46,10 @@ export interface CreateModuleDto {
 export interface UpdateModuleDto extends Partial<CreateModuleDto> { }
 
 class ModulesService {
-  async getAllModules(params: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    courseId?: string;
-    status?: string;
-    isPublished?: boolean;
-  } = {}) {
+  async getAllModules(params: { page?: number; limit?: number; courseId?: string } = {}) {
     try {
-      const { data } = await apiClient.get<ModuleDto[]>("/courses", { params });
+      const { data }: any = await apiClient.get("/course-modules", { params });
+      // Return the full response to let component handle parsing
       return data;
     } catch (error) {
       console.error("Failed to fetch modules:", error);
@@ -65,7 +59,7 @@ class ModulesService {
 
   async getModuleById(id: string) {
     try {
-      const { data } = await apiClient.get<ModuleDto>(`/courses/${id}`);
+      const { data } = await apiClient.get<ModuleDto>(`/course-modules/${id}`);
       return data;
     } catch (error) {
       console.error(`Failed to fetch module ${id}:`, error);
@@ -75,7 +69,7 @@ class ModulesService {
 
   async createModule(moduleData: CreateModuleDto) {
     try {
-      const { data } = await apiClient.post<ModuleDto>("/courses", moduleData);
+      const { data } = await apiClient.post<ModuleDto>("/course-modules", moduleData);
       return data;
     } catch (error) {
       console.error("Failed to create module:", error);
@@ -85,7 +79,7 @@ class ModulesService {
 
   async updateModule(id: string, moduleData: UpdateModuleDto) {
     try {
-      const { data } = await apiClient.put<ModuleDto>(`/courses/${id}`, moduleData);
+      const { data } = await apiClient.patch<ModuleDto>(`/course-modules/${id}`, moduleData);
       return data;
     } catch (error) {
       console.error(`Failed to update module ${id}:`, error);
@@ -95,7 +89,7 @@ class ModulesService {
 
   async deleteModule(id: string) {
     try {
-      await apiClient.delete(`/courses/${id}`);
+      await apiClient.delete(`/course-modules/${id}`);
     } catch (error) {
       console.error(`Failed to delete module ${id}:`, error);
       throw error;
@@ -104,7 +98,7 @@ class ModulesService {
 
   async getModuleLessons(moduleId: string) {
     try {
-      const { data } = await apiClient.get<Lesson[]>(`/courses/${moduleId}/lessons`);
+      const { data } = await apiClient.get<Lesson[]>(`/course-modules/${moduleId}/lessons`);
       return data;
     } catch (error) {
       console.error(`Failed to fetch lessons for module ${moduleId}:`, error);
@@ -114,10 +108,10 @@ class ModulesService {
 
   async duplicateModule(id: string) {
     try {
-      const { data } = await apiClient.post(`/courses/${id}/duplicate`);
+      const { data } = await apiClient.patch(`/course-modules/course/${id}/reorder`, { moduleIds: [] });
       return data;
     } catch (error) {
-      console.error(`Failed to duplicate module ${id}:`, error);
+      console.error(`Failed to reorder modules for course ${id}:`, error);
       throw error;
     }
   }

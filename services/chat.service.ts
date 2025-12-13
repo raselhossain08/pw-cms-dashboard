@@ -76,6 +76,16 @@ export const chatService = {
     });
   },
 
+  createConversationSocket(socket: Socket, payload: { title: string; participants: string[]; type: string }) {
+    return new Promise<{ success: boolean; conversation?: ChatConversation; error?: string }>((resolve) => {
+      socket.emit(
+        "create_conversation",
+        payload,
+        (resp: { success: boolean; conversation?: ChatConversation; error?: string }) => resolve(resp)
+      );
+    });
+  },
+
   getConversations() {
     return apiClient.get<{ conversations: ChatConversation[]; total: number }>("/chat/conversations");
   },
@@ -86,5 +96,17 @@ export const chatService = {
 
   sendMessageRest(conversationId: string, payload: { content: string; type?: string }) {
     return apiClient.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, payload);
+  },
+
+  deleteConversation(conversationId: string) {
+    return apiClient.delete(`/chat/conversations/${conversationId}`);
+  },
+
+  deleteMessage(messageId: string) {
+    return apiClient.delete(`/chat/messages/${messageId}`);
+  },
+
+  markAsRead(messageId: string) {
+    return apiClient.patch(`/chat/messages/${messageId}/read`, {});
   },
 };

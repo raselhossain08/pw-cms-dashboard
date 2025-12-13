@@ -4,8 +4,11 @@ export interface User {
     _id: string;
     name: string;
     email: string;
+    firstName?: string;
+    lastName?: string;
     avatar?: string;
-    role: "admin" | "instructor" | "student";
+    role: "super_admin" | "admin" | "instructor" | "student" | "affiliate";
+    status: "active" | "inactive" | "suspended" | "pending";
     isActive: boolean;
     emailVerified: boolean;
     phone?: string;
@@ -13,24 +16,33 @@ export interface User {
     enrolledCourses?: number;
     createdAt: string;
     updatedAt: string;
+    lastLogin?: string;
 }
 
 export interface CreateUserDto {
     name: string;
     email: string;
     password: string;
-    role: "admin" | "instructor" | "student";
+    firstName?: string;
+    lastName?: string;
+    role?: "super_admin" | "admin" | "instructor" | "student" | "affiliate";
+    status?: "active" | "inactive" | "suspended" | "pending";
     phone?: string;
     bio?: string;
+    avatar?: string;
 }
 
 export interface UpdateUserDto {
     name?: string;
+    firstName?: string;
+    lastName?: string;
     email?: string;
-    role?: "admin" | "instructor" | "student";
+    role?: "super_admin" | "admin" | "instructor" | "student" | "affiliate";
+    status?: "active" | "inactive" | "suspended" | "pending";
     phone?: string;
     bio?: string;
     isActive?: boolean;
+    avatar?: string;
 }
 
 class UsersService {
@@ -119,12 +131,88 @@ class UsersService {
         }
     }
 
-    async getAllInstructors() {
+    async getAllInstructors(params?: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        status?: string;
+        specialization?: string;
+        experience?: string;
+    }) {
         try {
-            const { data } = await apiClient.get("/users/instructors");
+            const { data } = await apiClient.get("/users/instructors", { params });
             return data;
         } catch (error) {
             console.error("Failed to fetch instructors:", error);
+            throw error;
+        }
+    }
+
+    async updateStatus(id: string, status: "active" | "inactive" | "suspended" | "pending") {
+        try {
+            const { data } = await apiClient.patch(`/users/${id}/status`, { status });
+            return data;
+        } catch (error) {
+            console.error(`Failed to update user status ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async approveInstructor(id: string) {
+        try {
+            const { data } = await apiClient.post(`/admin/instructors/${id}/approve`);
+            return data;
+        } catch (error) {
+            console.error(`Failed to approve instructor ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async rejectInstructor(id: string, reason: string) {
+        try {
+            const { data } = await apiClient.post(`/admin/instructors/${id}/reject`, { reason });
+            return data;
+        } catch (error) {
+            console.error(`Failed to reject instructor ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async getInstructorById(id: string) {
+        try {
+            const { data } = await apiClient.get(`/users/${id}`);
+            return data;
+        } catch (error) {
+            console.error(`Failed to fetch instructor ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async updateInstructor(id: string, userData: UpdateUserDto) {
+        try {
+            const { data } = await apiClient.patch(`/users/${id}`, userData);
+            return data;
+        } catch (error) {
+            console.error(`Failed to update instructor ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async deleteInstructor(id: string) {
+        try {
+            await apiClient.delete(`/users/${id}`);
+        } catch (error) {
+            console.error(`Failed to delete instructor ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async verifyEmail(id: string) {
+        try {
+            const { data } = await apiClient.post(`/users/${id}/verify-email`);
+            return data;
+        } catch (error) {
+            console.error(`Failed to verify email for user ${id}:`, error);
             throw error;
         }
     }

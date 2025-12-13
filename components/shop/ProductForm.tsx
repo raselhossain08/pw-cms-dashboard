@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { productsService } from "@/lib/services/products.service";
 import type { Product } from "@/lib/types/product";
+import { useToast } from "@/context/ToastContext";
 
 interface ProductFormProps {
   open: boolean;
@@ -36,6 +37,7 @@ export default function ProductForm({
   initialData,
   mode = "create",
 }: ProductFormProps) {
+  const { push } = useToast();
   const [loading, setLoading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState<{
     [key: string]: number;
@@ -306,8 +308,40 @@ export default function ProductForm({
   };
 
   const handleSubmit = async () => {
+    // Validation
+    if (!formData.title.trim()) {
+      push({
+        message: "Product title is required",
+        type: "error",
+      });
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      push({
+        message: "Product description is required",
+        type: "error",
+      });
+      return;
+    }
+
+    if (formData.price <= 0) {
+      push({
+        message: "Product price must be greater than 0",
+        type: "error",
+      });
+      return;
+    }
+
     try {
       setLoading(true);
+
+      const loadingToastId = push({
+        message:
+          mode === "edit" ? "Updating product..." : "Creating product...",
+        type: "loading",
+      });
+
       // Generate slug from title
       const slug = formData.title
         .toLowerCase()
@@ -325,16 +359,31 @@ export default function ProductForm({
           initialData._id,
           productData
         );
+        push({
+          message: "Product updated successfully!",
+          type: "success",
+        });
       } else {
         product = await productsService.createProduct(productData);
+        push({
+          message: "Product created successfully!",
+          type: "success",
+        });
       }
 
       onProductCreated(product);
       resetForm();
       onOpenChange(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to ${mode} product:`, error);
-      alert(`Failed to ${mode} product. Please try again.`);
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        `Failed to ${mode} product`;
+      push({
+        message: errorMessage,
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -947,7 +996,16 @@ export default function ProductForm({
                 loading
               }
             >
-              {loading ? "Creating..." : "Create Product"}
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {mode === "edit" ? "Updating..." : "Creating..."}
+                </>
+              ) : mode === "edit" ? (
+                "Update Product"
+              ) : (
+                "Create Product"
+              )}
             </Button>
           </div>
         </div>

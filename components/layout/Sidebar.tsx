@@ -34,6 +34,7 @@ import {
   User,
   Newspaper,
   ChevronDown,
+  Gauge,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -73,6 +74,7 @@ const navItems = {
   ],
   contentMedia: [
     { icon: FileText, label: "CMS", href: "/cms" },
+    { icon: Gauge, label: "Home SEO", href: "/cms/home" },
     { icon: ImageIcon, label: "Header", href: "/cms/header" },
     { icon: ImageIcon, label: "Footer", href: "/cms/footer" },
     { icon: PlayCircle, label: "Home Banner", href: "/cms/home/banner" },

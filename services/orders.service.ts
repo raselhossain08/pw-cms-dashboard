@@ -108,6 +108,50 @@ class OrdersService {
             throw error;
         }
     }
+
+    async deleteOrder(id: string) {
+        try {
+            const { data } = await apiClient.delete(`/orders/${id}`);
+            return data;
+        } catch (error) {
+            console.error(`Failed to delete order ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async resendReceipt(id: string) {
+        try {
+            const { data } = await apiClient.post(`/orders/${id}/resend-receipt`);
+            return data;
+        } catch (error) {
+            console.error(`Failed to resend receipt for order ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async exportOrders(format: "csv" | "excel" = "csv") {
+        try {
+            const { data: response } = await apiClient.get("/orders/export", {
+                params: { format },
+            });
+
+            const csvData = response.data;
+            const blob = new Blob([csvData], { type: format === "csv" ? "text/csv" : "application/vnd.ms-excel" });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.setAttribute("download", `orders-${Date.now()}.${format === "csv" ? "csv" : "xlsx"}`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+
+            return response;
+        } catch (error) {
+            console.error("Failed to export orders:", error);
+            throw error;
+        }
+    }
 }
 
 export const ordersService = new OrdersService();

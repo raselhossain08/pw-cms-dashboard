@@ -5,18 +5,37 @@ import {
   Users2,
   UserPlus,
   ArrowUp,
-  EllipsisVertical,
   Search as SearchIcon,
   Grid2x2,
   List,
   Star,
   Book,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  Award,
+  MoreVertical,
+  Eye,
+  Edit,
+  Trash2,
+  UserX,
+  UserCheck,
+  Ban,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Loader2,
+  Download,
+  Filter,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -25,6 +44,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -33,86 +53,84 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  useInstructors,
+  CreateInstructorDto,
+  UpdateInstructorDto,
+  Instructor,
+} from "@/hooks/useInstructors";
 
-type InstructorItem = {
-  id: string;
-  name: string;
-  email: string;
-  specialization: string;
-  status: "active" | "pending" | "inactive" | "suspended";
-  experience: "expert" | "advanced" | "intermediate";
-  rating: number;
-  coursesCount: number;
-  studentsCount: number;
-  joinedDate: string;
-  location: string;
-  progressPercent: number;
-  avatarUrl: string;
-};
-
-const initialInstructors: InstructorItem[] = [
-  {
-    id: "i1",
-    name: "Dr. James Wilson",
-    email: "james.w@example.com",
-    specialization: "Web Development Expert",
-    status: "active",
-    experience: "expert",
-    rating: 4.9,
-    coursesCount: 8,
-    studentsCount: 1247,
-    joinedDate: "Jan 12, 2022",
-    location: "San Francisco, US",
-    progressPercent: 85,
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-5.jpg",
-  },
-  {
-    id: "i2",
-    name: "Dr. Maria Rodriguez",
-    email: "maria.r@example.com",
-    specialization: "Data Science Specialist",
-    status: "active",
-    experience: "advanced",
-    rating: 4.8,
-    coursesCount: 6,
-    studentsCount: 892,
-    joinedDate: "Mar 8, 2022",
-    location: "Madrid, Spain",
-    progressPercent: 75,
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-6.jpg",
-  },
-  {
-    id: "i3",
-    name: "Prof. David Kim",
-    email: "david.k@example.com",
-    specialization: "UI/UX Design Lead",
-    status: "pending",
-    experience: "intermediate",
-    rating: 4.6,
-    coursesCount: 3,
-    studentsCount: 428,
-    joinedDate: "Jun 20, 2023",
-    location: "Seoul, Korea",
-    progressPercent: 60,
-    avatarUrl:
-      "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-7.jpg",
-  },
-];
+type ViewMode = "grid" | "table";
 
 export default function Instructors() {
-  const [items] = React.useState<InstructorItem[]>(initialInstructors);
+  const {
+    instructors,
+    stats,
+    loading,
+    statsLoading,
+    total,
+    fetchInstructors,
+    fetchStats,
+    createInstructor,
+    updateInstructor,
+    deleteInstructor,
+    approveInstructor,
+    suspendInstructor,
+    activateInstructor,
+    deactivateInstructor,
+  } = useInstructors();
+
   const [search, setSearch] = React.useState("");
-  const [specializationFilter, setSpecializationFilter] = React.useState(
-    "All Specializations"
-  );
-  const [statusFilter, setStatusFilter] = React.useState("All Status");
-  const [experienceFilter, setExperienceFilter] = React.useState(
-    "All Experience Levels"
-  );
-  const [sortBy, setSortBy] = React.useState("Rating");
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [specializationFilter, setSpecializationFilter] =
+    React.useState<string>("all");
+  const [experienceFilter, setExperienceFilter] = React.useState<string>("all");
+  const [sortBy, setSortBy] = React.useState("rating");
+  const [viewMode, setViewMode] = React.useState<ViewMode>("grid");
+  const [activeTab, setActiveTab] = React.useState("all");
+
+  // Dialog states
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [viewOpen, setViewOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [selectedInstructor, setSelectedInstructor] =
+    React.useState<Instructor | null>(null);
+
+  // Form states
+  const [formData, setFormData] = React.useState<CreateInstructorDto>({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    bio: "",
+    specialization: "",
+    experience: "intermediate",
+    country: "",
+    status: "active",
+  });
+  const [formLoading, setFormLoading] = React.useState(false);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const itemsPerPage = 12;
+
+  // Fetch data on mount
+  React.useEffect(() => {
+    fetchInstructors();
+    fetchStats();
+  }, [fetchInstructors, fetchStats]);
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -128,47 +146,314 @@ export default function Instructors() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const filtered = items
-    .filter((it) => {
-      const matchesSearch =
-        search === "" ||
-        it.name.toLowerCase().includes(search.toLowerCase()) ||
-        it.email.toLowerCase().includes(search.toLowerCase());
-      const matchesSpec =
-        specializationFilter === "All Specializations" ||
-        it.specialization.includes(specializationFilter);
-      const matchesStatus =
-        statusFilter === "All Status" ||
-        it.status === statusFilter.toLowerCase();
-      const matchesExp =
-        experienceFilter === "All Experience Levels" ||
-        (experienceFilter.startsWith("Expert") && it.experience === "expert") ||
-        (experienceFilter.startsWith("Advanced") &&
-          it.experience === "advanced") ||
-        (experienceFilter.startsWith("Intermediate") &&
-          it.experience === "intermediate");
-      return matchesSearch && matchesSpec && matchesStatus && matchesExp;
-    })
-    .sort((a, b) => {
-      if (sortBy === "Rating") return b.rating - a.rating;
-      if (sortBy === "Courses Count") return b.coursesCount - a.coursesCount;
-      return 0;
+  // Filter instructors
+  const filteredInstructors = React.useMemo(() => {
+    let filtered = [...instructors];
+
+    // Search filter
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filtered = filtered.filter(
+        (i) =>
+          i.name.toLowerCase().includes(searchLower) ||
+          i.email.toLowerCase().includes(searchLower) ||
+          (i.specialization &&
+            i.specialization.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Tab filter
+    if (activeTab !== "all") {
+      filtered = filtered.filter((i) => i.status === activeTab);
+    }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((i) => i.status === statusFilter);
+    }
+
+    // Specialization filter
+    if (specializationFilter !== "all") {
+      filtered = filtered.filter(
+        (i) => i.specialization === specializationFilter
+      );
+    }
+
+    // Experience filter
+    if (experienceFilter !== "all") {
+      filtered = filtered.filter((i) => i.experience === experienceFilter);
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case "rating":
+          return (b.rating || 0) - (a.rating || 0);
+        case "courses":
+          return (b.coursesCount || 0) - (a.coursesCount || 0);
+        case "students":
+          return (b.studentsCount || 0) - (a.studentsCount || 0);
+        case "name":
+          return a.name.localeCompare(b.name);
+        case "newest":
+          return (
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        default:
+          return 0;
+      }
     });
 
+    return filtered;
+  }, [
+    instructors,
+    search,
+    activeTab,
+    statusFilter,
+    specializationFilter,
+    experienceFilter,
+    sortBy,
+  ]);
+
+  // Pagination
+  const paginatedInstructors = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredInstructors.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredInstructors, currentPage]);
+
+  const totalPages = Math.ceil(filteredInstructors.length / itemsPerPage);
+
+  // Get unique specializations
+  const specializations = React.useMemo(() => {
+    const specs = new Set(
+      instructors.map((i) => i.specialization).filter(Boolean)
+    );
+    return Array.from(specs);
+  }, [instructors]);
+
+  // Form handlers
+  const handleFormChange = (field: keyof CreateInstructorDto, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const resetForm = () => {
+    setFormData({
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      bio: "",
+      specialization: "",
+      experience: "intermediate",
+      country: "",
+      status: "active",
+    });
+  };
+
+  const handleCreate = async () => {
+    if (!formData.firstName || !formData.lastName || !formData.email) return;
+    setFormLoading(true);
+    try {
+      await createInstructor(formData);
+      setCreateOpen(false);
+      resetForm();
+      fetchStats();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleEdit = async () => {
+    if (!selectedInstructor) return;
+    setFormLoading(true);
+    try {
+      await updateInstructor(
+        selectedInstructor._id,
+        formData as UpdateInstructorDto
+      );
+      setEditOpen(false);
+      setSelectedInstructor(null);
+      resetForm();
+      fetchStats();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedInstructor) return;
+    setFormLoading(true);
+    try {
+      await deleteInstructor(selectedInstructor._id);
+      setDeleteOpen(false);
+      setSelectedInstructor(null);
+      fetchStats();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleApprove = async (instructor: Instructor) => {
+    try {
+      await approveInstructor(instructor._id);
+      fetchStats();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleSuspend = async (instructor: Instructor) => {
+    try {
+      await suspendInstructor(instructor._id);
+      fetchStats();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleActivate = async (instructor: Instructor) => {
+    try {
+      await activateInstructor(instructor._id);
+      fetchStats();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const openEditDialog = (instructor: Instructor) => {
+    setSelectedInstructor(instructor);
+    setFormData({
+      firstName: instructor.firstName,
+      lastName: instructor.lastName,
+      email: instructor.email,
+      phone: instructor.phone || "",
+      bio: instructor.bio || "",
+      specialization: instructor.specialization || "",
+      experience: instructor.experience || "intermediate",
+      country: instructor.country || "",
+      status: instructor.status as "active" | "pending",
+    });
+    setEditOpen(true);
+  };
+
+  const openViewDialog = (instructor: Instructor) => {
+    setSelectedInstructor(instructor);
+    setViewOpen(true);
+  };
+
+  const openDeleteDialog = (instructor: Instructor) => {
+    setSelectedInstructor(instructor);
+    setDeleteOpen(true);
+  };
+
+  const handleExport = () => {
+    const csv = [
+      [
+        "Name",
+        "Email",
+        "Status",
+        "Specialization",
+        "Experience",
+        "Courses",
+        "Students",
+        "Rating",
+        "Joined Date",
+      ].join(","),
+      ...filteredInstructors.map((i) =>
+        [
+          i.name,
+          i.email,
+          i.status,
+          i.specialization || "",
+          i.experience || "",
+          i.coursesCount || 0,
+          i.studentsCount || 0,
+          i.rating || 0,
+          new Date(i.createdAt).toLocaleDateString(),
+        ].join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `instructors-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const StatusBadge = ({ status }: { status: string }) => {
+    const variants = {
+      active: "bg-green-100 text-green-700 border-green-200",
+      pending: "bg-yellow-100 text-yellow-700 border-yellow-200",
+      inactive: "bg-gray-100 text-gray-700 border-gray-200",
+      suspended: "bg-red-100 text-red-700 border-red-200",
+    };
+    const icons = {
+      active: CheckCircle,
+      pending: Clock,
+      inactive: XCircle,
+      suspended: Ban,
+    };
+    const Icon = icons[status as keyof typeof icons] || Clock;
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+          variants[status as keyof typeof variants] || variants.pending
+        }`}
+      >
+        <Icon className="w-3 h-3" />
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    );
+  };
+
+  const ExperienceBadge = ({ experience }: { experience?: string }) => {
+    if (!experience) return null;
+    const variants = {
+      expert: "bg-purple-100 text-purple-700 border-purple-200",
+      advanced: "bg-blue-100 text-blue-700 border-blue-200",
+      intermediate: "bg-teal-100 text-teal-700 border-teal-200",
+    };
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+          variants[experience as keyof typeof variants] || variants.intermediate
+        }`}
+      >
+        <Award className="w-3 h-3" />
+        {experience.charAt(0).toUpperCase() + experience.slice(1)}
+      </span>
+    );
+  };
+
   return (
-    <main className="p-6">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 gap-4">
+    <main className="p-6 space-y-8">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-secondary mb-2">
-            Instructors
+            Instructors Management
           </h2>
           <p className="text-gray-600">
-            Manage instructor accounts, courses, and performance
+            Manage instructor accounts, monitor performance, and track
+            engagement
           </p>
         </div>
-        <div className="flex space-x-3">
-          <Button variant="outline" className="border-gray-300">
-            <ArrowUp className="w-4 h-4 mr-2 rotate-180" /> Export Data
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            className="border-gray-300"
+            onClick={handleExport}
+            disabled={loading}
+          >
+            <Download className="w-4 h-4 mr-2" /> Export Data
           </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <UserPlus className="w-4 h-4 mr-2" /> Add Instructor
@@ -176,59 +461,103 @@ export default function Instructors() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-linear-to-br from-blue-50 to-blue-100 rounded-xl p-6 shadow-sm border border-blue-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">
+              <p className="text-blue-600 text-sm font-medium">
                 Total Instructors
               </p>
-              <p className="text-2xl font-bold text-secondary mt-1">47</p>
-              <p className="text-accent text-sm mt-1">
-                <ArrowUp className="inline w-3 h-3" /> +8% from last month
-              </p>
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 animate-spin text-blue-600 mt-2" />
+              ) : (
+                <>
+                  <p className="text-3xl font-bold text-blue-900 mt-1">
+                    {stats?.totalInstructors || 0}
+                  </p>
+                  <p className="text-blue-600 text-xs mt-1 flex items-center gap-1">
+                    <ArrowUp className="w-3 h-3" /> All registered
+                  </p>
+                </>
+              )}
             </div>
-            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-              <Users2 className="text-primary w-6 h-6" />
+            <div className="w-14 h-14 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+              <Users2 className="text-white w-7 h-7" />
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-linear-to-br from-green-50 to-green-100 rounded-xl p-6 shadow-sm border border-green-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">
+              <p className="text-green-600 text-sm font-medium">
                 Active Instructors
               </p>
-              <p className="text-2xl font-bold text-secondary mt-1">38</p>
-              <p className="text-accent text-sm mt-1">80.9% active rate</p>
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 animate-spin text-green-600 mt-2" />
+              ) : (
+                <>
+                  <p className="text-3xl font-bold text-green-900 mt-1">
+                    {stats?.activeInstructors || 0}
+                  </p>
+                  <p className="text-green-600 text-xs mt-1">
+                    {stats?.totalInstructors
+                      ? Math.round(
+                          ((stats?.activeInstructors || 0) /
+                            stats.totalInstructors) *
+                            100
+                        )
+                      : 0}
+                    % active rate
+                  </p>
+                </>
+              )}
             </div>
-            <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center">
-              <Users2 className="text-accent w-6 h-6" />
+            <div className="w-14 h-14 bg-green-500 rounded-xl flex items-center justify-center shadow-lg">
+              <UserCheck className="text-white w-7 h-7" />
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-linear-to-br from-yellow-50 to-yellow-100 rounded-xl p-6 shadow-sm border border-yellow-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Avg. Rating</p>
-              <p className="text-2xl font-bold text-secondary mt-1">4.7</p>
-              <p className="text-accent text-sm mt-1">
-                <ArrowUp className="inline w-3 h-3" /> +0.2 from last month
-              </p>
+              <p className="text-yellow-600 text-sm font-medium">Avg. Rating</p>
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 animate-spin text-yellow-600 mt-2" />
+              ) : (
+                <>
+                  <p className="text-3xl font-bold text-yellow-900 mt-1">
+                    {stats?.avgRating?.toFixed(1) || "0.0"}
+                  </p>
+                  <p className="text-yellow-600 text-xs mt-1 flex items-center gap-1">
+                    <Star className="w-3 h-3 fill-current" /> Overall
+                    performance
+                  </p>
+                </>
+              )}
             </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-              <Star className="text-yellow-600 w-6 h-6" />
+            <div className="w-14 h-14 bg-yellow-500 rounded-xl flex items-center justify-center shadow-lg">
+              <Star className="text-white w-7 h-7" />
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
+        <div className="bg-linear-to-br from-purple-50 to-purple-100 rounded-xl p-6 shadow-sm border border-purple-200">
+          <div className="flex items-center justify-center">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Total Courses</p>
-              <p className="text-2xl font-bold text-secondary mt-1">127</p>
-              <p className="text-accent text-sm mt-1">
-                <ArrowUp className="inline w-3 h-3" /> +15% from last month
+              <p className="text-purple-600 text-sm font-medium">
+                Total Courses
               </p>
+              {statsLoading ? (
+                <Loader2 className="w-6 h-6 animate-spin text-purple-600 mt-2" />
+              ) : (
+                <>
+                  <p className="text-3xl font-bold text-purple-900 mt-1">
+                    {stats?.totalCourses || 0}
+                  </p>
+                  <p className="text-purple-600 text-xs mt-1 flex items-center gap-1">
+                    <Book className="w-3 h-3" /> By all instructors
+                  </p>
+                </>
+              )}
             </div>
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
               <Book className="text-purple-600 w-6 h-6" />
@@ -237,7 +566,37 @@ export default function Instructors() {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-5 bg-gray-100">
+          <TabsTrigger value="all" className="data-[state=active]:bg-white">
+            All ({instructors.length})
+          </TabsTrigger>
+          <TabsTrigger value="active" className="data-[state=active]:bg-white">
+            Active ({instructors.filter((i) => i.status === "active").length})
+          </TabsTrigger>
+          <TabsTrigger value="pending" className="data-[state=active]:bg-white">
+            Pending ({instructors.filter((i) => i.status === "pending").length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="inactive"
+            className="data-[state=active]:bg-white"
+          >
+            Inactive (
+            {instructors.filter((i) => i.status === "inactive").length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="suspended"
+            className="data-[state=active]:bg-white"
+          >
+            Suspended (
+            {instructors.filter((i) => i.status === "suspended").length})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Filters and Search */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
           <div className="flex flex-wrap gap-2">
             <Select
@@ -330,118 +689,168 @@ export default function Instructors() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        {filtered.map((it) => (
-          <div
-            key={it.id}
-            className="bg-card rounded-xl p-6 shadow-sm border border-gray-100"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center space-x-3">
-                <img
-                  src={it.avatarUrl}
-                  alt={it.name}
-                  className="w-12 h-12 rounded-full"
-                />
-                <div>
-                  <h3 className="font-semibold text-secondary">{it.name}</h3>
-                  <p className="text-sm text-gray-500">{it.email}</p>
+      {/* Loading State */}
+      {loading && (
+        <div className="flex justify-center items-center py-20">
+          <Loader2 className="w-12 h-12 animate-spin text-primary" />
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && filteredInstructors.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+          <Users2 className="w-16 h-16 text-gray-400 mb-4" />
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">
+            No instructors found
+          </h3>
+          <p className="text-gray-500 mb-6">
+            Try adjusting your filters or add a new instructor
+          </p>
+          <Button onClick={() => setCreateOpen(true)}>
+            <UserPlus className="w-4 h-4 mr-2" /> Add Instructor
+          </Button>
+        </div>
+      )}
+
+      {/* Grid View */}
+      {!loading && viewMode === "grid" && filteredInstructors.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {paginatedInstructors.map((instructor) => (
+            <div
+              key={instructor._id}
+              className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg">
+                    {instructor.firstName?.[0]}
+                    {instructor.lastName?.[0]}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">
+                      {instructor.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 flex items-center gap-1">
+                      <Mail className="w-3 h-3" />
+                      {instructor.email}
+                    </p>
+                  </div>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <MoreVertical className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem
+                      onClick={() => openViewDialog(instructor)}
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      View Details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => openEditDialog(instructor)}
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit Instructor
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {instructor.status === "pending" && (
+                      <DropdownMenuItem
+                        onClick={() => handleApprove(instructor)}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                        Approve
+                      </DropdownMenuItem>
+                    )}
+                    {instructor.status === "active" && (
+                      <DropdownMenuItem
+                        onClick={() => handleSuspend(instructor)}
+                      >
+                        <Ban className="w-4 h-4 mr-2 text-orange-600" />
+                        Suspend
+                      </DropdownMenuItem>
+                    )}
+                    {instructor.status === "suspended" && (
+                      <DropdownMenuItem
+                        onClick={() => handleActivate(instructor)}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                        Reactivate
+                      </DropdownMenuItem>
+                    )}
+                    {instructor.status === "inactive" && (
+                      <DropdownMenuItem
+                        onClick={() => handleActivate(instructor)}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                        Activate
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => openDeleteDialog(instructor)}
+                      className="text-red-600"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <div className="space-y-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={instructor.status} />
+                  <ExperienceBadge experience={instructor.experience} />
+                </div>
+
+                {instructor.specialization && (
+                  <p className="text-sm text-gray-600 flex items-center gap-1">
+                    <Book className="w-4 h-4" />
+                    {instructor.specialization}
+                  </p>
+                )}
+
+                {instructor.country && (
+                  <p className="text-sm text-gray-600 flex items-center gap-1">
+                    <MapPin className="w-4 h-4" />
+                    {instructor.country}
+                  </p>
+                )}
+
+                <p className="text-sm text-gray-600 flex items-center gap-1">
+                  <Calendar className="w-4 h-4" />
+                  Joined {new Date(instructor.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 pt-3 border-t border-gray-200">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-900">
+                    {instructor.coursesCount || 0}
+                  </p>
+                  <p className="text-xs text-gray-500">Courses</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-900">
+                    {instructor.studentsCount || 0}
+                  </p>
+                  <p className="text-xs text-gray-500">Students</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-900 flex items-center justify-center gap-1">
+                    <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                    {instructor.rating?.toFixed(1) || "0.0"}
+                  </p>
+                  <p className="text-xs text-gray-500">Rating</p>
                 </div>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="text-gray-400">
-                    <EllipsisVertical className="w-5 h-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem>View Profile</DropdownMenuItem>
-                  <DropdownMenuItem>Edit Instructor</DropdownMenuItem>
-                  <DropdownMenuItem>Send Message</DropdownMenuItem>
-                  <DropdownMenuItem>View Analytics</DropdownMenuItem>
-                  <DropdownMenuItem className="text-red-600">
-                    Deactivate
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
-
-            <div className="mb-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
-                <span>{it.specialization}</span>
-                {it.status === "active" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-green-600">
-                    Active
-                  </span>
-                )}
-                {it.status === "pending" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-yellow-500">
-                    Pending
-                  </span>
-                )}
-                {it.status === "inactive" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-gray-500">
-                    Inactive
-                  </span>
-                )}
-                {it.status === "suspended" && (
-                  <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-red-600">
-                    Suspended
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <span>Joined:</span>
-                <span className="font-medium">{it.joinedDate}</span>
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Student Rating</span>
-                <span className="flex items-center">
-                  <Star className="text-yellow-400 w-4 h-4 mr-1" />{" "}
-                  {it.rating.toFixed(1)}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>Courses Taught</span>
-                <span className="font-medium">{it.coursesCount} courses</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-accent h-2 rounded-full"
-                  style={{ width: `${it.progressPercent}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center text-sm text-gray-600">
-              <div className="flex items-center space-x-2">
-                {it.experience === "expert" && (
-                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-primary/10 text-primary">
-                    Expert
-                  </span>
-                )}
-                {it.experience === "advanced" && (
-                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-600">
-                    Advanced
-                  </span>
-                )}
-                {it.experience === "intermediate" && (
-                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-purple-100 text-purple-600">
-                    Intermediate
-                  </span>
-                )}
-                <span>{it.location}</span>
-              </div>
-              <div className="text-primary font-medium">
-                {it.studentsCount} students
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* All Instructors Table */}
       <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
@@ -484,15 +893,14 @@ export default function Instructors() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filtered.map((it) => (
-                <tr key={it.id} className="hover:bg-gray-50">
+              {paginatedInstructors.map((it: Instructor) => (
+                <tr key={it._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <img
-                        className="h-8 w-8 rounded-full"
-                        src={it.avatarUrl}
-                        alt=""
-                      />
+                      <div className="h-8 w-8 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
+                        {it.firstName?.[0]}
+                        {it.lastName?.[0]}
+                      </div>
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">
                           {it.name}
@@ -515,15 +923,15 @@ export default function Instructors() {
                     <div className="flex items-center">
                       <Star className="text-yellow-400 w-4 h-4 mr-1" />
                       <span className="text-sm text-gray-900">
-                        {it.rating.toFixed(1)}
+                        {it.rating?.toFixed(1) || "0.0"}
                       </span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.coursesCount} courses
+                    {it.coursesCount || 0} courses
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.studentsCount}
+                    {it.studentsCount || 0}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {it.status === "active" && (
@@ -548,14 +956,20 @@ export default function Instructors() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {it.joinedDate}
+                    {new Date(it.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-primary hover:text-primary/80 mr-3">
+                    <button
+                      onClick={() => openViewDialog(it)}
+                      className="text-primary hover:text-primary/80 mr-3"
+                    >
                       View
                     </button>
-                    <button className="text-gray-600 hover:text-primary">
-                      Message
+                    <button
+                      onClick={() => openEditDialog(it)}
+                      className="text-gray-600 hover:text-primary"
+                    >
+                      Edit
                     </button>
                   </td>
                 </tr>

@@ -109,6 +109,12 @@ export default function Header() {
         keywords: ["banner", "home banner", "video"],
       },
       {
+        label: "Home SEO",
+        href: "/cms/home",
+        icon: Search,
+        keywords: ["seo", "score", "optimize"],
+      },
+      {
         label: "About Section",
         href: "/cms/home/about-section",
         icon: Heart,

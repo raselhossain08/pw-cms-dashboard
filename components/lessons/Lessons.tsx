@@ -11,6 +11,16 @@ import {
   UpdateLessonPayload,
 } from "@/services/lessons.service";
 import { coursesService } from "@/services/courses.service";
+import { modulesService } from "@/services/modules.service";
+import { uploadService } from "@/services/upload.service";
+import {
+  quizzesService,
+  CreateQuizPayload,
+  QuizQuestion,
+} from "@/services/quizzes.service";
+import assignmentsService from "@/services/assignments.service";
+import ReactPlayer from "react-player";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   PlayCircle,
   FileText,
@@ -82,7 +92,8 @@ type LessonItem = {
   position: number;
   title: string;
   course: string;
-  module: string;
+  moduleId?: string;
+  moduleTitle?: string;
   type: LessonType;
   duration: number; // in seconds
   durationDisplay: string;
@@ -117,13 +128,261 @@ export default function LessonsEnhanced() {
   const [createPreset, setCreatePreset] = React.useState<{
     type?: LessonType;
   } | null>(null);
+  const [selectedModuleId, setSelectedModuleId] = React.useState<string>("");
   const [uploadProgress, setUploadProgress] = React.useState<number>(0);
   const [videoPreview, setVideoPreview] = React.useState<string | null>(null);
   const [videoFile, setVideoFile] = React.useState<File | null>(null);
+  const [autoDurationSeconds, setAutoDurationSeconds] = React.useState<
+    number | null
+  >(null);
   const [seoTags, setSeoTags] = React.useState<string[]>([]);
   const [tagInput, setTagInput] = React.useState("");
   const searchRef = React.useRef<HTMLInputElement>(null);
   const videoInputRef = React.useRef<HTMLInputElement>(null);
+  const [filterModuleId, setFilterModuleId] = React.useState<string>("all");
+  const [createQuizOpen, setCreateQuizOpen] = React.useState(false);
+  const [createAssignmentOpen, setCreateAssignmentOpen] = React.useState(false);
+  const [previewAutoplay, setPreviewAutoplay] = React.useState(false);
+  const [searchLoading, setSearchLoading] = React.useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [quizForm, setQuizForm] = React.useState<{
+    title: string;
+    description: string;
+    durationMinutes: number;
+    passingScore: number;
+    attemptsAllowed: number;
+    shuffleQuestions: boolean;
+    showCorrectAnswers: boolean;
+    allowReview: boolean;
+    questions: Omit<QuizQuestion, "id">[];
+  }>({
+    title: "",
+    description: "",
+    durationMinutes: 15,
+    passingScore: 70,
+    attemptsAllowed: 1,
+    shuffleQuestions: false,
+    showCorrectAnswers: false,
+    allowReview: true,
+    questions: [],
+  });
+  const [assignmentForm, setAssignmentForm] = React.useState<{
+    title: string;
+    description: string;
+    dueDate: string;
+    maxPoints: number;
+  }>({ title: "", description: "", dueDate: "", maxPoints: 100 });
+
+  function formatTime(t: number) {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function isNativePlayable(url: string | null): boolean {
+    if (!url) return false;
+    const u = url.toLowerCase();
+    return (
+      u.startsWith("blob:") ||
+      u.endsWith(".mp4") ||
+      u.endsWith(".webm") ||
+      u.endsWith(".ogg") ||
+      u.endsWith(".mov")
+    );
+  }
+
+  function isBunnyEmbed(url: string | null): boolean {
+    if (!url) return false;
+    return /mediadelivery\.net\/embed\//i.test(url);
+  }
+
+  function VideoPlayer({
+    src,
+    poster,
+    className,
+    onLoaded,
+  }: {
+    src: string;
+    poster?: string;
+    className?: string;
+    onLoaded?: (duration: number) => void;
+  }) {
+    const ref = React.useRef<HTMLVideoElement>(null);
+    const [isPlaying, setIsPlaying] = React.useState(false);
+    const [current, setCurrent] = React.useState(0);
+    const [duration, setDuration] = React.useState(0);
+    const [volume, setVolume] = React.useState(1);
+    const [muted, setMuted] = React.useState(false);
+
+    React.useEffect(() => {
+      const v = ref.current;
+      if (!v) return;
+      const onTime = () => setCurrent(v.currentTime || 0);
+      const onMeta = () => {
+        const d = Math.round(v.duration || 0);
+        setDuration(d);
+        if (onLoaded) onLoaded(d);
+      };
+      v.addEventListener("timeupdate", onTime);
+      v.addEventListener("loadedmetadata", onMeta);
+      return () => {
+        v.removeEventListener("timeupdate", onTime);
+        v.removeEventListener("loadedmetadata", onMeta);
+      };
+    }, [onLoaded]);
+
+    function togglePlay() {
+      const v = ref.current;
+      if (!v) return;
+      if (isPlaying) {
+        v.pause();
+        setIsPlaying(false);
+      } else {
+        v.play();
+        setIsPlaying(true);
+      }
+    }
+
+    function seek(p: number) {
+      const v = ref.current;
+      if (!v || duration <= 0) return;
+      v.currentTime = Math.min(duration, Math.max(0, p * duration));
+    }
+
+    function changeVolume(val: number) {
+      const v = ref.current;
+      if (!v) return;
+      const clamped = Math.min(1, Math.max(0, val));
+      v.volume = clamped;
+      setVolume(clamped);
+      if (clamped === 0) setMuted(true);
+      else setMuted(false);
+    }
+
+    function toggleMute() {
+      const v = ref.current;
+      if (!v) return;
+      v.muted = !muted;
+      setMuted(!muted);
+    }
+
+    const progress = duration > 0 ? current / duration : 0;
+
+    return (
+      <div className={`relative w-full ${className || ""}`}>
+        <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+          <video
+            ref={ref}
+            src={src}
+            poster={poster}
+            className="w-full h-full object-contain"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
+          <div className="absolute bottom-0 left-0 right-0 p-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="bg-white/20 hover:bg-white/30 text-white rounded px-2 py-1 text-xs"
+            >
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            <div
+              className="flex-1 h-1.5 bg-white/30 rounded cursor-pointer"
+              onClick={(e) => {
+                const rect = (
+                  e.target as HTMLDivElement
+                ).getBoundingClientRect();
+                seek((e.clientX - rect.left) / rect.width);
+              }}
+            >
+              <div
+                className="h-1.5 bg-primary rounded"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
+            </div>
+            <span className="text-white text-xs">
+              {formatTime(current)} / {formatTime(duration)}
+            </span>
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="bg-white/20 hover:bg-white/30 text-white rounded px-2 py-1 text-xs"
+            >
+              {muted || volume === 0 ? "Unmute" : "Mute"}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={volume}
+              onChange={(e) => changeVolume(Number(e.target.value))}
+              className="w-24"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function ResponsivePlayer({
+    url,
+    poster,
+    className,
+    onDuration,
+    autoPlay,
+  }: {
+    url: string;
+    poster?: string;
+    className?: string;
+    onDuration?: (seconds: number) => void;
+    autoPlay?: boolean;
+  }) {
+    const RP: any = ReactPlayer;
+    if (isBunnyEmbed(url)) {
+      const src = url.includes("?")
+        ? `${url}&autoplay=${autoPlay ? 1 : 0}`
+        : `${url}?autoplay=${autoPlay ? 1 : 0}`;
+      return (
+        <div className={`relative w-full ${className || ""}`}>
+          <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+            <iframe
+              src={src}
+              className="w-full h-full"
+              allow="autoplay; fullscreen"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      );
+    }
+    if (isNativePlayable(url)) {
+      return (
+        <VideoPlayer
+          src={url}
+          poster={poster}
+          className={className}
+          onLoaded={(d) => onDuration && onDuration(d)}
+        />
+      );
+    }
+    return (
+      <div className={`relative w-full ${className || ""}`}>
+        <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+          <RP
+            url={url}
+            controls
+            width="100%"
+            height="100%"
+            playing={!!autoPlay}
+            onDuration={(d: number) => onDuration && onDuration(Math.round(d))}
+          />
+        </div>
+      </div>
+    );
+  }
 
   // Fetch courses
   const { data: coursesData, isLoading: coursesLoading } = useQuery({
@@ -138,6 +397,58 @@ export default function LessonsEnhanced() {
     if (Array.isArray(raw?.courses)) return raw.courses;
     return [];
   }, [coursesData]);
+
+  const { data: modulesData, isLoading: modulesLoading } = useQuery({
+    queryKey: ["modules", { courseId: selectedCourseId }],
+    queryFn: () =>
+      selectedCourseId
+        ? modulesService.getAllModules({
+            courseId: selectedCourseId,
+            limit: 100,
+          })
+        : Promise.resolve([]),
+    enabled: !!selectedCourseId,
+  });
+
+  const moduleList: any[] = React.useMemo(() => {
+    const raw: any = modulesData as any;
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw?.modules)) return raw.modules;
+    return [];
+  }, [modulesData]);
+
+  React.useEffect(() => {
+    const initial = searchParams?.get("q") || "";
+    if (initial && !search) setSearch(initial);
+  }, [searchParams]);
+
+  React.useEffect(() => {
+    const timeout = setTimeout(() => {
+      const params = new URLSearchParams(
+        Array.from(searchParams?.entries?.() || [])
+      );
+      if (search) params.set("q", search);
+      else params.delete("q");
+      const qs = params.toString();
+      const url = qs ? `${pathname}?${qs}` : `${pathname}`;
+      router.replace(url);
+      setSearchLoading(false);
+      if (!search) return;
+      if (filtered.length === 0) {
+        push({ type: "info", message: `No lessons match "${search}"` });
+      } else {
+        push({ type: "info", message: `Showing ${filtered.length} result(s)` });
+      }
+    }, 300);
+    setSearchLoading(true);
+    return () => clearTimeout(timeout);
+  }, [search, pathname]);
+
+  React.useEffect(() => {
+    if (!selectedModuleId && moduleList.length > 0) {
+      setSelectedModuleId(moduleList[0]._id || moduleList[0].id);
+    }
+  }, [moduleList, selectedModuleId]);
 
   React.useEffect(() => {
     if (!selectedCourseId && courseList.length > 0) {
@@ -183,7 +494,9 @@ export default function LessonsEnhanced() {
       title: l.title,
       course:
         courseList.find((c: any) => c._id === selectedCourseId)?.title || "",
-      module: "", // Can be enhanced with module data
+      moduleId:
+        l.module?._id || (typeof l.module === "string" ? l.module : undefined),
+      moduleTitle: l.module?.title || undefined,
       type: (l.type || LessonType.VIDEO) as LessonType,
       duration: l.duration || 0,
       durationDisplay: formatDuration(l.duration || 0),
@@ -216,6 +529,9 @@ export default function LessonsEnhanced() {
       .filter((l) =>
         statusFilter === "all" ? true : l.status === statusFilter
       )
+      .filter((l) =>
+        filterModuleId !== "all" ? l.moduleId === filterModuleId : true
+      )
       .sort((a, b) => {
         if (sortBy === "position") return a.position - b.position;
         if (sortBy === "newest") return b.id.localeCompare(a.id);
@@ -223,7 +539,7 @@ export default function LessonsEnhanced() {
         if (sortBy === "completion") return b.completion - a.completion;
         return 0;
       });
-  }, [lessons, search, typeFilter, statusFilter, sortBy]);
+  }, [lessons, search, typeFilter, statusFilter, sortBy, filterModuleId]);
 
   // Statistics
   const stats = React.useMemo(() => {
@@ -249,10 +565,12 @@ export default function LessonsEnhanced() {
     mutationFn: ({
       courseId,
       lessonIds,
+      moduleId,
     }: {
       courseId: string;
       lessonIds: string[];
-    }) => lessonsService.reorderLessons(courseId, lessonIds),
+      moduleId?: string;
+    }) => lessonsService.reorderLessons(courseId, lessonIds, moduleId),
     onSuccess: () => {
       push({ type: "success", message: "✓ Order updated successfully" });
       queryClient.invalidateQueries({
@@ -355,7 +673,12 @@ export default function LessonsEnhanced() {
     order.splice(to, 0, moved);
     const ids = order.map((l) => l.id);
     if (selectedCourseId) {
-      reorderMutation.mutate({ courseId: selectedCourseId, lessonIds: ids });
+      const moduleId = filterModuleId || undefined;
+      reorderMutation.mutate({
+        courseId: selectedCourseId,
+        lessonIds: ids,
+        moduleId,
+      });
     }
   }
 
@@ -431,6 +754,9 @@ export default function LessonsEnhanced() {
               ref={searchRef}
               className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
             />
+            {(searchLoading || lessonsFetching) && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />
+            )}
           </div>
         </div>
 
@@ -608,6 +934,21 @@ export default function LessonsEnhanced() {
                   <SelectItem value="completion">Sort: Completion</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={filterModuleId} onValueChange={setFilterModuleId}>
+                <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-sm w-56 hover:bg-gray-100 transition-all">
+                  <SelectValue
+                    placeholder={modulesLoading ? "Loading..." : "All Modules"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Modules</SelectItem>
+                  {moduleList.map((m: any) => (
+                    <SelectItem key={m._id || m.id} value={m._id || m.id}>
+                      {m.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
@@ -707,7 +1048,7 @@ export default function LessonsEnhanced() {
                   }}
                 >
                   <div className="p-5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between  overflow-x-auto">
                       <div className="flex items-center space-x-4 flex-1">
                         {/* Drag Handle */}
                         <div className="flex items-center space-x-3 text-gray-400 group-hover:text-gray-600 transition-colors">
@@ -734,9 +1075,16 @@ export default function LessonsEnhanced() {
                                   <PlayCircle className="w-6 h-6 text-primary" />
                                 </div>
                               )}
-                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewLesson(lesson);
+                                  setPreviewAutoplay(true);
+                                }}
+                                className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
                                 <PlayCircle className="text-white w-6 h-6" />
-                              </div>
+                              </button>
                               <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded">
                                 {lesson.durationDisplay}
                               </span>
@@ -767,18 +1115,22 @@ export default function LessonsEnhanced() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center space-x-4 text-xs text-gray-500">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                               <span className="flex items-center space-x-1">
                                 {getLessonIcon(lesson.type)}
                                 <span className="capitalize">
                                   {lesson.type}
                                 </span>
                               </span>
+                              <span className="hidden sm:flex items-center space-x-1">
+                                <Tag className="w-3 h-3" />
+                                <span>{lesson.moduleTitle || "No module"}</span>
+                              </span>
                               <span className="flex items-center space-x-1">
                                 <Clock className="w-3 h-3" />
                                 <span>{lesson.durationDisplay}</span>
                               </span>
-                              <span className="flex items-center space-x-1">
+                              <span className="hidden sm:flex items-center space-x-1">
                                 <Users className="w-3 h-3" />
                                 <span>
                                   {lesson.completionCount} completions
@@ -803,7 +1155,7 @@ export default function LessonsEnhanced() {
                             : "Draft"}
                         </span>
 
-                        <div className="w-24">
+                        <div className="hidden sm:block w-24">
                           <div className="flex justify-between text-xs text-gray-600 mb-1">
                             <span className="font-medium">
                               {lesson.averageScore}%
@@ -915,7 +1267,13 @@ export default function LessonsEnhanced() {
                 key={idx}
                 onClick={() => {
                   setCreatePreset({ type: action.type });
-                  setCreateOpen(true);
+                  if (action.type === LessonType.QUIZ) {
+                    setCreateQuizOpen(true);
+                  } else if (action.type === LessonType.ASSIGNMENT) {
+                    setCreateAssignmentOpen(true);
+                  } else {
+                    setCreateOpen(true);
+                  }
                 }}
                 className="flex items-center space-x-3 p-4 bg-gradient-to-br from-gray-50 to-white hover:from-gray-100 hover:to-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-all hover:shadow-md group"
               >
@@ -961,11 +1319,17 @@ export default function LessonsEnhanced() {
               const durationInput = String(fd.get("duration") || "0");
               const durationMinutes =
                 Number(durationInput.replace(/[^0-9]/g, "")) || 0;
-              const duration = durationMinutes * 60;
+              let duration = durationMinutes * 60;
+              if (autoDurationSeconds && autoDurationSeconds > 0) {
+                duration = autoDurationSeconds;
+              }
               const content = String(fd.get("content") || "");
               const videoUrl = String(fd.get("videoUrl") || "");
               const isFree = fd.get("isFree") === "on";
               const status = String(fd.get("status") || LessonStatus.DRAFT);
+              const moduleId = String(
+                fd.get("moduleId") || selectedModuleId || ""
+              );
               const metaTitle = String(fd.get("metaTitle") || "");
               const metaDescription = String(fd.get("metaDescription") || "");
 
@@ -982,11 +1346,32 @@ export default function LessonsEnhanced() {
                 description,
                 type: type as LessonType,
                 content,
-                videoUrl,
                 duration,
                 isFree,
                 status: status as LessonStatus,
+                moduleId: moduleId || undefined,
               };
+
+              let finalVideoUrl = videoUrl;
+              if (videoFile) {
+                try {
+                  const result = await uploadService.uploadFile(videoFile, {
+                    type: "video",
+                    onProgress: (p) => setUploadProgress(p.percentage),
+                  });
+                  finalVideoUrl = result.url;
+                  if (result.duration && result.duration > 0) {
+                    payload.duration = Math.round(result.duration);
+                  }
+                } catch (err) {
+                  push({ type: "error", message: "Video upload failed" });
+                  return;
+                } finally {
+                  setUploadProgress(0);
+                }
+              }
+
+              payload.videoUrl = finalVideoUrl || undefined;
 
               createMutation.mutate({ courseId: selectedCourseId, payload });
             }}
@@ -994,11 +1379,37 @@ export default function LessonsEnhanced() {
             onReset={() => {
               setVideoPreview(null);
               setVideoFile(null);
+              setAutoDurationSeconds(null);
               setSeoTags([]);
               setTagInput("");
             }}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Module
+                </label>
+                <input type="hidden" name="moduleId" value={selectedModuleId} />
+                <Select
+                  value={selectedModuleId}
+                  onValueChange={(v) => setSelectedModuleId(v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        modulesLoading ? "Loading..." : "Select module"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {moduleList.map((m: any) => (
+                      <SelectItem key={m._id || m.id} value={m._id || m.id}>
+                        {m.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Lesson Title *
@@ -1073,6 +1484,12 @@ export default function LessonsEnhanced() {
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                   placeholder="15"
                 />
+                {autoDurationSeconds !== null && autoDurationSeconds > 0 && (
+                  <p className="text-xs text-gray-600 mt-1">
+                    Auto: {Math.floor(autoDurationSeconds / 60)}m{" "}
+                    {Math.round(autoDurationSeconds % 60)}s
+                  </p>
+                )}
               </div>
 
               <div className="md:col-span-2">
@@ -1122,21 +1539,45 @@ export default function LessonsEnhanced() {
                         setVideoFile(file);
                         const url = URL.createObjectURL(file);
                         setVideoPreview(url);
+                        setAutoDurationSeconds(null);
                       }
                     }}
                   />
                   {videoPreview && (
                     <div className="relative border border-gray-300 rounded-lg overflow-hidden">
-                      <video
-                        src={videoPreview}
-                        controls
-                        className="w-full h-48 object-cover bg-black"
+                      <ResponsivePlayer
+                        url={videoPreview}
+                        className="h-48"
+                        onDuration={(d: number) => {
+                          setAutoDurationSeconds(d);
+                          const input = document.querySelector(
+                            'input[name="duration"]'
+                          ) as HTMLInputElement | null;
+                          if (input)
+                            input.value = String(
+                              Math.max(1, Math.ceil(d / 60))
+                            );
+                        }}
                       />
+                      {uploadProgress > 0 && uploadProgress < 100 && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-gray-200 h-1">
+                          <div
+                            className="bg-primary h-1"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                      )}
+                      {uploadProgress > 0 && uploadProgress < 100 && (
+                        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded">
+                          {uploadProgress}%
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
                           setVideoPreview(null);
                           setVideoFile(null);
+                          setAutoDurationSeconds(null);
                           if (videoInputRef.current)
                             videoInputRef.current.value = "";
                         }}
@@ -1526,9 +1967,14 @@ export default function LessonsEnhanced() {
       {/* Preview Lesson Dialog */}
       <Dialog
         open={!!previewLesson}
-        onOpenChange={(v) => !v && setPreviewLesson(null)}
+        onOpenChange={(v) => {
+          if (!v) {
+            setPreviewLesson(null);
+            setPreviewAutoplay(false);
+          }
+        }}
       >
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
               Preview Lesson
@@ -1539,15 +1985,16 @@ export default function LessonsEnhanced() {
           </DialogHeader>
           {previewLesson && (
             <div className="space-y-4">
+              {previewLesson.type === LessonType.VIDEO &&
+                previewLesson.videoUrl && (
+                  <ResponsivePlayer
+                    url={previewLesson.videoUrl}
+                    poster={previewLesson.thumbnail}
+                    className="w-full"
+                    autoPlay={previewAutoplay}
+                  />
+                )}
               <div className="flex items-start space-x-4">
-                {previewLesson.type === LessonType.VIDEO &&
-                  previewLesson.thumbnail && (
-                    <img
-                      src={previewLesson.thumbnail}
-                      alt={previewLesson.title}
-                      className="w-32 h-20 object-cover rounded-lg"
-                    />
-                  )}
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-secondary mb-2">
                     {previewLesson.title}
@@ -1614,6 +2061,426 @@ export default function LessonsEnhanced() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createQuizOpen} onOpenChange={setCreateQuizOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              Create Quiz
+            </DialogTitle>
+            <DialogDescription>Build a quiz for this course</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!selectedCourseId) {
+                push({
+                  type: "error",
+                  message: "Please select a course first",
+                });
+                return;
+              }
+              const payload: CreateQuizPayload = {
+                title: quizForm.title,
+                description: quizForm.description,
+                courseId: selectedCourseId,
+                questions:
+                  quizForm.questions.length > 0
+                    ? quizForm.questions
+                    : [
+                        {
+                          type: "multiple_choice",
+                          question: "Sample question",
+                          options: ["A", "B", "C", "D"],
+                          correctAnswer: "A",
+                          points: 1,
+                          order: 1,
+                        },
+                      ],
+                passingScore: quizForm.passingScore,
+                duration: Math.max(1, quizForm.durationMinutes) * 60,
+                attemptsAllowed: quizForm.attemptsAllowed,
+                shuffleQuestions: quizForm.shuffleQuestions,
+                showCorrectAnswers: quizForm.showCorrectAnswers,
+                allowReview: quizForm.allowReview,
+              };
+              quizzesService
+                .createQuiz(payload)
+                .then(() => {
+                  push({
+                    type: "success",
+                    message: "✓ Quiz created successfully",
+                  });
+                  setCreateQuizOpen(false);
+                  setQuizForm({
+                    title: "",
+                    description: "",
+                    durationMinutes: 15,
+                    passingScore: 70,
+                    attemptsAllowed: 1,
+                    shuffleQuestions: false,
+                    showCorrectAnswers: false,
+                    allowReview: true,
+                    questions: [],
+                  });
+                })
+                .catch((err) => {
+                  push({
+                    type: "error",
+                    message: err?.message || "Failed to create quiz",
+                  });
+                });
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Quiz Title *
+                </label>
+                <input
+                  className="w-full px-4 py-2.5 border rounded-lg"
+                  value={quizForm.title}
+                  onChange={(e) =>
+                    setQuizForm({ ...quizForm, title: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Description
+                </label>
+                <textarea
+                  className="w-full px-4 py-2.5 border rounded-lg"
+                  rows={3}
+                  value={quizForm.description}
+                  onChange={(e) =>
+                    setQuizForm({ ...quizForm, description: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Duration (minutes)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  className="w-full px-4 py-2.5 border rounded-lg"
+                  value={quizForm.durationMinutes}
+                  onChange={(e) =>
+                    setQuizForm({
+                      ...quizForm,
+                      durationMinutes: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Passing Score (%)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="w-full px-4 py-2.5 border rounded-lg"
+                  value={quizForm.passingScore}
+                  onChange={(e) =>
+                    setQuizForm({
+                      ...quizForm,
+                      passingScore: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Attempts Allowed
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  className="w-full px-4 py-2.5 border rounded-lg"
+                  value={quizForm.attemptsAllowed}
+                  onChange={(e) =>
+                    setQuizForm({
+                      ...quizForm,
+                      attemptsAllowed: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quizForm.shuffleQuestions}
+                    onChange={(e) =>
+                      setQuizForm({
+                        ...quizForm,
+                        shuffleQuestions: e.target.checked,
+                      })
+                    }
+                  />{" "}
+                  Shuffle Questions
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quizForm.showCorrectAnswers}
+                    onChange={(e) =>
+                      setQuizForm({
+                        ...quizForm,
+                        showCorrectAnswers: e.target.checked,
+                      })
+                    }
+                  />{" "}
+                  Show Answers
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quizForm.allowReview}
+                    onChange={(e) =>
+                      setQuizForm({
+                        ...quizForm,
+                        allowReview: e.target.checked,
+                      })
+                    }
+                  />{" "}
+                  Allow Review
+                </label>
+              </div>
+            </div>
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-gray-700">Questions</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setQuizForm({
+                      ...quizForm,
+                      questions: [
+                        ...quizForm.questions,
+                        {
+                          type: "multiple_choice",
+                          question: "",
+                          options: ["", "", "", ""],
+                          correctAnswer: "",
+                          points: 1,
+                          order: quizForm.questions.length + 1,
+                        },
+                      ],
+                    })
+                  }
+                >
+                  Add Question
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {quizForm.questions.map((q, idx) => (
+                  <div key={idx} className="border rounded-lg p-3">
+                    <input
+                      className="w-full px-3 py-2 border rounded mb-2"
+                      placeholder={`Question ${idx + 1}`}
+                      value={q.question}
+                      onChange={(e) => {
+                        const arr = [...quizForm.questions];
+                        arr[idx] = { ...arr[idx], question: e.target.value };
+                        setQuizForm({ ...quizForm, questions: arr });
+                      }}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      {(q.options || []).map((opt, i) => (
+                        <input
+                          key={i}
+                          className="px-3 py-2 border rounded"
+                          placeholder={`Option ${i + 1}`}
+                          value={opt}
+                          onChange={(e) => {
+                            const arr = [...quizForm.questions];
+                            const opts = [...(arr[idx].options || [])];
+                            opts[i] = e.target.value;
+                            arr[idx] = { ...arr[idx], options: opts };
+                            setQuizForm({ ...quizForm, questions: arr });
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <input
+                      className="mt-2 px-3 py-2 border rounded w-full"
+                      placeholder="Correct answer"
+                      value={(q.correctAnswer as string) || ""}
+                      onChange={(e) => {
+                        const arr = [...quizForm.questions];
+                        arr[idx] = {
+                          ...arr[idx],
+                          correctAnswer: e.target.value,
+                        };
+                        setQuizForm({ ...quizForm, questions: arr });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateQuizOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-primary text-white">
+                Create Quiz
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createAssignmentOpen}
+        onOpenChange={setCreateAssignmentOpen}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              Create Assignment
+            </DialogTitle>
+            <DialogDescription>
+              Create a practical task for students
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!selectedCourseId) {
+                push({
+                  type: "error",
+                  message: "Please select a course first",
+                });
+                return;
+              }
+              assignmentsService
+                .createAssignment(selectedCourseId, {
+                  title: assignmentForm.title,
+                  description: assignmentForm.description,
+                  dueDate: assignmentForm.dueDate,
+                  maxPoints: assignmentForm.maxPoints,
+                })
+                .then(() => {
+                  push({
+                    type: "success",
+                    message: "✓ Assignment created successfully",
+                  });
+                  setCreateAssignmentOpen(false);
+                  setAssignmentForm({
+                    title: "",
+                    description: "",
+                    dueDate: "",
+                    maxPoints: 100,
+                  });
+                })
+                .catch((err) => {
+                  push({
+                    type: "error",
+                    message: err?.message || "Failed to create assignment",
+                  });
+                });
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Assignment Title *
+                </label>
+                <input
+                  className="w-full px-4 py-2.5 border rounded-lg"
+                  value={assignmentForm.title}
+                  onChange={(e) =>
+                    setAssignmentForm({
+                      ...assignmentForm,
+                      title: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Description *
+                </label>
+                <textarea
+                  className="w-full px-4 py-2.5 border rounded-lg"
+                  rows={4}
+                  value={assignmentForm.description}
+                  onChange={(e) =>
+                    setAssignmentForm({
+                      ...assignmentForm,
+                      description: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                    Due Date *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="w-full px-4 py-2.5 border rounded-lg"
+                    value={assignmentForm.dueDate}
+                    onChange={(e) =>
+                      setAssignmentForm({
+                        ...assignmentForm,
+                        dueDate: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                    Max Points
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full px-4 py-2.5 border rounded-lg"
+                    value={assignmentForm.maxPoints}
+                    onChange={(e) =>
+                      setAssignmentForm({
+                        ...assignmentForm,
+                        maxPoints: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateAssignmentOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-primary text-white">
+                Create Assignment
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

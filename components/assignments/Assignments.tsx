@@ -53,6 +53,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -97,6 +104,21 @@ export default function Assignments() {
     dueDate: "",
     maxPoints: 100,
   });
+  const [attachments, setAttachments] = React.useState<File[]>([]);
+
+  // Fetch courses for selection
+  const { data: coursesData } = useQuery({
+    queryKey: ["courses"],
+    queryFn: () => {
+      // Assuming you have a courses service
+      return fetch("/api/courses")
+        .then((res) => res.json())
+        .catch(() => ({ courses: [] }));
+    },
+    staleTime: 60000,
+  });
+
+  const courses = (coursesData as any)?.courses || [];
 
   // Fetch assignments (using a default courseId or "all" logic)
   const { data, isLoading, error } = useQuery({
@@ -284,7 +306,7 @@ export default function Assignments() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50">
+    <main className="min-h-screen bg-linear-to-br from-slate-50 via-blue-50 to-slate-50">
       <div className="p-6 max-w-[1800px] mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -295,7 +317,7 @@ export default function Assignments() {
                   <FileText className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                  <h1 className="text-3xl font-bold bg-linear-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                     Aviation Assignments
                   </h1>
                   <p className="text-slate-600 text-sm">
@@ -650,7 +672,7 @@ export default function Assignments() {
 
         {/* Create Assignment Dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-[95vw] md:max-w-3xl lg:max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-bold text-slate-900">
                 Create New Assignment
@@ -697,26 +719,37 @@ export default function Assignments() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label
                     htmlFor="courseId"
                     className="text-sm font-medium text-slate-700"
                   >
-                    Course ID *
+                    Select Course *
                   </Label>
-                  <Input
-                    id="courseId"
-                    placeholder="Enter course ID"
+                  <Select
                     value={formData.courseId}
-                    onChange={(e) =>
-                      setFormData({ ...formData, courseId: e.target.value })
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, courseId: value })
                     }
-                    className="focus:ring-2 focus:ring-blue-500/20"
-                  />
-                  <p className="text-xs text-slate-500">
-                    MongoDB ObjectId of the course
-                  </p>
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Choose a course..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {courses.length > 0 ? (
+                        courses.map((course: any) => (
+                          <SelectItem key={course._id} value={course._id}>
+                            {course.title}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="674845c8b4dc5d024c38e9c6" disabled>
+                          No courses available
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
@@ -743,36 +776,132 @@ export default function Assignments() {
               </div>
 
               <div className="space-y-2">
-                <Label
-                  htmlFor="dueDate"
-                  className="text-sm font-medium text-slate-700"
-                >
+                <Label className="text-sm font-medium text-slate-700">
                   Due Date *
                 </Label>
-                <Input
-                  id="dueDate"
-                  type="datetime-local"
-                  value={formData.dueDate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, dueDate: e.target.value })
-                  }
-                  className="focus:ring-2 focus:ring-blue-500/20"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !formData.dueDate && "text-muted-foreground"
+                      )}
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {formData.dueDate ? (
+                        format(new Date(formData.dueDate), "PPP 'at' p")
+                      ) : (
+                        <span>Pick a due date and time</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={
+                        formData.dueDate
+                          ? new Date(formData.dueDate)
+                          : undefined
+                      }
+                      onSelect={(date) => {
+                        if (date) {
+                          // Set time to end of day if not specified
+                          const dateWithTime = new Date(date);
+                          dateWithTime.setHours(23, 59, 59);
+                          setFormData({
+                            ...formData,
+                            dueDate: dateWithTime.toISOString(),
+                          });
+                        }
+                      }}
+                      initialFocus
+                    />
+                    <div className="p-3 border-t">
+                      <Label className="text-xs text-slate-600 mb-2 block">
+                        Time (optional)
+                      </Label>
+                      <Input
+                        type="time"
+                        value={
+                          formData.dueDate
+                            ? format(new Date(formData.dueDate), "HH:mm")
+                            : ""
+                        }
+                        onChange={(e) => {
+                          if (formData.dueDate && e.target.value) {
+                            const [hours, minutes] = e.target.value.split(":");
+                            const date = new Date(formData.dueDate);
+                            date.setHours(parseInt(hours), parseInt(minutes));
+                            setFormData({
+                              ...formData,
+                              dueDate: date.toISOString(),
+                            });
+                          }
+                        }}
+                        className="h-8"
+                      />
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
-              <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 mt-4">
-                <div className="flex items-start gap-3">
-                  <FileText className="w-5 h-5 text-primary mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-blue-900 mb-1">
-                      Attachments & Resources
-                    </p>
-                    <p className="text-xs text-blue-700">
-                      File upload functionality will be available after creating
-                      the assignment.
-                    </p>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-slate-700">
+                  Attachments & Resources
+                </Label>
+                <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer">
+                  <div className="flex flex-col items-center gap-2">
+                    <Upload className="w-8 h-8 text-slate-400" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        Click to upload or drag and drop
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        PDF, DOC, DOCX, Images (Max 10MB each)
+                      </p>
+                    </div>
                   </div>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        setAttachments(Array.from(e.target.files));
+                      }
+                    }}
+                  />
                 </div>
+                {attachments.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {attachments.map((file, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between bg-slate-50 rounded-lg p-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-primary" />
+                          <span className="text-sm text-slate-700">
+                            {file.name}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setAttachments((prev) =>
+                              prev.filter((_, i) => i !== index)
+                            )
+                          }
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -810,7 +939,7 @@ export default function Assignments() {
           open={!!previewAssignment}
           onOpenChange={(v) => !v && setPreviewAssignment(null)}
         >
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-[95vw] md:max-w-4xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-bold text-slate-900">
                 Assignment Details

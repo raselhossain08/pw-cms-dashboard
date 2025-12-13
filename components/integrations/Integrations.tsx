@@ -9,9 +9,21 @@ import {
   MessageSquare,
   BarChart3,
   Code2,
-  EllipsisVertical,
   Plus,
   ShieldCheck,
+  Settings,
+  Trash2,
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Loader2,
+  X,
+  Save,
+  Key,
+  Copy,
+  Info,
+  Lock as LockIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,114 +32,318 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/context/ToastContext";
+import { integrationsService } from "@/services/integrations.service";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Integration,
+  IntegrationCategory,
+  IntegrationStatus,
+  IntegrationStats,
+} from "@/types/integrations";
 
-type IntegrationStatus = "connected" | "disconnected" | "pending";
-
-type IntegrationItem = {
-  id: string;
-  name: string;
-  category:
-    | "Payment Gateways"
-    | "Communication"
-    | "Marketing"
-    | "Analytics"
-    | "Developer Tools";
-  description: string;
-  status: IntegrationStatus;
-  logo?: string;
-  stats?: { label: string; value: string }[];
-};
-
-const initialIntegrations: IntegrationItem[] = [
+const EMPTY_INTEGRATIONS = [
   {
     id: "stripe",
     name: "Stripe",
-    category: "Payment Gateways",
+    category: "Payment Gateways" as IntegrationCategory,
     description: "Secure payment processing for your courses and subscriptions",
-    status: "connected",
+    status: "disconnected" as IntegrationStatus,
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Stripe_Logo%2C_revised_2016.svg/512px-Stripe_Logo%2C_revised_2016.svg.png",
-    stats: [
-      { label: "Transactions", value: "1,240" },
-      { label: "Revenue", value: "$84,329" },
-      { label: "Region", value: "India" },
-    ],
   },
   {
     id: "paypal",
     name: "PayPal",
-    category: "Payment Gateways",
+    category: "Payment Gateways" as IntegrationCategory,
     description: "Global payments and payouts",
-    status: "disconnected",
+    status: "disconnected" as IntegrationStatus,
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/PayPal.svg/512px-PayPal.svg.png",
-    stats: [
-      { label: "Transactions", value: "—" },
-      { label: "Status", value: "Not configured" },
-    ],
   },
   {
     id: "smtp",
     name: "Email SMTP",
-    category: "Communication",
+    category: "Communication" as IntegrationCategory,
     description: "Transactional emails and notifications",
-    status: "connected",
+    status: "disconnected" as IntegrationStatus,
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Gmail_icon_%282020%29.svg/512px-Gmail_icon_%282020%29.svg.png",
-    stats: [
-      { label: "Daily Limit", value: "10,000" },
-      { label: "Status", value: "Active" },
-    ],
   },
   {
     id: "twilio",
     name: "Twilio",
-    category: "Communication",
+    category: "Communication" as IntegrationCategory,
     description: "SMS and voice notifications",
-    status: "pending",
+    status: "disconnected" as IntegrationStatus,
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Twilio_logo_red.svg/512px-Twilio_logo_red.svg.png",
-    stats: [
-      { label: "Status", value: "API keys needed" },
-      { label: "Features", value: "SMS, Voice" },
-    ],
   },
   {
     id: "facebook-ads",
     name: "Facebook Ads",
-    category: "Marketing",
+    category: "Marketing" as IntegrationCategory,
     description: "Campaign tracking and conversion",
-    status: "disconnected",
+    status: "disconnected" as IntegrationStatus,
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Facebook_Logo_2023.png/512px-Facebook_Logo_2023.png",
   },
   {
     id: "google-analytics",
     name: "Google Analytics",
-    category: "Analytics",
+    category: "Analytics" as IntegrationCategory,
     description: "Website analytics and performance",
-    status: "connected",
+    status: "disconnected" as IntegrationStatus,
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Google_Analytics_logo.png/512px-Google_Analytics_logo.png",
   },
 ];
 
 export default function Integrations() {
-  const [integrations, setIntegrations] =
-    React.useState<IntegrationItem[]>(initialIntegrations);
+  const { push: showToast } = useToast();
+  const [integrations, setIntegrations] = React.useState<Integration[]>([]);
+  const [stats, setStats] = React.useState<IntegrationStats | null>(null);
   const [search, setSearch] = React.useState("");
   const [activeTab, setActiveTab] = React.useState("All Integrations");
+  const [loading, setLoading] = React.useState(true);
+  const [actionLoading, setActionLoading] = React.useState<string | null>(null);
+
+  // Dialog states
   const [addOpen, setAddOpen] = React.useState(false);
+  const [configOpen, setConfigOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [apiKeyOpen, setApiKeyOpen] = React.useState(false);
+  const [webhooksOpen, setWebhooksOpen] = React.useState(false);
+  const [securityOpen, setSecurityOpen] = React.useState(false);
+  const [docsOpen, setDocsOpen] = React.useState(false);
+  const [selectedIntegration, setSelectedIntegration] =
+    React.useState<Integration | null>(null);
 
-  const statusChip = (s: IntegrationStatus) =>
-    s === "connected"
-      ? "bg-green-600 text-white"
-      : s === "pending"
-      ? "bg-yellow-500 text-white"
-      : "bg-red-500 text-white";
+  // Config form state
+  const [configData, setConfigData] = React.useState({
+    apiKey: "",
+    apiSecret: "",
+    webhookUrl: "",
+    notes: "",
+  });
 
-  const iconForCategory = (c: IntegrationItem["category"]) => {
+  // API Key state
+  const [generatedApiKey, setGeneratedApiKey] = React.useState("");
+  const [apiKeyCopied, setApiKeyCopied] = React.useState(false);
+
+  // Webhooks state
+  const [webhookUrl, setWebhookUrl] = React.useState("");
+  const [webhookEvents, setWebhookEvents] = React.useState<string[]>([]);
+
+  // Fetch integrations on mount
+  React.useEffect(() => {
+    fetchIntegrations();
+    fetchStats();
+  }, []);
+
+  const fetchIntegrations = async () => {
+    try {
+      setLoading(true);
+      const data = await integrationsService.getAll();
+      setIntegrations(data);
+    } catch (error: any) {
+      console.error("Failed to load integrations:", error);
+      showToast({
+        type: "info",
+        message: "Using demo data. Connect to backend for live integrations.",
+      });
+      // Use demo data as fallback
+      setIntegrations(EMPTY_INTEGRATIONS as any);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const data = await integrationsService.getStats();
+      setStats(data);
+    } catch (error) {
+      console.error("Failed to fetch stats:", error);
+    }
+  };
+
+  const handleConnect = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await integrationsService.connect(id);
+      showToast({
+        type: "success",
+        message: "Integration connected successfully",
+      });
+      await fetchIntegrations();
+      await fetchStats();
+    } catch (error: any) {
+      showToast({
+        type: "error",
+        message:
+          error.response?.data?.message || "Failed to connect integration",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDisconnect = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await integrationsService.disconnect(id);
+      showToast({ type: "success", message: "Integration disconnected" });
+      await fetchIntegrations();
+      await fetchStats();
+    } catch (error: any) {
+      showToast({
+        type: "error",
+        message: error.response?.data?.message || "Failed to disconnect",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleTestConnection = async (id: string) => {
+    setActionLoading(id);
+    try {
+      const result = await integrationsService.testConnection(id);
+      showToast({
+        type: result.success ? "success" : "error",
+        message: result.message,
+      });
+    } catch (error: any) {
+      showToast({
+        type: "error",
+        message: error.response?.data?.message || "Connection test failed",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleConfigureClick = (integration: Integration) => {
+    setSelectedIntegration(integration);
+    setConfigData({
+      apiKey: integration.config?.apiKey || "",
+      apiSecret: integration.config?.apiSecret || "",
+      webhookUrl: integration.config?.webhookUrl || "",
+      notes: integration.config?.notes || "",
+    });
+    setConfigOpen(true);
+  };
+
+  const handleSaveConfig = async () => {
+    if (!selectedIntegration) return;
+
+    setActionLoading("config-save");
+    try {
+      await integrationsService.updateConfig(selectedIntegration.id, {
+        config: configData,
+        status: "connected" as IntegrationStatus,
+      });
+      showToast({
+        type: "success",
+        message: "Configuration saved successfully",
+      });
+      setConfigOpen(false);
+      await fetchIntegrations();
+      await fetchStats();
+    } catch (error: any) {
+      showToast({
+        type: "error",
+        message:
+          error.response?.data?.message || "Failed to save configuration",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteClick = (integration: Integration) => {
+    setSelectedIntegration(integration);
+    setDeleteOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedIntegration) return;
+
+    setActionLoading("delete");
+    try {
+      await integrationsService.delete(selectedIntegration.id);
+      showToast({
+        type: "success",
+        message: "Integration removed successfully",
+      });
+      setDeleteOpen(false);
+      await fetchIntegrations();
+      await fetchStats();
+    } catch (error: any) {
+      showToast({
+        type: "error",
+        message:
+          error.response?.data?.message || "Failed to delete integration",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleGenerateApiKey = () => {
+    // Generate a random API key
+    const key = `pk_${Math.random()
+      .toString(36)
+      .substr(2, 9)}_${Date.now().toString(36)}`;
+    setGeneratedApiKey(key);
+    setApiKeyCopied(false);
+    setApiKeyOpen(true);
+  };
+
+  const handleCopyApiKey = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedApiKey);
+      setApiKeyCopied(true);
+      showToast({ type: "success", message: "API key copied to clipboard" });
+      setTimeout(() => setApiKeyCopied(false), 2000);
+    } catch (error) {
+      showToast({ type: "error", message: "Failed to copy API key" });
+    }
+  };
+
+  const handleSaveWebhook = () => {
+    if (!webhookUrl) {
+      showToast({ type: "error", message: "Please enter a webhook URL" });
+      return;
+    }
+    if (webhookEvents.length === 0) {
+      showToast({ type: "error", message: "Please select at least one event" });
+      return;
+    }
+    showToast({ type: "success", message: "Webhook configured successfully" });
+    setWebhooksOpen(false);
+    setWebhookUrl("");
+    setWebhookEvents([]);
+  };
+
+  const toggleWebhookEvent = (event: string) => {
+    setWebhookEvents((prev) =>
+      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]
+    );
+  };
+
+  const statusChip = (s: IntegrationStatus) => {
+    if (s === "connected") return "bg-green-600 text-white";
+    if (s === "pending") return "bg-yellow-500 text-white";
+    return "bg-red-500 text-white";
+  };
+
+  const statusIcon = (s: IntegrationStatus) => {
+    if (s === "connected") return <CheckCircle2 className="w-3 h-3" />;
+    if (s === "pending") return <AlertCircle className="w-3 h-3" />;
+    return <XCircle className="w-3 h-3" />;
+  };
+
+  const iconForCategory = (c: IntegrationCategory) => {
     if (c === "Payment Gateways") return Plug;
     if (c === "Communication") return MessageSquare;
     if (c === "Marketing") return Megaphone;
@@ -175,61 +391,93 @@ export default function Integrations() {
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">
                 Active Integrations
               </p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {integrations.filter((i) => i.status === "connected").length}
+              {loading ? (
+                <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-1" />
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.connected || 0}
+                  </p>
+                  <p className="text-accent text-sm mt-1">Connected</p>
+                </>
+              )}
+            </div>
+            <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
+              <CheckCircle2 className="text-green-600 w-6 h-6" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-600 text-sm font-medium">
+                Total Services
               </p>
-              <p className="text-accent text-sm mt-1">+2 this month</p>
+              {loading ? (
+                <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-1" />
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.total || 0}
+                  </p>
+                  <p className="text-accent text-sm mt-1">Available</p>
+                </>
+              )}
             </div>
             <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
               <Plug className="text-primary w-6 h-6" />
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Connected Services
-              </p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {integrations.length}
-              </p>
-              <p className="text-accent text-sm mt-1">Growing</p>
-            </div>
-            <div className="w-12 h-12 bg-primary/10 rounded-lg" />
-          </div>
-        </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Disconnected</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {integrations.filter((i) => i.status === "disconnected").length}
-              </p>
-              <p className="text-red-500 text-sm mt-1">Action needed</p>
+              {loading ? (
+                <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-1" />
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.disconnected || 0}
+                  </p>
+                  <p className="text-red-500 text-sm mt-1">Action needed</p>
+                </>
+              )}
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg" />
+            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
+              <XCircle className="text-red-600 w-6 h-6" />
+            </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Pending Setup</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {integrations.filter((i) => i.status === "pending").length}
-              </p>
-              <p className="text-yellow-600 text-sm mt-1">
-                Needs configuration
-              </p>
+              {loading ? (
+                <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-1" />
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-secondary mt-1">
+                    {stats?.pending || 0}
+                  </p>
+                  <p className="text-yellow-600 text-sm mt-1">Configure</p>
+                </>
+              )}
             </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-lg" />
+            <div className="w-12 h-12 bg-yellow-50 rounded-lg flex items-center justify-center">
+              <AlertCircle className="text-yellow-600 w-6 h-6" />
+            </div>
           </div>
         </div>
       </div>
@@ -261,11 +509,11 @@ export default function Integrations() {
 
       {(
         [
-          "Payment Gateways",
-          "Communication",
-          "Marketing",
-          "Analytics",
-          "Developer Tools",
+          IntegrationCategory.PAYMENT_GATEWAYS,
+          IntegrationCategory.COMMUNICATION,
+          IntegrationCategory.MARKETING,
+          IntegrationCategory.ANALYTICS,
+          IntegrationCategory.DEVELOPER_TOOLS,
         ] as const
       ).map((section) => {
         const Icon = iconForCategory(section);
@@ -277,83 +525,153 @@ export default function Integrations() {
               {section}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {integrations
-                .filter((i) => i.category === section)
-                .filter((i) => filtered.includes(i))
-                .map((i) => (
-                  <div
-                    key={i.id}
-                    className="integration-card bg-card rounded-xl p-6 shadow-sm border border-gray-100"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                          {i.logo ? (
-                            <Image
-                              src={i.logo}
-                              alt={i.name}
-                              width={32}
-                              height={32}
-                              unoptimized
-                            />
+              {loading
+                ? // Loading skeleton
+                  Array.from({ length: 3 }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-card rounded-xl p-6 shadow-sm border border-gray-100"
+                    >
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center space-x-3 flex-1">
+                          <div className="w-12 h-12 bg-gray-200 rounded-lg animate-pulse" />
+                          <div className="flex-1">
+                            <div className="h-4 bg-gray-200 rounded w-24 mb-2 animate-pulse" />
+                            <div className="h-3 bg-gray-200 rounded w-full animate-pulse" />
+                          </div>
+                        </div>
+                        <div className="w-16 h-5 bg-gray-200 rounded-full animate-pulse" />
+                      </div>
+                      <div className="h-20 bg-gray-100 rounded mb-4 animate-pulse" />
+                      <div className="flex space-x-3">
+                        <div className="flex-1 h-9 bg-gray-200 rounded animate-pulse" />
+                        <div className="flex-1 h-9 bg-gray-200 rounded animate-pulse" />
+                      </div>
+                    </div>
+                  ))
+                : integrations
+                    .filter((i) => i.category === section)
+                    .filter((i) => filtered.includes(i))
+                    .map((i) => (
+                      <div
+                        key={i.id}
+                        className="integration-card bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-200"
+                      >
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex items-center space-x-3 flex-1">
+                            <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                              {i.logo ? (
+                                <Image
+                                  src={i.logo}
+                                  alt={i.name}
+                                  width={32}
+                                  height={32}
+                                  unoptimized
+                                  className="object-contain"
+                                />
+                              ) : (
+                                <Icon className="w-6 h-6 text-primary" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-semibold text-secondary truncate">
+                                {i.name}
+                              </h4>
+                              <p className="text-xs text-gray-600 line-clamp-1">
+                                {i.description}
+                              </p>
+                            </div>
+                          </div>
+                          <span
+                            className={`flex items-center gap-1 text-white text-xs px-2 py-1 rounded-full ${statusChip(
+                              i.status
+                            )} shrink-0 ml-2`}
+                          >
+                            {statusIcon(i.status)}
+                            {i.status === "connected"
+                              ? "Active"
+                              : i.status === "pending"
+                              ? "Pending"
+                              : "Inactive"}
+                          </span>
+                        </div>
+
+                        {i.stats && i.stats.length > 0 && (
+                          <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                            <div className="grid grid-cols-2 gap-2">
+                              {i.stats.slice(0, 4).map((s, idx) => (
+                                <div key={idx} className="text-sm">
+                                  <span className="text-gray-600 text-xs">
+                                    {s.label}:
+                                  </span>
+                                  <span className="font-medium ml-1">
+                                    {s.value}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          {i.status === "connected" ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => handleConfigureClick(i)}
+                                disabled={actionLoading === i.id}
+                              >
+                                <Settings className="w-3 h-3 mr-1" />
+                                Configure
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleTestConnection(i.id)}
+                                disabled={actionLoading === i.id}
+                                loading={actionLoading === i.id}
+                              >
+                                <RefreshCw className="w-3 h-3 mr-1" />
+                                Test
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDisconnect(i.id)}
+                                disabled={actionLoading === i.id}
+                                loading={actionLoading === i.id}
+                              >
+                                <XCircle className="w-3 h-3" />
+                              </Button>
+                            </>
                           ) : (
-                            <Icon className="w-6 h-6 text-primary" />
+                            <>
+                              <Button
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => handleConfigureClick(i)}
+                                disabled={actionLoading === i.id}
+                                loading={actionLoading === i.id}
+                              >
+                                {i.status === "pending"
+                                  ? "Setup Now"
+                                  : "Connect"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDeleteClick(i)}
+                                disabled={actionLoading === i.id}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </>
                           )}
                         </div>
-                        <div>
-                          <h4 className="font-semibold text-secondary">
-                            {i.name}
-                          </h4>
-                          <p className="text-sm text-gray-600">
-                            {i.description}
-                          </p>
-                        </div>
                       </div>
-                      <span
-                        className={`text-white text-xs px-2 py-1 rounded-full ${statusChip(
-                          i.status
-                        )}`}
-                      >
-                        {i.status === "connected"
-                          ? "Connected"
-                          : i.status === "pending"
-                          ? "Pending"
-                          : "Disconnected"}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-4">
-                      Manage configuration and view usage details
-                    </p>
-                    {i.stats && (
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        {i.stats.map((s, idx) => (
-                          <div
-                            key={idx}
-                            className="flex justify-between text-sm"
-                          >
-                            <span className="text-gray-600">{s.label}</span>
-                            <span className="font-medium">{s.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex space-x-3">
-                      <Button className="flex-1">
-                        {i.status === "connected"
-                          ? "Configure"
-                          : i.status === "pending"
-                          ? "Setup Now"
-                          : "Connect"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="flex-1 border-gray-300"
-                      >
-                        Learn More
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                    ))}
             </div>
           </div>
         );
@@ -364,7 +682,7 @@ export default function Integrations() {
           <h3 className="text-lg font-semibold text-secondary">
             API Documentation
           </h3>
-          <Button>
+          <Button onClick={handleGenerateApiKey}>
             <Plug className="w-4 h-4 mr-2" /> Generate API Key
           </Button>
         </div>
@@ -379,7 +697,11 @@ export default function Integrations() {
             <p className="text-sm text-gray-600 mb-4">
               Complete REST API docs for building custom integrations
             </p>
-            <Button variant="link" className="text-primary px-0">
+            <Button
+              variant="link"
+              className="text-primary px-0 hover:underline"
+              onClick={() => setDocsOpen(true)}
+            >
               View Documentation →
             </Button>
           </div>
@@ -393,7 +715,11 @@ export default function Integrations() {
             <p className="text-sm text-gray-600 mb-4">
               Set up webhooks to receive real-time notifications
             </p>
-            <Button variant="link" className="text-primary px-0">
+            <Button
+              variant="link"
+              className="text-primary px-0 hover:underline"
+              onClick={() => setWebhooksOpen(true)}
+            >
               Configure Webhooks →
             </Button>
           </div>
@@ -407,63 +733,46 @@ export default function Integrations() {
             <p className="text-sm text-gray-600 mb-4">
               Learn about API security and best practices
             </p>
-            <Button variant="link" className="text-primary px-0">
+            <Button
+              variant="link"
+              className="text-primary px-0 hover:underline"
+              onClick={() => setSecurityOpen(true)}
+            >
               Security Guide →
             </Button>
           </div>
         </div>
       </div>
 
+      {/* Add Integration Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Add New Integration</DialogTitle>
-            <DialogDescription>Search available integrations</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5 text-primary" />
+              Add New Integration
+            </DialogTitle>
+            <DialogDescription>
+              Browse and add available integrations to your platform
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Search Integrations
-              </label>
-              <div className="relative">
+              <Label htmlFor="search-integrations">Search</Label>
+              <div className="relative mt-1">
                 <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                <Input
+                  id="search-integrations"
+                  className="pl-9"
                   placeholder="Search available integrations..."
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                {
-                  id: "stripe",
-                  name: "Stripe",
-                  logo: initialIntegrations[0].logo,
-                  desc: "Payment processing",
-                },
-                {
-                  id: "paypal",
-                  name: "PayPal",
-                  logo: initialIntegrations[1].logo,
-                  desc: "Payments & payouts",
-                },
-                {
-                  id: "twilio",
-                  name: "Twilio",
-                  logo: initialIntegrations[3].logo,
-                  desc: "SMS & Voice",
-                },
-                {
-                  id: "ga",
-                  name: "Google Analytics",
-                  logo: initialIntegrations[5].logo,
-                  desc: "Analytics",
-                },
-              ].map((opt) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+              {EMPTY_INTEGRATIONS.map((opt) => (
                 <div
                   key={opt.id}
-                  className="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary"
+                  className="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-primary hover:bg-primary/5 transition-all"
                 >
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
@@ -474,30 +783,551 @@ export default function Integrations() {
                           width={24}
                           height={24}
                           unoptimized
+                          className="object-contain"
                         />
                       ) : (
                         <Plug className="w-5 h-5 text-primary" />
                       )}
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <h4 className="font-medium text-secondary">{opt.name}</h4>
-                      <p className="text-sm text-gray-600">{opt.desc}</p>
+                      <p className="text-sm text-gray-600 truncate">
+                        {opt.description}
+                      </p>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                className="border-gray-300"
-                onClick={() => setAddOpen(false)}
-              >
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => setAddOpen(false)}>Continue</Button>
+              <Button onClick={() => setAddOpen(false)}>
+                <Plus className="w-4 h-4 mr-1" />
+                Add Selected
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configuration Dialog */}
+      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5 text-primary" />
+              Configure {selectedIntegration?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Set up your integration credentials and configuration
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="apiKey">API Key *</Label>
+              <Input
+                id="apiKey"
+                type="password"
+                value={configData.apiKey}
+                onChange={(e) =>
+                  setConfigData({ ...configData, apiKey: e.target.value })
+                }
+                placeholder="Enter your API key"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="apiSecret">API Secret</Label>
+              <Input
+                id="apiSecret"
+                type="password"
+                value={configData.apiSecret}
+                onChange={(e) =>
+                  setConfigData({ ...configData, apiSecret: e.target.value })
+                }
+                placeholder="Enter your API secret"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="webhookUrl">Webhook URL</Label>
+              <Input
+                id="webhookUrl"
+                type="url"
+                value={configData.webhookUrl}
+                onChange={(e) =>
+                  setConfigData({ ...configData, webhookUrl: e.target.value })
+                }
+                placeholder="https://your-domain.com/webhook"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Textarea
+                id="notes"
+                value={configData.notes}
+                onChange={(e) =>
+                  setConfigData({ ...configData, notes: e.target.value })
+                }
+                placeholder="Add any configuration notes..."
+                className="mt-1 resize-none"
+                rows={3}
+              />
             </div>
           </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfigOpen(false)}
+              disabled={actionLoading === "config-save"}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveConfig}
+              loading={actionLoading === "config-save"}
+              disabled={!configData.apiKey || actionLoading === "config-save"}
+            >
+              <Save className="w-4 h-4 mr-1" />
+              Save Configuration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="w-5 h-5" />
+              Confirm Deletion
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove{" "}
+              <span className="font-semibold">{selectedIntegration?.name}</span>
+              ? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteOpen(false)}
+              disabled={actionLoading === "delete"}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              loading={actionLoading === "delete"}
+              disabled={actionLoading === "delete"}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete Integration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* API Key Generation Dialog */}
+      <Dialog open={apiKeyOpen} onOpenChange={setApiKeyOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-primary" />
+              API Key Generated
+            </DialogTitle>
+            <DialogDescription>
+              Your new API key has been generated. Copy it now as you won't be
+              able to see it again.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <Label className="text-xs text-gray-500 mb-2 block">
+                API Key
+              </Label>
+              <div className="flex items-center justify-between gap-2">
+                <code className="text-sm font-mono break-all">
+                  {generatedApiKey}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopyApiKey}
+                  className="shrink-0"
+                >
+                  {apiKeyCopied ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                Make sure to copy your API key now. You won't be able to see it
+                again!
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button variant="outline" onClick={handleGenerateApiKey}>
+              <RefreshCw className="w-4 h-4 mr-1" />
+              Regenerate
+            </Button>
+            <Button onClick={() => setApiKeyOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Webhooks Configuration Dialog */}
+      <Dialog open={webhooksOpen} onOpenChange={setWebhooksOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plug className="w-5 h-5 text-primary" />
+              Configure Webhooks
+            </DialogTitle>
+            <DialogDescription>
+              Set up webhooks to receive real-time notifications about events
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="webhook-url">Webhook URL</Label>
+              <Input
+                id="webhook-url"
+                placeholder="https://your-domain.com/webhook"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                The URL where webhook events will be sent
+              </p>
+            </div>
+            <div>
+              <Label className="mb-2 block">Events to Subscribe</Label>
+              <div className="space-y-2 border border-gray-200 rounded-lg p-3">
+                {[
+                  { id: "user.created", label: "User Created" },
+                  { id: "user.updated", label: "User Updated" },
+                  {
+                    id: "integration.connected",
+                    label: "Integration Connected",
+                  },
+                  {
+                    id: "integration.disconnected",
+                    label: "Integration Disconnected",
+                  },
+                  { id: "payment.success", label: "Payment Success" },
+                  { id: "payment.failed", label: "Payment Failed" },
+                ].map((event) => (
+                  <label
+                    key={event.id}
+                    className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={webhookEvents.includes(event.id)}
+                      onChange={() => toggleWebhookEvent(event.id)}
+                      className="w-4 h-4 text-primary"
+                    />
+                    <span className="text-sm">{event.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWebhooksOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveWebhook}>
+              <CheckCircle2 className="w-4 h-4 mr-1" />
+              Save Configuration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* API Documentation Dialog */}
+      <Dialog open={docsOpen} onOpenChange={setDocsOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Code2 className="w-5 h-5 text-primary" />
+              REST API Documentation
+            </DialogTitle>
+            <DialogDescription>
+              Complete API reference for integrating with our platform
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            {/* Getting Started */}
+            <div className="border-l-4 border-primary pl-4">
+              <h4 className="font-semibold text-secondary mb-3 flex items-center gap-2">
+                <Plug className="w-4 h-4" />
+                Getting Started
+              </h4>
+              <p className="text-sm text-gray-600 mb-3">
+                Our REST API uses standard HTTP methods and returns JSON
+                responses. All requests must be authenticated using an API key.
+              </p>
+              <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
+                <div className="text-gray-400">// Base URL</div>
+                <div>https://api.yourplatform.com/v1</div>
+                <br />
+                <div className="text-gray-400">// Authentication Header</div>
+                <div>Authorization: Bearer YOUR_API_KEY</div>
+              </div>
+            </div>
+
+            {/* Endpoints */}
+            <div className="border-l-4 border-accent pl-4">
+              <h4 className="font-semibold text-secondary mb-3 flex items-center gap-2">
+                <Code2 className="w-4 h-4" />
+                Core Endpoints
+              </h4>
+              <div className="space-y-4">
+                {/* Integrations Endpoint */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded">
+                      GET
+                    </span>
+                    <code className="text-sm">/integrations</code>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-2">
+                    List all integrations
+                  </p>
+                  <div className="bg-gray-900 text-gray-100 p-3 rounded font-mono text-xs overflow-x-auto">
+                    <div className="text-green-400">// Response 200 OK</div>
+                    <pre>{`{
+  "data": [
+    {
+      "id": "stripe",
+      "name": "Stripe",
+      "status": "connected",
+      "category": "Payment Gateways"
+    }
+  ],
+  "total": 1
+}`}</pre>
+                  </div>
+                </div>
+
+                {/* Connect Endpoint */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
+                      POST
+                    </span>
+                    <code className="text-sm">/integrations/:id/connect</code>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-2">
+                    Connect an integration
+                  </p>
+                  <div className="bg-gray-900 text-gray-100 p-3 rounded font-mono text-xs overflow-x-auto">
+                    <div className="text-green-400">// Request Body</div>
+                    <pre>{`{
+  "config": {
+    "apiKey": "your_api_key",
+    "apiSecret": "your_secret"
+  }
+}`}</pre>
+                  </div>
+                </div>
+
+                {/* Disconnect Endpoint */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded">
+                      DELETE
+                    </span>
+                    <code className="text-sm">
+                      /integrations/:id/disconnect
+                    </code>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Disconnect an integration
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Rate Limiting */}
+            <div className="border-l-4 border-yellow-500 pl-4">
+              <h4 className="font-semibold text-secondary mb-2 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                Rate Limiting
+              </h4>
+              <p className="text-sm text-gray-600 mb-2">
+                API requests are limited to 1000 requests per hour per API key.
+                Rate limit information is included in response headers:
+              </p>
+              <div className="bg-gray-900 text-gray-100 p-3 rounded font-mono text-xs">
+                <div>X-RateLimit-Limit: 1000</div>
+                <div>X-RateLimit-Remaining: 999</div>
+                <div>X-RateLimit-Reset: 1638360000</div>
+              </div>
+            </div>
+
+            {/* Error Codes */}
+            <div className="border-l-4 border-red-500 pl-4">
+              <h4 className="font-semibold text-secondary mb-2 flex items-center gap-2">
+                <XCircle className="w-4 h-4" />
+                Error Responses
+              </h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <code className="text-red-600 font-semibold">400</code>
+                  <span className="text-gray-600">
+                    Bad Request - Invalid parameters
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <code className="text-red-600 font-semibold">401</code>
+                  <span className="text-gray-600">
+                    Unauthorized - Invalid API key
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <code className="text-red-600 font-semibold">404</code>
+                  <span className="text-gray-600">
+                    Not Found - Resource doesn't exist
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <code className="text-red-600 font-semibold">429</code>
+                  <span className="text-gray-600">
+                    Too Many Requests - Rate limit exceeded
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <code className="text-red-600 font-semibold">500</code>
+                  <span className="text-gray-600">Internal Server Error</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                <Info className="w-4 h-4" />
+                Need More Help?
+              </h4>
+              <p className="text-sm text-blue-800">
+                For complete API documentation, code examples, and SDKs, visit
+                our{" "}
+                <a href="#" className="underline font-medium">
+                  Developer Portal
+                </a>{" "}
+                or join our{" "}
+                <a href="#" className="underline font-medium">
+                  Developer Community
+                </a>
+                .
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDocsOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={handleGenerateApiKey}>
+              <Key className="w-4 h-4 mr-1" />
+              Generate API Key
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Security Guide Dialog */}
+      <Dialog open={securityOpen} onOpenChange={setSecurityOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-primary" />
+              API Security Best Practices
+            </DialogTitle>
+            <DialogDescription>
+              Follow these guidelines to keep your integrations secure
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="border-l-4 border-primary pl-4">
+              <h4 className="font-semibold text-secondary mb-2 flex items-center gap-2">
+                <Key className="w-4 h-4" />
+                API Key Management
+              </h4>
+              <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                <li>
+                  Never share your API keys publicly or commit them to version
+                  control
+                </li>
+                <li>
+                  Store API keys in environment variables or secure vaults
+                </li>
+                <li>Rotate keys regularly and immediately if compromised</li>
+                <li>
+                  Use different keys for development and production environments
+                </li>
+              </ul>
+            </div>
+
+            <div className="border-l-4 border-accent pl-4">
+              <h4 className="font-semibold text-secondary mb-2 flex items-center gap-2">
+                <LockIcon className="w-4 h-4" />
+                Request Security
+              </h4>
+              <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                <li>Always use HTTPS for API requests</li>
+                <li>Implement rate limiting to prevent abuse</li>
+                <li>Validate and sanitize all input data</li>
+                <li>Use webhook signatures to verify authenticity</li>
+              </ul>
+            </div>
+
+            <div className="border-l-4 border-purple-500 pl-4">
+              <h4 className="font-semibold text-secondary mb-2 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                Access Control
+              </h4>
+              <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                <li>Implement proper authentication and authorization</li>
+                <li>Use role-based access control (RBAC) where appropriate</li>
+                <li>Log all API access and monitor for suspicious activity</li>
+                <li>
+                  Set appropriate CORS policies for browser-based requests
+                </li>
+              </ul>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                <Info className="w-4 h-4" />
+                Need Help?
+              </h4>
+              <p className="text-sm text-blue-800">
+                For more detailed security documentation and implementation
+                guides, visit our{" "}
+                <a href="#" className="underline font-medium">
+                  Security Center
+                </a>{" "}
+                or contact our support team.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setSecurityOpen(false)}>Got it</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </main>

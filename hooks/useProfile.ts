@@ -21,8 +21,6 @@ export function useProfile() {
   const [country, setCountry] = React.useState('')
   const [userState, setUserState] = React.useState('')
   const [city, setCity] = React.useState('')
-  const [flightHours, setFlightHours] = React.useState<number | undefined>(undefined)
-  const [certifications, setCertifications] = React.useState<string[]>([])
   const [createdAt, setCreatedAt] = React.useState<string | undefined>(undefined)
 
   const [notifications, setNotifications] = React.useState<NotificationItem[]>([])
@@ -40,7 +38,7 @@ export function useProfile() {
 
   React.useEffect(() => {
     if (profileData?.data) {
-      const u = profileData.data as (AuthUser & { phone?: string; bio?: string; country?: string; state?: string; city?: string; certifications?: string[]; flightHours?: number; createdAt?: string })
+      const u = profileData.data as (AuthUser & { phone?: string; bio?: string; country?: string; state?: string; city?: string; createdAt?: string })
       setFirstName(u.firstName || '')
       setLastName(u.lastName || '')
       setEmail(u.email || '')
@@ -50,8 +48,6 @@ export function useProfile() {
       setCountry(u.country || '')
       setUserState(u.state || '')
       setCity(u.city || '')
-      setCertifications(u.certifications || [])
-      setFlightHours(u.flightHours)
       setCreatedAt(u.createdAt)
     }
   }, [profileData])
@@ -60,7 +56,7 @@ export function useProfile() {
     if (!user) return
     setSaving(true)
     try {
-      const res = await updateProfile(user.id, { firstName, lastName, email, bio, phone, country, state: userState, city, certifications, flightHours })
+      const res = await updateProfile(user.id, { firstName, lastName, email, bio, phone, country, state: userState, city })
       if (res.success) {
         push({ message: 'Profile saved', type: 'success' })
         await refreshProfile()
@@ -71,7 +67,7 @@ export function useProfile() {
     } finally {
       setSaving(false)
     }
-  }, [user, firstName, lastName, email, bio, phone, country, userState, city, certifications, flightHours, refreshProfile, mutate, push])
+  }, [user, firstName, lastName, email, bio, phone, country, userState, city, refreshProfile, mutate, push])
 
   const changeAvatar = React.useCallback(
     async (file: File) => {
@@ -219,8 +215,6 @@ export function useProfile() {
     country,
     state: userState,
     city,
-    flightHours,
-    certifications,
     createdAt,
     notifications,
     unreadCount,
@@ -238,8 +232,6 @@ export function useProfile() {
     setCountry,
     setState: setUserState,
     setCity,
-    setFlightHours,
-    setCertifications,
     save,
     changeAvatar,
     updatePassword,

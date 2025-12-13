@@ -11,7 +11,15 @@ import {
   Edit,
   Trash,
   Plus,
+  Loader2,
+  AlertTriangle,
+  ImageIcon,
+  RefreshCw,
+  Filter,
+  Upload,
+  X,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,7 +27,18 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -32,84 +51,73 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-
-type CategoryStatus = "active" | "inactive";
-
-type CategoryItem = {
-  id: string;
-  name: string;
-  description: string;
-  productCount: number;
-  subcategoryCount: number;
-  status: CategoryStatus;
-  coverUrl?: string;
-};
-
-const initialCategories: CategoryItem[] = [
-  {
-    id: "cat1",
-    name: "Programming",
-    description: "Languages, frameworks, and software engineering",
-    productCount: 32,
-    subcategoryCount: 5,
-    status: "active",
-    coverUrl:
-      "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    id: "cat2",
-    name: "Data Science",
-    description: "Data analysis, visualization, and machine learning",
-    productCount: 18,
-    subcategoryCount: 3,
-    status: "active",
-    coverUrl:
-      "https://images.unsplash.com/photo-1515524738708-327f6b0037a7?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    id: "cat3",
-    name: "Business",
-    description: "Entrepreneurship, management, and marketing",
-    productCount: 14,
-    subcategoryCount: 4,
-    status: "active",
-    coverUrl:
-      "https://images.unsplash.com/photo-1556767576-cfba6f8abf8c?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    id: "cat4",
-    name: "Design",
-    description: "UI/UX, graphic design, and creative tools",
-    productCount: 9,
-    subcategoryCount: 2,
-    status: "active",
-    coverUrl:
-      "https://images.unsplash.com/photo-1524646432719-888f7a903eb1?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    id: "cat5",
-    name: "Photography",
-    description: "Cameras, composition, editing, and workflows",
-    productCount: 6,
-    subcategoryCount: 2,
-    status: "inactive",
-    coverUrl:
-      "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=800&q=80",
-  },
-];
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useProductCategories } from "@/hooks/useProductCategories";
+import {
+  ProductCategory,
+  CreateProductCategoryDto,
+} from "@/services/product-categories.service";
+import { useToast } from "@/context/ToastContext";
 
 export default function Categories() {
-  const [categories, setCategories] = React.useState<CategoryItem[]>(initialCategories);
-  const [search, setSearch] = React.useState("");
-  const [sortBy, setSortBy] = React.useState("Sort by: Name");
-  const [createOpen, setCreateOpen] = React.useState(false);
+  const { push } = useToast();
+  const {
+    categories,
+    loading,
+    total,
+    fetchCategories,
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    refreshCategories,
+  } = useProductCategories();
 
+  const [search, setSearch] = React.useState("");
+  const [sortBy, setSortBy] = React.useState("name");
+  const [statusFilter, setStatusFilter] = React.useState<
+    "all" | "active" | "inactive"
+  >("all");
+
+  // Dialog states
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [viewOpen, setViewOpen] = React.useState(false);
+
+  // Selected category for operations
+  const [selectedCategory, setSelectedCategory] =
+    React.useState<ProductCategory | null>(null);
+
+  // Form states
+  const [formData, setFormData] = React.useState<CreateProductCategoryDto>({
+    name: "",
+    description: "",
+    image: "",
+    status: "active",
+  });
+
+  // Local loading states
+  const [submitting, setSubmitting] = React.useState(false);
+
+  // Upload states
+  const [uploadProgress, setUploadProgress] = React.useState(0);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = React.useState<string>("");
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcuts
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        const el = document.getElementById("category-search") as HTMLInputElement | null;
+        const el = document.getElementById(
+          "category-search"
+        ) as HTMLInputElement | null;
         el?.focus();
       }
     };
@@ -117,285 +125,1012 @@ export default function Categories() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  const filtered = categories
-    .filter((c) => {
-      const q = search.trim().toLowerCase();
-      return (
-        !q ||
-        c.name.toLowerCase().includes(q) ||
-        c.description.toLowerCase().includes(q)
-      );
-    })
-    .sort((a, b) => {
-      if (sortBy.includes("Name")) return a.name.localeCompare(b.name);
-      if (sortBy.includes("Products")) return b.productCount - a.productCount;
-      if (sortBy.includes("Subcategories")) return b.subcategoryCount - a.subcategoryCount;
-      return 0;
-    });
+  // Filter and sort categories
+  const filtered = React.useMemo(() => {
+    return categories
+      .filter((c) => {
+        const q = search.trim().toLowerCase();
+        const matchesSearch =
+          !q ||
+          c.name.toLowerCase().includes(q) ||
+          c.description.toLowerCase().includes(q);
+        const matchesStatus =
+          statusFilter === "all" || c.status === statusFilter;
+        return matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        if (sortBy === "name") return a.name.localeCompare(b.name);
+        if (sortBy === "products")
+          return (b.productCount || 0) - (a.productCount || 0);
+        if (sortBy === "subcategories")
+          return (b.subcategoryCount || 0) - (a.subcategoryCount || 0);
+        if (sortBy === "date")
+          return (
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        return 0;
+      });
+  }, [categories, search, sortBy, statusFilter]);
 
-  const statusBadge = (s: CategoryStatus) =>
-    s === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700";
+  // Handle form changes
+  const handleFormChange = (
+    field: keyof CreateProductCategoryDto,
+    value: any
+  ) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Reset form
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      image: "",
+      status: "active",
+    });
+    setSelectedFile(null);
+    setPreviewUrl("");
+    setUploadProgress(0);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      push({
+        message: "Please select a valid image file",
+        type: "error",
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      push({
+        message: "Image size should be less than 5MB",
+        type: "error",
+      });
+      return;
+    }
+
+    setSelectedFile(file);
+
+    // Create preview URL
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle image upload
+  const handleImageUpload = async (): Promise<string | null> => {
+    if (!selectedFile) return null;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      // Upload to your backend endpoint
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData,
+      });
+
+      clearInterval(progressInterval);
+
+      if (!response.ok) {
+        throw new Error("Upload failed");
+      }
+
+      const data = await response.json();
+      setUploadProgress(100);
+
+      push({
+        message: "Image uploaded successfully",
+        type: "success",
+      });
+
+      return data.url || data.data?.url || "";
+    } catch (error) {
+      push({
+        message: "Failed to upload image",
+        type: "error",
+      });
+      return null;
+    } finally {
+      setIsUploading(false);
+      setTimeout(() => setUploadProgress(0), 1000);
+    }
+  };
+
+  // Remove selected image
+  const handleRemoveImage = () => {
+    setSelectedFile(null);
+    setPreviewUrl("");
+    handleFormChange("image", "");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Handle create
+  const handleCreate = async () => {
+    if (!formData.name.trim()) {
+      push({
+        message: "Category name is required",
+        type: "error",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+
+    // Upload image if file is selected
+    let imageUrl = formData.image;
+    if (selectedFile) {
+      const uploadedUrl = await handleImageUpload();
+      if (uploadedUrl) {
+        imageUrl = uploadedUrl;
+      }
+    }
+
+    const result = await createCategory({ ...formData, image: imageUrl });
+    setSubmitting(false);
+
+    if (result) {
+      setCreateOpen(false);
+      resetForm();
+    }
+  };
+
+  // Handle edit
+  const handleEdit = (category: ProductCategory) => {
+    setSelectedCategory(category);
+    setFormData({
+      name: category.name,
+      description: category.description,
+      image: category.image || "",
+      status: category.status,
+    });
+    setPreviewUrl(category.image || "");
+    setEditOpen(true);
+  };
+
+  // Handle update
+  const handleUpdate = async () => {
+    if (!selectedCategory) return;
+    if (!formData.name.trim()) {
+      push({
+        message: "Category name is required",
+        type: "error",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+
+    // Upload image if new file is selected
+    let imageUrl = formData.image;
+    if (selectedFile) {
+      const uploadedUrl = await handleImageUpload();
+      if (uploadedUrl) {
+        imageUrl = uploadedUrl;
+      }
+    }
+
+    const result = await updateCategory(selectedCategory._id, {
+      ...formData,
+      image: imageUrl,
+    });
+    setSubmitting(false);
+
+    if (result) {
+      setEditOpen(false);
+      setSelectedCategory(null);
+      resetForm();
+    }
+  };
+
+  // Handle delete
+  const handleDelete = (category: ProductCategory) => {
+    setSelectedCategory(category);
+    setDeleteOpen(true);
+  };
+
+  // Confirm delete
+  const confirmDelete = async () => {
+    if (!selectedCategory) return;
+
+    setSubmitting(true);
+    const success = await deleteCategory(selectedCategory._id);
+    setSubmitting(false);
+
+    if (success) {
+      setDeleteOpen(false);
+      setSelectedCategory(null);
+    }
+  };
+
+  // Handle view
+  const handleView = (category: ProductCategory) => {
+    setSelectedCategory(category);
+    setViewOpen(true);
+  };
+
+  // Status badge styling
+  const statusBadge = (status: string) =>
+    status === "active"
+      ? "bg-green-100 text-green-700 border border-green-200"
+      : "bg-gray-100 text-gray-700 border border-gray-200";
 
   return (
-    <main className="p-6">
+    <main className="p-6 min-h-screen bg-gray-50/50">
+      {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-secondary mb-2">Categories</h2>
-          <p className="text-gray-600">Organize your products with categories and subcategories</p>
+          <h2 className="text-3xl font-bold text-secondary mb-2">
+            Product Categories
+          </h2>
+          <p className="text-gray-600">
+            Organize your products with categories and subcategories
+          </p>
         </div>
         <div className="flex space-x-3">
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => refreshCategories()}
+            disabled={loading}
+            className="border-gray-300"
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+          <Button
+            onClick={() => {
+              resetForm();
+              setCreateOpen(true);
+            }}
+            disabled={loading}
+          >
             <Plus className="w-4 h-4 mr-2" /> Add Category
           </Button>
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-1 shadow-sm border border-gray-100 mb-8 inline-flex">
-        {["Products", "Categories", "Orders", "Discounts"].map((t) => (
-          <button
-            key={t}
-            className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
-              t === "Categories" ? "bg-primary text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Total Categories</p>
-              <p className="text-2xl font-bold text-secondary mt-1">{categories.length}</p>
-              <p className="text-accent text-sm mt-1">+3 this month</p>
+              <p className="text-gray-600 text-sm font-medium">
+                Total Categories
+              </p>
+              <p className="text-3xl font-bold text-secondary mt-2">
+                {loading ? (
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                ) : (
+                  total
+                )}
+              </p>
+              <p className="text-accent text-sm mt-1">
+                {categories.length} loaded
+              </p>
             </div>
-            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-              <Tags className="text-primary w-6 h-6" />
+            <div className="w-14 h-14 bg-primary/10 rounded-xl flex items-center justify-center">
+              <Tags className="text-primary w-7 h-7" />
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Active Categories</p>
-              <p className="text-2xl font-bold text-secondary mt-1">{categories.filter((c) => c.status === "active").length}</p>
-              <p className="text-accent text-sm mt-1">Healthy</p>
+              <p className="text-gray-600 text-sm font-medium">
+                Active Categories
+              </p>
+              <p className="text-3xl font-bold text-green-600 mt-2">
+                {loading ? (
+                  <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+                ) : (
+                  categories.filter((c) => c.status === "active").length
+                )}
+              </p>
+              <p className="text-green-600 text-sm mt-1">Published</p>
             </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <Tags className="text-green-600 w-6 h-6" />
+            <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center">
+              <Tags className="text-green-600 w-7 h-7" />
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">Inactive</p>
-              <p className="text-2xl font-bold text-secondary mt-1">{categories.filter((c) => c.status === "inactive").length}</p>
-              <p className="text-gray-500 text-sm mt-1">Review pending</p>
+              <p className="text-3xl font-bold text-gray-500 mt-2">
+                {loading ? (
+                  <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
+                ) : (
+                  categories.filter((c) => c.status === "inactive").length
+                )}
+              </p>
+              <p className="text-gray-500 text-sm mt-1">Unpublished</p>
             </div>
-            <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-              <Tags className="text-gray-600 w-6 h-6" />
+            <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center">
+              <Tags className="text-gray-600 w-7 h-7" />
             </div>
           </div>
         </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">With Subcategories</p>
-              <p className="text-2xl font-bold text-secondary mt-1">{categories.filter((c) => c.subcategoryCount > 0).length}</p>
-              <p className="text-accent text-sm mt-1">Organized</p>
+              <p className="text-gray-600 text-sm font-medium">
+                With Subcategories
+              </p>
+              <p className="text-3xl font-bold text-purple-600 mt-2">
+                {loading ? (
+                  <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+                ) : (
+                  categories.filter((c) => (c.subcategoryCount || 0) > 0).length
+                )}
+              </p>
+              <p className="text-purple-600 text-sm mt-1">Organized</p>
             </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Tags className="text-purple-600 w-6 h-6" />
+            <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center">
+              <Tags className="text-purple-600 w-7 h-7" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
+      {/* Filters and Search */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
           <div className="flex items-center space-x-2">
-            <div className="relative">
-              <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="pl-10 w-48">
-                  <SelectValue placeholder="Sort by" />
+            <Filter className="text-gray-400 w-5 h-5" />
+            <Select
+              value={statusFilter}
+              onValueChange={(v: any) => setStatusFilter(v)}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center space-x-2">
+            <ArrowUpDown className="text-gray-400 w-5 h-5" />
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Sort by: Name</SelectItem>
+                <SelectItem value="products">Sort by: Products</SelectItem>
+                <SelectItem value="subcategories">
+                  Sort by: Subcategories
+                </SelectItem>
+                <SelectItem value="date">Sort by: Date Created</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="relative">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <Input
+            id="category-search"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search categories... (Ctrl+K)"
+            className="pl-10 bg-gray-50 border-gray-200 focus:border-primary focus:ring-primary"
+          />
+        </div>
+      </div>
+
+      {/* Loading State */}
+      {loading && categories.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+          <p className="text-gray-600">Loading categories...</p>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && categories.length === 0 && (
+        <div className="bg-white rounded-xl p-12 shadow-sm border border-gray-200 text-center">
+          <Tags className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-secondary mb-2">
+            No categories yet
+          </h3>
+          <p className="text-gray-600 mb-6">
+            Get started by creating your first product category
+          </p>
+          <Button
+            onClick={() => {
+              resetForm();
+              setCreateOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" /> Create Category
+          </Button>
+        </div>
+      )}
+
+      {/* No Results */}
+      {!loading && categories.length > 0 && filtered.length === 0 && (
+        <div className="bg-white rounded-xl p-12 shadow-sm border border-gray-200 text-center">
+          <AlertTriangle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-secondary mb-2">
+            No results found
+          </h3>
+          <p className="text-gray-600 mb-6">
+            Try adjusting your search or filters
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSearch("");
+              setStatusFilter("all");
+            }}
+          >
+            Clear Filters
+          </Button>
+        </div>
+      )}
+
+      {/* Categories Grid */}
+      {!loading && filtered.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+          {filtered.map((category) => (
+            <div
+              key={category._id}
+              className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-lg transition-all duration-200 overflow-hidden group"
+            >
+              <div className="relative h-40">
+                {category.image ? (
+                  <Image
+                    src={category.image}
+                    alt={category.name}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                    <ImageIcon className="w-12 h-12 text-gray-400" />
+                  </div>
+                )}
+                <span
+                  className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-medium ${statusBadge(
+                    category.status
+                  )}`}
+                >
+                  {category.status === "active" ? "Active" : "Inactive"}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      className="absolute top-3 right-3 bg-white/90 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <EllipsisVertical className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleView(category)}>
+                      <Eye className="w-4 h-4 mr-2" /> View Details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleEdit(category)}>
+                      <Edit className="w-4 h-4 mr-2" /> Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => handleDelete(category)}
+                      className="text-red-600 focus:text-red-600"
+                    >
+                      <Trash className="w-4 h-4 mr-2" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="p-5">
+                <h4 className="font-semibold text-lg text-secondary mb-2 line-clamp-1">
+                  {category.name}
+                </h4>
+                <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                  {category.description}
+                </p>
+                <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+                  <span className="flex items-center">
+                    <Tags className="w-4 h-4 mr-1" />
+                    {category.productCount || 0} products
+                  </span>
+                  <span>{category.subcategoryCount || 0} subcategories</span>
+                </div>
+                <div className="flex space-x-2">
+                  <Button
+                    className="flex-1"
+                    size="sm"
+                    onClick={() => handleEdit(category)}
+                  >
+                    <Edit className="w-3 h-3 mr-1" /> Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-gray-300"
+                    onClick={() => handleView(category)}
+                  >
+                    <Eye className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create Category Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-xl">
+              <Plus className="w-5 h-5 mr-2 text-primary" />
+              Create New Category
+            </DialogTitle>
+            <DialogDescription>
+              Add a new product category to organize your inventory
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="create-name">Category Name *</Label>
+              <Input
+                id="create-name"
+                value={formData.name}
+                onChange={(e) => handleFormChange("name", e.target.value)}
+                placeholder="e.g., Electronics, Clothing, Books"
+                className="border-gray-300"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-description">Description *</Label>
+              <Textarea
+                id="create-description"
+                value={formData.description}
+                onChange={(e) =>
+                  handleFormChange("description", e.target.value)
+                }
+                placeholder="Describe this category..."
+                rows={4}
+                className="border-gray-300 resize-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-image">Category Image (Optional)</Label>
+              <div className="flex flex-col gap-3">
+                {/* File Input */}
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="create-image-upload"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="border-gray-300"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {selectedFile ? "Change Image" : "Upload Image"}
+                  </Button>
+                  {selectedFile && (
+                    <span className="text-sm text-gray-600 flex-1 truncate">
+                      {selectedFile.name}
+                    </span>
+                  )}
+                  {previewUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleRemoveImage}
+                      disabled={isUploading}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+
+                {/* Upload Progress */}
+                {isUploading && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Uploading...</span>
+                      <span className="text-gray-900 font-medium">
+                        {uploadProgress}%
+                      </span>
+                    </div>
+                    <Progress value={uploadProgress} className="h-2" />
+                  </div>
+                )}
+
+                {/* Image Preview */}
+                {previewUrl && !isUploading && (
+                  <div className="relative h-40 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                    <Image
+                      src={previewUrl}
+                      alt="Preview"
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500">
+                  Accepted formats: JPG, PNG, GIF, WebP (Max 5MB)
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-status">Status</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(v: any) => handleFormChange("status", v)}
+              >
+                <SelectTrigger id="create-status">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Sort by: Name">Sort by: Name</SelectItem>
-                  <SelectItem value="Sort by: Products">Sort by: Products</SelectItem>
-                  <SelectItem value="Sort by: Subcategories">Sort by: Subcategories</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
-        </div>
-        <div className="flex items-center mt-4">
-          <div className="relative w-full">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              id="category-search"
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search categories... (Cmd+K)"
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-        {filtered.map((c) => (
-          <div key={c.id} className="bg-card rounded-xl p-4 shadow-sm border border-gray-100">
-            <div className="relative mb-4">
-              {c.coverUrl && (
-                <Image
-                  src={c.coverUrl}
-                  alt={c.name}
-                  width={600}
-                  height={128}
-                  className="w-full h-32 object-cover rounded-lg"
-                  unoptimized
-                />
-              )}
-              <span className={`absolute top-2 left-2 px-3 py-1 rounded-full text-xs ${statusBadge(c.status)}`}>
-                {c.status === "active" ? "Active" : "Inactive"}
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="absolute top-2 right-2 bg-white/80">
-                    <EllipsisVertical className="w-5 h-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem>
-                    <Edit className="w-4 h-4 mr-2" /> Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Eye className="w-4 h-4 mr-2" /> View
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Trash className="w-4 h-4 mr-2" /> Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            <div className="mb-4">
-              <h4 className="font-semibold text-secondary mb-1">{c.name}</h4>
-              <p className="text-gray-600 text-sm mb-2">{c.description}</p>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">{c.productCount} products</span>
-                <span className="text-gray-500">{c.subcategoryCount} subcategories</span>
-              </div>
-            </div>
-            <div className="flex space-x-2">
-              <Button className="flex-1">Edit</Button>
-              <Button variant="outline" className="border-gray-300">
-                <Eye className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-secondary mb-4">Products by Category</h3>
-          <div className="h-48 bg-gray-50 border border-gray-100 rounded-lg" />
-        </div>
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-secondary mb-4">Category Performance</h3>
-          <div className="h-48 bg-gray-50 border border-gray-100 rounded-lg" />
-        </div>
-      </div>
-
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Create New Category</DialogTitle>
-            <DialogDescription>Enter category details</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category Name</label>
-              <input
-                id="category-name"
-                type="text"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Enter category name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                id="category-desc"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                rows={3}
-                placeholder="Category description"
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Category</label>
-                <Select defaultValue="none">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None (Top Level)</SelectItem>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <Select defaultValue="active">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-              <p className="text-gray-500 text-sm">Drag and drop cover image here or click to upload</p>
-              <Button variant="outline" className="mt-2 border-gray-300">Select File</Button>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" className="border-gray-300" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button
-                onClick={() => {
-                  const nameEl = document.getElementById("category-name") as HTMLInputElement | null;
-                  const descEl = document.getElementById("category-desc") as HTMLTextAreaElement | null;
-                  const name = nameEl?.value.trim() || "New Category";
-                  const desc = descEl?.value.trim() || "Draft category created";
-                  const newItem: CategoryItem = {
-                    id: Math.random().toString(36).slice(2),
-                    name,
-                    description: desc,
-                    productCount: 0,
-                    subcategoryCount: 0,
-                    status: "active",
-                  };
-                  setCategories([newItem, ...categories]);
-                  setCreateOpen(false);
-                }}
-              >
-                Create
-              </Button>
-            </div>
-          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateOpen(false);
+                resetForm();
+              }}
+              disabled={submitting}
+              className="border-gray-300"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Create Category
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Category Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-xl">
+              <Edit className="w-5 h-5 mr-2 text-primary" />
+              Edit Category
+            </DialogTitle>
+            <DialogDescription>Update category information</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Category Name *</Label>
+              <Input
+                id="edit-name"
+                value={formData.name}
+                onChange={(e) => handleFormChange("name", e.target.value)}
+                placeholder="Category name"
+                className="border-gray-300"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description *</Label>
+              <Textarea
+                id="edit-description"
+                value={formData.description}
+                onChange={(e) =>
+                  handleFormChange("description", e.target.value)
+                }
+                placeholder="Category description"
+                rows={4}
+                className="border-gray-300 resize-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-image">Category Image (Optional)</Label>
+              <div className="flex flex-col gap-3">
+                {/* File Input */}
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="edit-image-upload"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="border-gray-300"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {selectedFile ? "Change Image" : "Upload New Image"}
+                  </Button>
+                  {selectedFile && (
+                    <span className="text-sm text-gray-600 flex-1 truncate">
+                      {selectedFile.name}
+                    </span>
+                  )}
+                  {previewUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleRemoveImage}
+                      disabled={isUploading}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+
+                {/* Upload Progress */}
+                {isUploading && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Uploading...</span>
+                      <span className="text-gray-900 font-medium">
+                        {uploadProgress}%
+                      </span>
+                    </div>
+                    <Progress value={uploadProgress} className="h-2" />
+                  </div>
+                )}
+
+                {/* Image Preview */}
+                {previewUrl && !isUploading && (
+                  <div className="relative h-40 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                    <Image
+                      src={previewUrl}
+                      alt="Preview"
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500">
+                  Accepted formats: JPG, PNG, GIF, WebP (Max 5MB)
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-status">Status</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(v: any) => handleFormChange("status", v)}
+              >
+                <SelectTrigger id="edit-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditOpen(false);
+                setSelectedCategory(null);
+                resetForm();
+              }}
+              disabled={submitting}
+              className="border-gray-300"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpdate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Update Category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Category Dialog */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-xl">
+              <Eye className="w-5 h-5 mr-2 text-primary" />
+              Category Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCategory && (
+            <div className="space-y-6 py-4">
+              {selectedCategory.image && (
+                <div className="relative h-48 rounded-lg overflow-hidden border border-gray-200">
+                  <Image
+                    src={selectedCategory.image}
+                    alt={selectedCategory.name}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                </div>
+              )}
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-gray-500 text-sm">Name</Label>
+                  <p className="text-lg font-semibold text-secondary mt-1">
+                    {selectedCategory.name}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-gray-500 text-sm">Description</Label>
+                  <p className="text-gray-700 mt-1">
+                    {selectedCategory.description}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-gray-500 text-sm">Status</Label>
+                    <div className="mt-1">
+                      <span
+                        className={`px-3 py-1 rounded-full text-sm font-medium ${statusBadge(
+                          selectedCategory.status
+                        )}`}
+                      >
+                        {selectedCategory.status === "active"
+                          ? "Active"
+                          : "Inactive"}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500 text-sm">Products</Label>
+                    <p className="text-lg font-semibold text-secondary mt-1">
+                      {selectedCategory.productCount || 0}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-gray-500 text-sm">Subcategories</Label>
+                  <p className="text-lg font-semibold text-secondary mt-1">
+                    {selectedCategory.subcategoryCount || 0}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-200">
+                  <div>
+                    <Label className="text-gray-500 text-sm">Created</Label>
+                    <p className="text-sm text-gray-700 mt-1">
+                      {new Date(
+                        selectedCategory.createdAt
+                      ).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500 text-sm">
+                      Last Updated
+                    </Label>
+                    <p className="text-sm text-gray-700 mt-1">
+                      {new Date(
+                        selectedCategory.updatedAt
+                      ).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setViewOpen(false);
+                setSelectedCategory(null);
+              }}
+              className="border-gray-300"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedCategory) {
+                  setViewOpen(false);
+                  handleEdit(selectedCategory);
+                }
+              }}
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center text-xl">
+              <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
+              Delete Category
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              Are you sure you want to delete{" "}
+              <span className="font-semibold">{selectedCategory?.name}</span>?
+              This action cannot be undone and will remove all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={submitting}
+              onClick={() => {
+                setDeleteOpen(false);
+                setSelectedCategory(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={submitting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete Category
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }
-

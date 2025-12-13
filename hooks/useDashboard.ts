@@ -48,11 +48,16 @@ export function useDashboard() {
     [state.data]
   )
 
+  const shopRevenue = useMemo(() => state.data?.shopRevenue, [state.data])
+  const aircraftForSale = useMemo(() => state.data?.aircraftForSale, [state.data])
+
   return {
     loading: state.loading,
     error: state.error,
     stats,
     charts,
+    shopRevenue,
+    aircraftForSale,
     refresh: load,
   }
 }

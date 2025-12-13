@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
 import { coursesService, Course } from "@/services/courses.service";
+import { courseCategoriesService } from "@/services/course-categories.service";
 import {
   Book,
   Users,
@@ -64,6 +65,13 @@ export default function Courses() {
     },
   });
 
+  // Fetch categories from API
+  const { data: categoriesData } = useQuery({
+    queryKey: ["course-categories"],
+    queryFn: () => courseCategoriesService.getAllCategories(),
+    staleTime: 60000,
+  });
+
   React.useEffect(() => {
     if (isError) {
       const message =
@@ -99,14 +107,13 @@ export default function Courses() {
     user?.role === "instructor";
 
   const categoryOptions = React.useMemo(() => {
-    const set = new Set<string>();
-    courses.forEach((c) => {
-      if (c.categories && Array.isArray(c.categories)) {
-        c.categories.forEach((cat) => set.add(cat));
-      }
-    });
-    return ["All Categories", ...Array.from(set).sort()];
-  }, [courses]);
+    const categoryList = categoriesData?.data?.categories ?? [];
+    const activeCategories = categoryList
+      .filter((cat: any) => cat.isActive !== false)
+      .map((cat: any) => cat.name)
+      .sort();
+    return ["All Categories", ...activeCategories];
+  }, [categoriesData]);
 
   const filteredCourses = React.useMemo(() => {
     let filtered = [...courses];
@@ -243,7 +250,7 @@ export default function Courses() {
   };
 
   const handleEdit = (course: Course) => {
-    router.push(`/courses/${course.id}/edit`);
+    router.push(`/(dashboard)/(lms)/courses/${course.id}/edit`);
   };
 
   if (isLoading) {

@@ -54,6 +54,7 @@ export interface CreateLessonPayload {
     order?: number;
     isFree?: boolean;
     status?: LessonStatus | string;
+    moduleId?: string;
 }
 
 export interface UpdateLessonPayload {
@@ -66,6 +67,7 @@ export interface UpdateLessonPayload {
     order?: number;
     isFree?: boolean;
     status?: LessonStatus | string;
+    moduleId?: string;
 }
 
 class LessonsService {
@@ -94,10 +96,10 @@ class LessonsService {
         return data;
     }
 
-    async reorderLessons(courseId: string, lessonIds: string[]): Promise<{ message: string }> {
+    async reorderLessons(courseId: string, lessonIds: string[], moduleId?: string): Promise<{ message: string }> {
         const { data } = await apiClient.patch<{ message: string }>(
             `/courses/${courseId}/lessons/reorder`,
-            { lessonIds }
+            { lessonIds, moduleId }
         );
         return data;
     }
