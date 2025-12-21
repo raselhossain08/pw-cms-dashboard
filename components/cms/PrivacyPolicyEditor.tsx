@@ -28,9 +28,13 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  Download,
+  Copy,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
-import { PrivacyPolicyService } from "@/lib/services/privacy-policy.service";
+import { usePrivacyPolicy } from "@/hooks/usePrivacyPolicy";
 import type {
   PrivacyPolicy,
   HeaderSection,
@@ -40,18 +44,40 @@ import type {
   SeoMeta,
 } from "@/lib/services/privacy-policy.service";
 import { useToast } from "@/context/ToastContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function PrivacyPolicyEditor() {
   const { push } = useToast();
-  const [privacyPolicy, setPrivacyPolicy] = useState<PrivacyPolicy | null>(
-    null
-  );
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const {
+    privacyPolicy,
+    loading,
+    saving,
+    uploadProgress,
+    updatePrivacyPolicy,
+    updatePrivacyPolicyWithUpload,
+    toggleActiveStatus,
+    duplicatePrivacyPolicy,
+    exportPrivacyPolicy,
+    refreshPrivacyPolicy,
+  } = usePrivacyPolicy();
   const [activeTab, setActiveTab] = useState("header");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<PrivacyPolicy>>({
     headerSection: {
@@ -100,10 +126,6 @@ export function PrivacyPolicyEditor() {
   const [subsectionContentInput, setSubsectionContentInput] = useState("");
 
   useEffect(() => {
-    fetchPrivacyPolicy();
-  }, []);
-
-  useEffect(() => {
     if (privacyPolicy) {
       setFormData({
         headerSection: privacyPolicy.headerSection,
@@ -118,22 +140,6 @@ export function PrivacyPolicyEditor() {
       }
     }
   }, [privacyPolicy]);
-
-  const fetchPrivacyPolicy = async () => {
-    try {
-      setLoading(true);
-      const response = await PrivacyPolicyService.getDefaultPrivacyPolicy();
-      if (response.success && response.data) {
-        setPrivacyPolicy(response.data as PrivacyPolicy);
-      } else {
-        push({ message: response.message || "Failed to fetch privacy policy", type: "error" });
-      }
-    } catch (error) {
-      push({ message: "Failed to fetch privacy policy", type: "error" });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -153,76 +159,52 @@ export function PrivacyPolicyEditor() {
       return;
     }
 
-    try {
-      setSaving(true);
+    if (imageFile) {
+      const formDataObj = new FormData();
+      formDataObj.append("image", imageFile);
+      formDataObj.append(
+        "headerSection",
+        JSON.stringify(formData.headerSection)
+      );
+      formDataObj.append("lastUpdated", formData.lastUpdated || "");
+      formDataObj.append("sections", JSON.stringify(formData.sections));
+      formDataObj.append("contactInfo", JSON.stringify(formData.contactInfo));
+      formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
+      formDataObj.append("isActive", String(formData.isActive));
 
-      if (imageFile) {
-        const formDataObj = new FormData();
-        formDataObj.append("image", imageFile);
-        formDataObj.append(
-          "headerSection",
-          JSON.stringify(formData.headerSection)
-        );
-        formDataObj.append("lastUpdated", formData.lastUpdated || "");
-        formDataObj.append("sections", JSON.stringify(formData.sections));
-        formDataObj.append("contactInfo", JSON.stringify(formData.contactInfo));
-        formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
-        formDataObj.append("isActive", String(formData.isActive));
-
-        setUploadProgress(0);
-        const progressInterval = setInterval(() => {
-          setUploadProgress((prev) => {
-            if (prev >= 90) {
-              clearInterval(progressInterval);
-              return 90;
-            }
-            return prev + 10;
-          });
-        }, 100);
-
-        const response =
-          await PrivacyPolicyService.updatePrivacyPolicyWithUpload(
-            privacyPolicy._id,
-            formDataObj
-          );
-
-        clearInterval(progressInterval);
-        setUploadProgress(100);
-
-        if (response.success) {
-          push({ message: "Privacy policy updated successfully with image", type: "success" });
-          setTimeout(() => {
-            setUploadProgress(0);
-            setImageFile(null);
-          }, 1000);
-          await fetchPrivacyPolicy();
-        } else {
-          throw new Error(response.message);
-        }
-      } else {
-        const response = await PrivacyPolicyService.updatePrivacyPolicy(
-          privacyPolicy._id,
-          formData
-        );
-        if (response.success) {
-          push({ message: "Privacy policy updated successfully", type: "success" });
-          await fetchPrivacyPolicy();
-        } else {
-          throw new Error(response.message);
-        }
-      }
-    } catch (error: any) {
-      push({ message: error.message || "Failed to save privacy policy", type: "error" });
-      setUploadProgress(0);
-    } finally {
-      setSaving(false);
+      await updatePrivacyPolicyWithUpload(privacyPolicy._id, formDataObj);
+      setImageFile(null);
+    } else {
+      await updatePrivacyPolicy(privacyPolicy._id, formData);
     }
   };
 
   const handleRefresh = () => {
-    fetchPrivacyPolicy();
+    refreshPrivacyPolicy();
     setImageFile(null);
-    setUploadProgress(0);
+  };
+
+  const handleToggleActive = async () => {
+    if (!privacyPolicy?._id) return;
+    await toggleActiveStatus(privacyPolicy._id);
+  };
+
+  const handleDuplicate = async () => {
+    if (!privacyPolicy?._id) return;
+    await duplicatePrivacyPolicy(privacyPolicy._id);
+    await refreshPrivacyPolicy();
+  };
+
+  const handleExport = async (format: "json" | "pdf") => {
+    if (!privacyPolicy?._id) return;
+    setIsExporting(true);
+    try {
+      await exportPrivacyPolicy(format, privacyPolicy._id);
+    } catch (err) {
+      console.error("Failed to export:", err);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleAddContentParagraph = () => {
@@ -257,7 +239,10 @@ export function PrivacyPolicyEditor() {
 
   const handleAddSubsection = () => {
     if (!subsectionForm.title || subsectionForm.content.length === 0) {
-      push({ message: "Subsection title and at least one content item required", type: "error" });
+      push({
+        message: "Subsection title and at least one content item required",
+        type: "error",
+      });
       return;
     }
 
@@ -282,7 +267,9 @@ export function PrivacyPolicyEditor() {
       sectionForm.content.length === 0
     ) {
       push({
-        message: "Section ID, title, and at least one content paragraph required", type: "error",
+        message:
+          "Section ID, title, and at least one content paragraph required",
+        type: "error",
       });
       return;
     }
@@ -310,7 +297,10 @@ export function PrivacyPolicyEditor() {
     });
     setEditingSection(null);
 
-    push({ message: editingSection ? "Section updated" : "Section added", type: "success" });
+    push({
+      message: editingSection ? "Section updated" : "Section added",
+      type: "success",
+    });
   };
 
   const handleEditSection = (section: PolicySection) => {
@@ -369,12 +359,61 @@ export function PrivacyPolicyEditor() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefresh} disabled={saving}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button
+            variant="outline"
+            onClick={() => setPreviewOpen(true)}
+            disabled={saving || loading}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isExporting || saving || loading}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("json")}>
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            onClick={handleDuplicate}
+            disabled={saving || loading || !privacyPolicy?._id}
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Duplicate
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
+          <Button onClick={handleSave} disabled={saving || loading}>
+            {saving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
             {saving ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -393,9 +432,8 @@ export function PrivacyPolicyEditor() {
             <div className="flex items-center space-x-2">
               <Switch
                 checked={formData.isActive}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, isActive: checked })
-                }
+                onCheckedChange={handleToggleActive}
+                disabled={saving || loading || !privacyPolicy?._id}
               />
               <Label>{formData.isActive ? "Active" : "Inactive"}</Label>
               {formData.isActive ? (
@@ -1070,8 +1108,147 @@ export function PrivacyPolicyEditor() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Upload Progress Indicator */}
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading image...</span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Privacy Policy Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your Privacy Policy page will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {privacyPolicy ? (
+            <div className="space-y-6 mt-4">
+              {/* Header Section */}
+              {privacyPolicy.headerSection && (
+                <div className="space-y-4">
+                  {privacyPolicy.headerSection.image && (
+                    <div className="relative w-full h-64 rounded-lg overflow-hidden">
+                      <Image
+                        src={privacyPolicy.headerSection.image}
+                        alt={privacyPolicy.headerSection.imageAlt || "Header"}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <h1 className="text-3xl font-bold">
+                      {privacyPolicy.headerSection.title}
+                    </h1>
+                    <p className="text-muted-foreground mt-2">
+                      {privacyPolicy.headerSection.subtitle}
+                    </p>
+                    {privacyPolicy.lastUpdated && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Last Updated: {privacyPolicy.lastUpdated}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Sections */}
+              {privacyPolicy.sections && privacyPolicy.sections.length > 0 && (
+                <div className="space-y-6">
+                  {privacyPolicy.sections
+                    .filter((section) => section.isActive)
+                    .sort((a, b) => a.order - b.order)
+                    .map((section) => (
+                      <div key={section.id} className="space-y-4">
+                        <h2 className="text-2xl font-semibold">
+                          {section.title}
+                        </h2>
+                        {section.content && section.content.length > 0 && (
+                          <div className="space-y-2">
+                            {section.content.map((paragraph, idx) => (
+                              <p key={idx} className="text-muted-foreground">
+                                {paragraph}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {section.subsections &&
+                          section.subsections.length > 0 && (
+                            <div className="ml-4 space-y-4">
+                              {section.subsections.map((subsection, idx) => (
+                                <div key={idx} className="space-y-2">
+                                  <h3 className="text-xl font-medium">
+                                    {subsection.title}
+                                  </h3>
+                                  {subsection.content &&
+                                    subsection.content.length > 0 && (
+                                      <ul className="list-disc list-inside space-y-1 ml-4">
+                                        {subsection.content.map(
+                                          (item, itemIdx) => (
+                                            <li
+                                              key={itemIdx}
+                                              className="text-muted-foreground"
+                                            >
+                                              {item}
+                                            </li>
+                                          )
+                                        )}
+                                      </ul>
+                                    )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {/* Contact Info */}
+              {privacyPolicy.contactInfo && (
+                <div className="border-t pt-6 space-y-2">
+                  <h3 className="text-xl font-semibold">Contact Information</h3>
+                  <div className="space-y-1 text-muted-foreground">
+                    {privacyPolicy.contactInfo.privacyTeam && (
+                      <p>
+                        Privacy Team: {privacyPolicy.contactInfo.privacyTeam}
+                      </p>
+                    )}
+                    {privacyPolicy.contactInfo.generalSupport && (
+                      <p>
+                        General Support:{" "}
+                        {privacyPolicy.contactInfo.generalSupport}
+                      </p>
+                    )}
+                    {privacyPolicy.contactInfo.phone && (
+                      <p>Phone: {privacyPolicy.contactInfo.phone}</p>
+                    )}
+                    {privacyPolicy.contactInfo.address && (
+                      <p>Address: {privacyPolicy.contactInfo.address}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-

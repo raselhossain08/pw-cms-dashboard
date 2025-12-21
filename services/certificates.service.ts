@@ -58,6 +58,64 @@ class CertificatesService {
         );
         return data;
     }
+
+    // Save certificate template configuration
+    async saveCertificateTemplate(config: any) {
+        const { data } = await apiClient.post('/certificates/template/save', config);
+        return data;
+    }
+
+    // Get certificate template configuration
+    async getCertificateTemplate() {
+        const { data } = await apiClient.get('/certificates/template');
+        return data;
+    }
+
+    // Get certificate for preview (includes student name and certificate ID for barcode)
+    async getCertificateForPreview(userId: string, courseId: string) {
+        const { data } = await apiClient.get<CertificateDto>(`/certificates/preview/${userId}/${courseId}`);
+        return data;
+    }
+
+    // Revoke certificate
+    async revokeCertificate(certificateId: string, reason?: string) {
+        const { data } = await apiClient.post(`/certificates/revoke/${certificateId}`, { reason });
+        return data;
+    }
+
+    // Restore revoked certificate
+    async restoreCertificate(certificateId: string) {
+        const { data } = await apiClient.post(`/certificates/restore/${certificateId}`);
+        return data;
+    }
+
+    // Search certificates with filters
+    async searchCertificates(params: {
+        query?: string;
+        courseId?: string;
+        status?: 'issued' | 'revoked' | 'expired';
+        startDate?: string;
+        endDate?: string;
+        page?: number;
+        limit?: number;
+    }) {
+        const { data } = await apiClient.get('/certificates/search/advanced', { params });
+        return data;
+    }
+
+    // Get certificate analytics/statistics
+    async getCertificateStats(userId?: string) {
+        const { data } = await apiClient.get('/certificates/stats/analytics', {
+            params: userId ? { userId } : undefined
+        });
+        return data;
+    }
+
+    // Resend certificate email (user-facing)
+    async resendCertificateEmail(certificateId: string) {
+        const { data } = await apiClient.post(`/certificates/resend-email/${certificateId}`);
+        return data;
+    }
 }
 
 export const certificatesService = new CertificatesService();

@@ -56,35 +56,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { analyticsService } from "@/services/analytics.service";
+import {
+  useAnalytics,
+  ReportItem,
+  ReportType,
+  ReportStatus,
+} from "@/hooks/useAnalytics";
 import { useToast } from "@/context/ToastContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDistanceToNow } from "date-fns";
 
-type ReportType = "Overview" | "Sales" | "Engagement" | "Traffic" | "Custom";
-type ReportStatus = "draft" | "scheduled" | "generated" | "failed";
-
-type ReportItem = {
-  _id?: string;
-  id?: string;
-  name: string;
-  description?: string;
-  period: string;
-  type: ReportType;
-  status: ReportStatus;
-  createdAt?: string;
-  updatedAt?: string;
-  generatedAt?: string;
-  scheduledAt?: string;
-  fileUrl?: string;
-  fileFormat?: string;
-  createdBy?: { firstName?: string; lastName?: string };
-};
-
 export default function AnalyticsReports() {
   const { push } = useToast();
-  const queryClient = useQueryClient();
   const [period, setPeriod] = React.useState<"day" | "week" | "month" | "year">(
     "month"
   );
@@ -114,146 +97,30 @@ export default function AnalyticsReports() {
     autoGenerate: false,
   });
 
-  const { data: dashboard, isLoading: loadingDashboard } = useQuery({
-    queryKey: ["analytics", "dashboard"],
-    queryFn: () => analyticsService.getDashboardStats(),
-    staleTime: 60_000,
-    retry: 1,
-  });
-
-  const { data: revenueData, isLoading: loadingRevenue } = useQuery({
-    queryKey: ["analytics", "revenue", period],
-    queryFn: () => analyticsService.getRevenueData({ period }),
-    staleTime: 60_000,
-    retry: 1,
-  });
-
-  const { data: conversionRates } = useQuery({
-    queryKey: ["analytics", "conversion"],
-    queryFn: () => analyticsService.getConversionRates(),
-    staleTime: 60_000,
-    retry: 1,
-  });
-
-  const { data: geoData } = useQuery({
-    queryKey: ["analytics", "geo"],
-    queryFn: () => analyticsService.getGeographicDistribution(),
-    staleTime: 60_000,
-    retry: 1,
-  });
-
-  const { data: coursePerformance } = useQuery({
-    queryKey: ["analytics", "course-performance"],
-    queryFn: () => analyticsService.getCoursePerformance(),
-    staleTime: 60_000,
-    retry: 1,
-  });
-
-  const { data: reportsData, isLoading: loadingReports } = useQuery({
-    queryKey: ["analytics", "reports", reportType],
-    queryFn: () =>
-      analyticsService.getAllReports({
-        type: reportType === "Overview" ? undefined : reportType,
-      }),
-    staleTime: 30_000,
-  });
-
-  // Mutations
-  const createMutation = useMutation({
-    mutationFn: (data: any) => analyticsService.createReport(data),
-    onMutate: () => {
-      push({ message: "Creating report...", type: "loading", duration: 0 });
-    },
-    onSuccess: () => {
-      push({ message: "Report created successfully!", type: "success" });
-      queryClient.invalidateQueries({ queryKey: ["analytics", "reports"] });
-      setCreateDialogOpen(false);
-      resetForm();
-    },
-    onError: (error: any) => {
-      push({
-        message: error?.response?.data?.message || "Failed to create report",
-        type: "error",
-      });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) =>
-      analyticsService.updateReport(id, data),
-    onMutate: () => {
-      push({ message: "Updating report...", type: "loading", duration: 0 });
-    },
-    onSuccess: () => {
-      push({ message: "Report updated successfully!", type: "success" });
-      queryClient.invalidateQueries({ queryKey: ["analytics", "reports"] });
-      setEditDialogOpen(false);
-      setSelectedReport(null);
-    },
-    onError: (error: any) => {
-      push({
-        message: error?.response?.data?.message || "Failed to update report",
-        type: "error",
-      });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => analyticsService.deleteReport(id),
-    onMutate: () => {
-      push({ message: "Deleting report...", type: "loading", duration: 0 });
-    },
-    onSuccess: () => {
-      push({ message: "Report deleted successfully!", type: "success" });
-      queryClient.invalidateQueries({ queryKey: ["analytics", "reports"] });
-      setDeleteDialogOpen(false);
-      setSelectedReport(null);
-    },
-    onError: (error: any) => {
-      push({
-        message: error?.response?.data?.message || "Failed to delete report",
-        type: "error",
-      });
-    },
-  });
-
-  const generateMutation = useMutation({
-    mutationFn: (id: string) => analyticsService.generateReport(id),
-    onMutate: () => {
-      push({ message: "Generating report...", type: "loading", duration: 0 });
-    },
-    onSuccess: () => {
-      push({ message: "Report generated successfully!", type: "success" });
-      queryClient.invalidateQueries({ queryKey: ["analytics", "reports"] });
-    },
-    onError: (error: any) => {
-      push({
-        message: error?.response?.data?.message || "Failed to generate report",
-        type: "error",
-      });
-    },
-  });
-
-  const exportMutation = useMutation({
-    mutationFn: ({ id, format }: { id: string; format: string }) =>
-      analyticsService.exportReport(id, format as any),
-    onMutate: () => {
-      push({ message: "Preparing export...", type: "loading", duration: 0 });
-    },
-    onSuccess: (data) => {
-      push({ message: "Export ready for download!", type: "success" });
-      if ((data as any)?.url) {
-        window.open((data as any).url, "_blank");
-      }
-      setExportOpen(false);
-    },
-    onError: (error: any) => {
-      push({
-        message: error?.response?.data?.message || "Failed to export report",
-        type: "error",
-      });
-    },
-  });
+  // Use analytics hook
+  const {
+    dashboard,
+    revenueData,
+    conversionRates,
+    geoData,
+    coursePerformance,
+    reports,
+    loadingDashboard,
+    loadingRevenue,
+    loadingReports,
+    isLoading,
+    createReport,
+    updateReport,
+    deleteReport,
+    generateReport,
+    exportReport,
+    isCreating,
+    isUpdating,
+    isDeleting,
+    isGenerating,
+    isExporting,
+    refreshAll,
+  } = useAnalytics({ period, reportType });
 
   const resetForm = () => {
     setFormData({
@@ -271,7 +138,9 @@ export default function AnalyticsReports() {
       push({ message: "Please fill in all required fields", type: "error" });
       return;
     }
-    createMutation.mutate(formData);
+    createReport(formData);
+    setCreateDialogOpen(false);
+    resetForm();
   };
 
   const handleEdit = () => {
@@ -279,15 +148,17 @@ export default function AnalyticsReports() {
       push({ message: "Invalid report data", type: "error" });
       return;
     }
-    updateMutation.mutate({
-      id: selectedReport._id || selectedReport.id || "",
-      data: formData,
-    });
+    updateReport(selectedReport._id || selectedReport.id || "", formData);
+    setEditDialogOpen(false);
+    setSelectedReport(null);
+    resetForm();
   };
 
   const handleDelete = () => {
     if (!selectedReport) return;
-    deleteMutation.mutate(selectedReport._id || selectedReport.id || "");
+    deleteReport(selectedReport._id || selectedReport.id || "");
+    setDeleteDialogOpen(false);
+    setSelectedReport(null);
   };
 
   const openEditDialog = (report: ReportItem) => {
@@ -309,7 +180,7 @@ export default function AnalyticsReports() {
   };
 
   const handleGenerate = (reportId: string) => {
-    generateMutation.mutate(reportId);
+    generateReport(reportId);
   };
 
   const handleExport = (report: ReportItem) => {
@@ -319,13 +190,10 @@ export default function AnalyticsReports() {
 
   const confirmExport = () => {
     if (!selectedReport) return;
-    exportMutation.mutate({
-      id: selectedReport._id || selectedReport.id || "",
-      format: exportFormat,
-    });
+    exportReport(selectedReport._id || selectedReport.id || "", exportFormat);
+    setExportOpen(false);
   };
 
-  const reports = (reportsData as any)?.reports || [];
   const filteredReports = reports.filter((r: ReportItem) => {
     const matchesSearch = r.name.toLowerCase().includes(search.toLowerCase());
     return matchesSearch;
@@ -504,14 +372,8 @@ export default function AnalyticsReports() {
           <Button
             variant="outline"
             className="border-gray-300 hover:bg-gray-50 transition-colors"
-            onClick={() => {
-              queryClient.invalidateQueries({ queryKey: ["analytics"] });
-              push({
-                message: "Refreshing data...",
-                type: "loading",
-                duration: 1000,
-              });
-            }}
+            onClick={refreshAll}
+            disabled={isLoading}
           >
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
           </Button>
@@ -544,7 +406,159 @@ export default function AnalyticsReports() {
             </TabsTrigger>
           ))}
         </TabsList>
-        <TabsContent value={activeTab} className="mt-0" />
+        <TabsContent value="Overview" className="mt-6">
+          {/* Overview content shown when Overview tab is active */}
+        </TabsContent>
+        <TabsContent value="Sales" className="mt-6">
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <h3 className="text-lg font-semibold text-secondary mb-4">
+              Sales Analytics
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-gray-600">Total Sales</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {revenueData
+                    ? `$${
+                        (revenueData as any)?.totalRevenue?.toLocaleString() ||
+                        0
+                      }`
+                    : "—"}
+                </p>
+              </div>
+              <div className="p-4 bg-green-50 rounded-lg">
+                <p className="text-sm text-gray-600">Total Orders</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {revenueData
+                    ? (revenueData as any)?.totalOrders?.toLocaleString() || 0
+                    : "—"}
+                </p>
+              </div>
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <p className="text-sm text-gray-600">Average Order Value</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {revenueData && (revenueData as any)?.totalOrders > 0
+                    ? `$${Math.round(
+                        ((revenueData as any)?.totalRevenue || 0) /
+                          ((revenueData as any)?.totalOrders || 1)
+                      )}`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="Customers" className="mt-6">
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <h3 className="text-lg font-semibold text-secondary mb-4">
+              Customer Analytics
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="font-medium mb-2">Active Users</h4>
+                <p className="text-3xl font-bold text-primary">
+                  {dashboard
+                    ? (
+                        dashboard as any
+                      )?.overview?.activeUsers?.toLocaleString() || 0
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <h4 className="font-medium mb-2">New Customers</h4>
+                <p className="text-3xl font-bold text-green-600">
+                  {dashboard
+                    ? (
+                        dashboard as any
+                      )?.userStats?.newUsers?.toLocaleString() || 0
+                    : "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="Products" className="mt-6">
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <h3 className="text-lg font-semibold text-secondary mb-4">
+              Product Performance
+            </h3>
+            <div className="space-y-4">
+              {topProducts.length > 0 ? (
+                topProducts.slice(0, 5).map((p, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  >
+                    <div>
+                      <div className="font-medium">{p.name}</div>
+                      <div className="text-sm text-gray-500">
+                        {p.sales} enrollments
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{p.revenue}</div>
+                      {p.change && (
+                        <div className="text-xs text-accent">{p.change}</div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-500 text-center py-8">
+                  No product data available
+                </p>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="Marketing" className="mt-6">
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <h3 className="text-lg font-semibold text-secondary mb-4">
+              Marketing Analytics
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="font-medium mb-2">Conversion Rate</h4>
+                <p className="text-3xl font-bold text-primary">
+                  {dashboard
+                    ? `${(
+                        (dashboard as any)?.overview?.conversionRate || 0
+                      ).toFixed(1)}%`
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <h4 className="font-medium mb-2">Total Enrollments</h4>
+                <p className="text-3xl font-bold text-green-600">
+                  {dashboard
+                    ? (
+                        dashboard as any
+                      )?.overview?.totalEnrollments?.toLocaleString() || 0
+                    : "—"}
+                </p>
+              </div>
+            </div>
+            <div className="mt-6">
+              <h4 className="font-medium mb-4">Geographic Distribution</h4>
+              <div className="space-y-3">
+                {geo.slice(0, 5).map((g, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm">{g.label}</span>
+                      <span className="text-sm font-medium">{g.pct}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className={`${g.bar} rounded-full h-2 transition-all`}
+                        style={{ width: `${g.pct}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* Filters */}
@@ -867,10 +881,12 @@ export default function AnalyticsReports() {
         </div>
       </div>
 
+      {/* Reports Table - Always visible */}
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-secondary">
-            Recent Reports
+            Reports{" "}
+            {filteredReports.length > 0 && `(${filteredReports.length})`}
           </h3>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -879,133 +895,426 @@ export default function AnalyticsReports() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setCreateDialogOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" /> Create Report
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setExportOpen(true)}>
                 <Download className="w-4 h-4 mr-2" /> Export Table
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <FileText className="w-4 h-4 mr-2" /> Generate Report
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-500 text-sm border-b">
-                <th className="pb-3 font-medium">Event</th>
-                <th className="pb-3 font-medium">User</th>
-                <th className="pb-3 font-medium">When</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody className="text-sm">
-              {((dashboard as any)?.recentActivities || []).map(
-                (
-                  act: {
-                    eventType?: string;
-                    createdAt?: string;
-                    user?: { firstName?: string; lastName?: string };
-                  },
-                  idx: number
-                ) => (
-                  <tr key={idx} className="border-b border-gray-100">
-                    <td className="py-3 font-medium text-secondary">
-                      {act.eventType || "Activity"}
-                    </td>
-                    <td className="py-3">
-                      {act.user
-                        ? `${act.user.firstName ?? ""} ${
-                            act.user.lastName ?? ""
-                          }`.trim()
-                        : "—"}
-                    </td>
-                    <td className="py-3">
-                      {act.createdAt
-                        ? formatDistanceToNow(new Date(act.createdAt), {
-                            addSuffix: true,
-                          })
-                        : "—"}
-                    </td>
-                    <td className="py-3">
-                      <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">
-                        Recorded
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <button className="text-primary hover:text-primary/80">
-                        <FileText className="w-4 h-4" />
-                      </button>
-                    </td>
+        {loadingReports ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          </div>
+        ) : filteredReports.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 mb-4">No reports found</p>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" /> Create Your First Report
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-gray-500 text-sm border-b">
+                    <th className="pb-3 font-medium">Name</th>
+                    <th className="pb-3 font-medium">Type</th>
+                    <th className="pb-3 font-medium">Period</th>
+                    <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium">Created</th>
+                    <th className="pb-3 font-medium text-right">Actions</th>
                   </tr>
-                )
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex justify-end mt-4">
-          <Button
-            variant="outline"
-            className="border-gray-300 mr-2"
-            onClick={() => setExportOpen(true)}
-          >
-            <Download className="w-4 h-4 mr-2" /> Export CSV
-          </Button>
-          <Button>
-            <FileText className="w-4 h-4 mr-2" /> Export PDF
-          </Button>
-        </div>
+                </thead>
+                <tbody className="text-sm">
+                  {filteredReports.map((report: ReportItem) => {
+                    const StatusIcon = statusConfig[report.status].icon;
+                    return (
+                      <tr
+                        key={report._id || report.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="py-3 font-medium text-secondary">
+                          {report.name}
+                        </td>
+                        <td className="py-3">
+                          <Badge variant="outline">{report.type}</Badge>
+                        </td>
+                        <td className="py-3 text-gray-600">{report.period}</td>
+                        <td className="py-3">
+                          <div
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs border ${
+                              statusConfig[report.status].color
+                            }`}
+                          >
+                            <StatusIcon className="w-3 h-3" />
+                            {statusConfig[report.status].label}
+                          </div>
+                        </td>
+                        <td className="py-3 text-gray-500">
+                          {report.createdAt
+                            ? formatDistanceToNow(new Date(report.createdAt), {
+                                addSuffix: true,
+                              })
+                            : "—"}
+                        </td>
+                        <td className="py-3">
+                          <div className="flex items-center justify-end gap-2">
+                            {report.status === "draft" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  handleGenerate(report._id || report.id || "")
+                                }
+                                disabled={isGenerating}
+                              >
+                                <FileText className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {report.status === "generated" &&
+                              report.fileUrl && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleExport(report)}
+                                  disabled={isExporting}
+                                >
+                                  <Download className="w-4 h-4" />
+                                </Button>
+                              )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditDialog(report)}
+                              disabled={isUpdating}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openDeleteDialog(report)}
+                              disabled={isDeleting}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
+      {/* Create Report Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Plus className="w-5 h-5 mr-2 text-primary" /> Create New Report
+            </DialogTitle>
+            <DialogDescription>
+              Create a new analytics report with custom parameters
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="report-name">Report Name *</Label>
+              <Input
+                id="report-name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                placeholder="e.g., Monthly Sales Report"
+              />
+            </div>
+            <div>
+              <Label htmlFor="report-description">Description</Label>
+              <Textarea
+                id="report-description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                placeholder="Optional description"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="report-type">Report Type *</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, type: v as ReportType })
+                  }
+                >
+                  <SelectTrigger id="report-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Overview">Overview</SelectItem>
+                    <SelectItem value="Sales">Sales</SelectItem>
+                    <SelectItem value="Engagement">Engagement</SelectItem>
+                    <SelectItem value="Traffic">Traffic</SelectItem>
+                    <SelectItem value="Custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="report-period">Period *</Label>
+                <Select
+                  value={formData.period}
+                  onValueChange={(v) => setFormData({ ...formData, period: v })}
+                >
+                  <SelectTrigger id="report-period">
+                    <SelectValue placeholder="Select period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="day">Today</SelectItem>
+                    <SelectItem value="week">Last 7 days</SelectItem>
+                    <SelectItem value="month">Last 30 days</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateDialogOpen(false);
+                resetForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={isCreating}>
+              {isCreating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4 mr-2" /> Create Report
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Report Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Edit className="w-5 h-5 mr-2 text-primary" /> Edit Report
+            </DialogTitle>
+            <DialogDescription>
+              Update report details and settings
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="edit-report-name">Report Name *</Label>
+              <Input
+                id="edit-report-name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                placeholder="e.g., Monthly Sales Report"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-report-description">Description</Label>
+              <Textarea
+                id="edit-report-description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                placeholder="Optional description"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-report-type">Report Type *</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, type: v as ReportType })
+                  }
+                >
+                  <SelectTrigger id="edit-report-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Overview">Overview</SelectItem>
+                    <SelectItem value="Sales">Sales</SelectItem>
+                    <SelectItem value="Engagement">Engagement</SelectItem>
+                    <SelectItem value="Traffic">Traffic</SelectItem>
+                    <SelectItem value="Custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="edit-report-period">Period *</Label>
+                <Select
+                  value={formData.period}
+                  onValueChange={(v) => setFormData({ ...formData, period: v })}
+                >
+                  <SelectTrigger id="edit-report-period">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="day">Today</SelectItem>
+                    <SelectItem value="week">Last 7 days</SelectItem>
+                    <SelectItem value="month">Last 30 days</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditDialogOpen(false);
+                setSelectedReport(null);
+                resetForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleEdit} disabled={isUpdating}>
+              {isUpdating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Updating...
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4 mr-2" /> Save Changes
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Report Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <AlertCircle className="w-5 h-5 mr-2 text-red-500" /> Delete
+              Report
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{selectedReport?.name}"? This
+              action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setSelectedReport(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" /> Delete
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Report Dialog */}
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center">
-              <Download className="w-5 h-5 mr-2 text-primary" /> Export Reports
+              <Download className="w-5 h-5 mr-2 text-primary" /> Export Report
             </DialogTitle>
-            <DialogDescription>Select format and confirm</DialogDescription>
+            <DialogDescription>
+              Export "{selectedReport?.name}" in your preferred format
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Format
-              </label>
-              <Select defaultValue="csv">
-                <SelectTrigger className="w-full">
+              <Label htmlFor="export-format">Export Format</Label>
+              <Select
+                value={exportFormat}
+                onValueChange={(v) =>
+                  setExportFormat(v as "pdf" | "csv" | "xlsx")
+                }
+              >
+                <SelectTrigger id="export-format" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="csv">CSV</SelectItem>
                   <SelectItem value="pdf">PDF</SelectItem>
-                  <SelectItem value="xlsx">XLSX</SelectItem>
+                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="xlsx">Excel (XLSX)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                className="border-gray-300"
-                onClick={() => setExportOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  push({
-                    message: "Preparing export...",
-                    type: "loading",
-                    duration: 0,
-                  });
-                  setTimeout(() => {
-                    push({ message: "Export ready", type: "success" });
-                  }, 1200);
-                  setExportOpen(false);
-                }}
-              >
-                <Download className="w-4 h-4 mr-2" /> Export
-              </Button>
-            </div>
           </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setExportOpen(false);
+                setSelectedReport(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmExport}
+              disabled={isExporting || !selectedReport}
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" /> Export
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </main>

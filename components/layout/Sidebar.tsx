@@ -48,11 +48,6 @@ const navItems = {
     { icon: CircleHelp, label: "Quiz & Exams", href: "/quiz-exams" },
     { icon: ListTodo, label: "Assignments", href: "/assignments" },
     { icon: BadgeCheck, label: "Certificates", href: "/certificates" },
-    {
-      icon: GraduationCap,
-      label: "Training Programs",
-      href: "/training-programs",
-    },
   ],
   userManagement: [
     { icon: Users, label: "Students", href: "/students" },
@@ -87,6 +82,7 @@ const navItems = {
     },
     { icon: Newspaper, label: "Blog", href: "/cms/home/blog" },
     { icon: MessageSquare, label: "Contact Page", href: "/cms/contact" },
+    { icon: Users, label: "About Us", href: "/cms/about-us" },
     { icon: CircleHelp, label: "FAQs", href: "/cms/faqs" },
     { icon: ShieldCheck, label: "Refund Policy", href: "/cms/refund-policy" },
     { icon: ShieldCheck, label: "Privacy Policy", href: "/cms/privacy-policy" },

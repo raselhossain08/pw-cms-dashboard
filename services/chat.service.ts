@@ -90,16 +90,26 @@ export const chatService = {
     return apiClient.get<{ conversations: ChatConversation[]; total: number }>("/chat/conversations");
   },
 
-  getMessages(conversationId: string, params?: { page?: number; limit?: number }) {
-    return apiClient.get<{ messages: ChatMessage[]; total: number }>(`/chat/conversations/${conversationId}/messages`, { params });
+  async getMessages(conversationId: string, params?: { page?: number; limit?: number }) {
+    try {
+      const response = await apiClient.get<{ messages: ChatMessage[]; total: number }>(`/chat/conversations/${conversationId}/messages`, { params });
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return { success: false, error: error.message || "Failed to load messages" };
+    }
   },
 
   sendMessageRest(conversationId: string, payload: { content: string; type?: string }) {
     return apiClient.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, payload);
   },
 
-  deleteConversation(conversationId: string) {
-    return apiClient.delete(`/chat/conversations/${conversationId}`);
+  async deleteConversation(conversationId: string) {
+    try {
+      await apiClient.delete(`/chat/conversations/${conversationId}`);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message || "Failed to delete conversation" };
+    }
   },
 
   deleteMessage(messageId: string) {
@@ -108,5 +118,14 @@ export const chatService = {
 
   markAsRead(messageId: string) {
     return apiClient.patch(`/chat/messages/${messageId}/read`, {});
+  },
+
+  async updateMessage(messageId: string, content: string) {
+    try {
+      const response = await apiClient.patch<ChatMessage>(`/chat/messages/${messageId}`, { content });
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return { success: false, error: error.message || "Failed to update message" };
+    }
   },
 };

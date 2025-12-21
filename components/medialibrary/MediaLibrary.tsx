@@ -30,6 +30,10 @@ import {
   CheckSquare,
   Square,
   MoreVertical,
+  Copy,
+  FileDown,
+  EyeOff,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -406,7 +410,7 @@ export default function MediaLibrary() {
             Manage your files with Bunny.net and Cloudinary integration
           </p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 flex-wrap gap-2">
           <Button
             variant="outline"
             onClick={() => {
@@ -422,6 +426,52 @@ export default function MediaLibrary() {
             />
             Refresh
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <FileDown className="w-4 h-4 mr-2" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={async () => {
+                  try {
+                    await uploadsService.exportFiles("json");
+                    showToast({
+                      message: "Files exported as JSON",
+                      type: "success",
+                    });
+                  } catch (error) {
+                    showToast({
+                      message: "Failed to export files",
+                      type: "error",
+                    });
+                  }
+                }}
+              >
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={async () => {
+                  try {
+                    await uploadsService.exportFiles("csv");
+                    showToast({
+                      message: "Files exported as CSV",
+                      type: "success",
+                    });
+                  } catch (error) {
+                    showToast({
+                      message: "Failed to export files",
+                      type: "error",
+                    });
+                  }
+                }}
+              >
+                Export as CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={() => setUploadOpen(true)}>
             <UploadIcon className="w-4 h-4 mr-2" />
             Upload Files
@@ -773,17 +823,66 @@ export default function MediaLibrary() {
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 bg-white hover:bg-red-50 text-red-600"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openDeleteDialog(file);
-                      }}
-                    >
-                      <Trash className="w-4 h-4" />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 bg-white hover:bg-gray-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              await uploadsService.duplicateFile(file._id);
+                              queryClient.invalidateQueries({
+                                queryKey: ["media-files"],
+                              });
+                              showToast({
+                                message: "File duplicated successfully",
+                                type: "success",
+                              });
+                            } catch (error) {
+                              showToast({
+                                message: "Failed to duplicate file",
+                                type: "error",
+                              });
+                            }
+                          }}
+                        >
+                          <Copy className="w-4 h-4 mr-2" />
+                          Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(file.url);
+                            showToast({
+                              message: "URL copied to clipboard",
+                              type: "success",
+                            });
+                          }}
+                        >
+                          <Copy className="w-4 h-4 mr-2" />
+                          Copy URL
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDeleteDialog(file);
+                          }}
+                          className="text-red-600"
+                        >
+                          <Trash className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </div>
@@ -902,6 +1001,40 @@ export default function MediaLibrary() {
                       <DropdownMenuItem onClick={() => openEditDialog(file)}>
                         <Edit className="w-4 h-4 mr-2" />
                         Edit Details
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          try {
+                            await uploadsService.duplicateFile(file._id);
+                            queryClient.invalidateQueries({
+                              queryKey: ["media-files"],
+                            });
+                            showToast({
+                              message: "File duplicated successfully",
+                              type: "success",
+                            });
+                          } catch (error) {
+                            showToast({
+                              message: "Failed to duplicate file",
+                              type: "error",
+                            });
+                          }
+                        }}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          navigator.clipboard.writeText(file.url);
+                          showToast({
+                            message: "URL copied to clipboard",
+                            type: "success",
+                          });
+                        }}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy URL
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => openDeleteDialog(file)}

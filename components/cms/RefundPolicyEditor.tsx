@@ -28,9 +28,13 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  Download,
+  Copy,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
-import { RefundPolicyService } from "@/lib/services/refund-policy.service";
+import { useRefundPolicy } from "@/hooks/useRefundPolicy";
 import type {
   RefundPolicy,
   HeaderSection,
@@ -40,16 +44,40 @@ import type {
   SeoMeta,
 } from "@/lib/services/refund-policy.service";
 import { useToast } from "@/context/ToastContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function RefundPolicyEditor() {
   const { push } = useToast();
-  const [refundPolicy, setRefundPolicy] = useState<RefundPolicy | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const {
+    refundPolicy,
+    loading,
+    saving,
+    uploadProgress,
+    updateRefundPolicy,
+    updateRefundPolicyWithUpload,
+    toggleActiveStatus,
+    duplicateRefundPolicy,
+    exportRefundPolicy,
+    refreshRefundPolicy,
+  } = useRefundPolicy();
   const [activeTab, setActiveTab] = useState("header");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<RefundPolicy>>({
     headerSection: {
@@ -99,10 +127,6 @@ export function RefundPolicyEditor() {
   const [subsectionContentInput, setSubsectionContentInput] = useState("");
 
   useEffect(() => {
-    fetchRefundPolicy();
-  }, []);
-
-  useEffect(() => {
     if (refundPolicy) {
       setFormData({
         headerSection: refundPolicy.headerSection,
@@ -117,22 +141,6 @@ export function RefundPolicyEditor() {
       }
     }
   }, [refundPolicy]);
-
-  const fetchRefundPolicy = async () => {
-    try {
-      setLoading(true);
-      const response = await RefundPolicyService.getDefaultRefundPolicy();
-      if (response.success && response.data) {
-        setRefundPolicy(response.data);
-      } else {
-        push({ message: response.message || "Failed to fetch refund policy", type: "error" });
-      }
-    } catch (error) {
-      push({ message: "Failed to fetch refund policy", type: "error" });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -152,75 +160,52 @@ export function RefundPolicyEditor() {
       return;
     }
 
-    try {
-      setSaving(true);
+    if (imageFile) {
+      const formDataObj = new FormData();
+      formDataObj.append("image", imageFile);
+      formDataObj.append(
+        "headerSection",
+        JSON.stringify(formData.headerSection)
+      );
+      formDataObj.append("lastUpdated", formData.lastUpdated || "");
+      formDataObj.append("sections", JSON.stringify(formData.sections));
+      formDataObj.append("contactInfo", JSON.stringify(formData.contactInfo));
+      formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
+      formDataObj.append("isActive", String(formData.isActive));
 
-      if (imageFile) {
-        const formDataObj = new FormData();
-        formDataObj.append("image", imageFile);
-        formDataObj.append(
-          "headerSection",
-          JSON.stringify(formData.headerSection)
-        );
-        formDataObj.append("lastUpdated", formData.lastUpdated || "");
-        formDataObj.append("sections", JSON.stringify(formData.sections));
-        formDataObj.append("contactInfo", JSON.stringify(formData.contactInfo));
-        formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
-        formDataObj.append("isActive", String(formData.isActive));
-
-        setUploadProgress(0);
-        const progressInterval = setInterval(() => {
-          setUploadProgress((prev) => {
-            if (prev >= 90) {
-              clearInterval(progressInterval);
-              return 90;
-            }
-            return prev + 10;
-          });
-        }, 100);
-
-        const response = await RefundPolicyService.updateRefundPolicyWithUpload(
-          refundPolicy._id,
-          formDataObj
-        );
-
-        clearInterval(progressInterval);
-        setUploadProgress(100);
-
-        if (response.success) {
-          push({ message: "Refund policy updated successfully with image", type: "success" });
-          setTimeout(() => {
-            setUploadProgress(0);
-            setImageFile(null);
-          }, 1000);
-          await fetchRefundPolicy();
-        } else {
-          throw new Error(response.message);
-        }
-      } else {
-        const response = await RefundPolicyService.updateRefundPolicy(
-          refundPolicy._id,
-          formData
-        );
-        if (response.success) {
-          push({ message: "Refund policy updated successfully", type: "success" });
-          await fetchRefundPolicy();
-        } else {
-          throw new Error(response.message);
-        }
-      }
-    } catch (error: any) {
-      push({ message: error.message || "Failed to save refund policy", type: "error" });
-      setUploadProgress(0);
-    } finally {
-      setSaving(false);
+      await updateRefundPolicyWithUpload(refundPolicy._id, formDataObj);
+      setImageFile(null);
+    } else {
+      await updateRefundPolicy(refundPolicy._id, formData);
     }
   };
 
   const handleRefresh = () => {
-    fetchRefundPolicy();
+    refreshRefundPolicy();
     setImageFile(null);
-    setUploadProgress(0);
+  };
+
+  const handleToggleActive = async () => {
+    if (!refundPolicy?._id) return;
+    await toggleActiveStatus(refundPolicy._id);
+  };
+
+  const handleDuplicate = async () => {
+    if (!refundPolicy?._id) return;
+    await duplicateRefundPolicy(refundPolicy._id);
+    await refreshRefundPolicy();
+  };
+
+  const handleExport = async (format: "json" | "pdf") => {
+    if (!refundPolicy?._id) return;
+    setIsExporting(true);
+    try {
+      await exportRefundPolicy(format, refundPolicy._id);
+    } catch (err) {
+      console.error("Failed to export:", err);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleAddContentParagraph = () => {
@@ -255,7 +240,10 @@ export function RefundPolicyEditor() {
 
   const handleAddSubsection = () => {
     if (!subsectionForm.title || subsectionForm.content.length === 0) {
-      push({ message: "Subsection title and at least one content item required", type: "error" });
+      push({
+        message: "Subsection title and at least one content item required",
+        type: "error",
+      });
       return;
     }
 
@@ -280,7 +268,9 @@ export function RefundPolicyEditor() {
       sectionForm.content.length === 0
     ) {
       push({
-        message: "Section ID, title, and at least one content paragraph required", type: "error",
+        message:
+          "Section ID, title, and at least one content paragraph required",
+        type: "error",
       });
       return;
     }
@@ -308,7 +298,10 @@ export function RefundPolicyEditor() {
     });
     setEditingSection(null);
 
-    push({ message: editingSection ? "Section updated" : "Section added", type: "success" });
+    push({
+      message: editingSection ? "Section updated" : "Section added",
+      type: "success",
+    });
   };
 
   const handleEditSection = (section: PolicySection) => {
@@ -367,12 +360,61 @@ export function RefundPolicyEditor() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefresh} disabled={saving}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button
+            variant="outline"
+            onClick={() => setPreviewOpen(true)}
+            disabled={saving || loading}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isExporting || saving || loading}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("json")}>
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            onClick={handleDuplicate}
+            disabled={saving || loading || !refundPolicy?._id}
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Duplicate
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
+          <Button onClick={handleSave} disabled={saving || loading}>
+            {saving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
             {saving ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -391,9 +433,8 @@ export function RefundPolicyEditor() {
             <div className="flex items-center space-x-2">
               <Switch
                 checked={formData.isActive}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, isActive: checked })
-                }
+                onCheckedChange={handleToggleActive}
+                disabled={saving || loading || !refundPolicy?._id}
               />
               <Label>{formData.isActive ? "Active" : "Inactive"}</Label>
               {formData.isActive ? (
@@ -1088,8 +1129,153 @@ export function RefundPolicyEditor() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Upload Progress Indicator */}
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading image...</span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Refund Policy Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your Refund Policy page will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {refundPolicy ? (
+            <div className="space-y-6 mt-4">
+              {/* Header Section */}
+              {refundPolicy.headerSection && (
+                <div className="space-y-4">
+                  {refundPolicy.headerSection.image && (
+                    <div className="relative w-full h-64 rounded-lg overflow-hidden">
+                      <Image
+                        src={refundPolicy.headerSection.image}
+                        alt={refundPolicy.headerSection.imageAlt || "Header"}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <h1 className="text-3xl font-bold">
+                      {refundPolicy.headerSection.title}
+                    </h1>
+                    <p className="text-muted-foreground mt-2">
+                      {refundPolicy.headerSection.subtitle}
+                    </p>
+                    {refundPolicy.lastUpdated && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Last Updated: {refundPolicy.lastUpdated}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Sections */}
+              {refundPolicy.sections && refundPolicy.sections.length > 0 && (
+                <div className="space-y-6">
+                  {refundPolicy.sections
+                    .filter((section) => section.isActive)
+                    .sort((a, b) => a.order - b.order)
+                    .map((section) => (
+                      <div key={section.id} className="space-y-4">
+                        <h2 className="text-2xl font-semibold">
+                          {section.title}
+                        </h2>
+                        {section.content && section.content.length > 0 && (
+                          <div className="space-y-2">
+                            {section.content.map((paragraph, idx) => (
+                              <p key={idx} className="text-muted-foreground">
+                                {paragraph}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {section.subsections &&
+                          section.subsections.length > 0 && (
+                            <div className="ml-4 space-y-4">
+                              {section.subsections.map((subsection, idx) => (
+                                <div key={idx} className="space-y-2">
+                                  <h3 className="text-xl font-medium">
+                                    {subsection.title}
+                                  </h3>
+                                  {subsection.content &&
+                                    subsection.content.length > 0 && (
+                                      <ul className="list-disc list-inside space-y-1 ml-4">
+                                        {subsection.content.map(
+                                          (item, itemIdx) => (
+                                            <li
+                                              key={itemIdx}
+                                              className="text-muted-foreground"
+                                            >
+                                              {item}
+                                            </li>
+                                          )
+                                        )}
+                                      </ul>
+                                    )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {/* Contact Info */}
+              {refundPolicy.contactInfo && (
+                <div className="border-t pt-6 space-y-2">
+                  <h3 className="text-xl font-semibold">Contact Information</h3>
+                  <div className="space-y-1 text-muted-foreground">
+                    {refundPolicy.contactInfo.refundDepartment && (
+                      <p>
+                        Refund Department:{" "}
+                        {refundPolicy.contactInfo.refundDepartment}
+                      </p>
+                    )}
+                    {refundPolicy.contactInfo.generalSupport && (
+                      <p>
+                        General Support:{" "}
+                        {refundPolicy.contactInfo.generalSupport}
+                      </p>
+                    )}
+                    {refundPolicy.contactInfo.phone && (
+                      <p>Phone: {refundPolicy.contactInfo.phone}</p>
+                    )}
+                    {refundPolicy.contactInfo.businessHours && (
+                      <p>
+                        Business Hours: {refundPolicy.contactInfo.businessHours}
+                      </p>
+                    )}
+                    {refundPolicy.contactInfo.address && (
+                      <p>Address: {refundPolicy.contactInfo.address}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-

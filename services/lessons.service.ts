@@ -156,6 +156,54 @@ class LessonsService {
             };
         }
     }
+
+    async toggleLessonStatus(lessonId: string): Promise<LessonDto> {
+        const { data } = await apiClient.patch<LessonDto>(`/courses/lessons/${lessonId}/toggle-status`);
+        return data;
+    }
+
+    async bulkDeleteLessons(ids: string[]): Promise<{ message: string }> {
+        const { data } = await apiClient.post<{ message: string }>("/courses/lessons/bulk-delete", { ids });
+        return data;
+    }
+
+    async bulkToggleStatus(ids: string[]): Promise<{ message: string }> {
+        const { data } = await apiClient.post<{ message: string }>("/courses/lessons/bulk-toggle-status", { ids });
+        return data;
+    }
+
+    async exportLessons(format: "csv" | "xlsx" | "pdf", params?: { courseId?: string; moduleId?: string }): Promise<Blob> {
+        const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+        const { getAccessToken } = await import('@/lib/cookies');
+        const token = getAccessToken();
+
+        const queryParams = new URLSearchParams();
+        if (params?.courseId) {
+            queryParams.append('courseId', params.courseId);
+        }
+        if (params?.moduleId) {
+            queryParams.append('moduleId', params.moduleId);
+        }
+        const queryString = queryParams.toString();
+        const url = `${BASE_URL}/courses/lessons/export/${format}${queryString ? `?${queryString}` : ''}`;
+
+        const headers: Record<string, string> = {};
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(url, {
+            method: 'GET',
+            headers,
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to export lessons: ${response.statusText}`);
+        }
+
+        return await response.blob();
+    }
 }
 
 export const lessonsService = new LessonsService();

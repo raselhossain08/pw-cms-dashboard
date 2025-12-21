@@ -112,14 +112,16 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="level">Log Level</Label>
                 <Select
-                  value={localFilters.level || ""}
-                  onValueChange={(value) => updateFilter("level", value)}
+                  value={localFilters.level || "all"}
+                  onValueChange={(value) =>
+                    updateFilter("level", value === "all" ? undefined : value)
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Levels" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Levels</SelectItem>
+                    <SelectItem value="all">All Levels</SelectItem>
                     {Object.values(LogLevel).map((level) => (
                       <SelectItem key={level} value={level}>
                         {level}
@@ -132,14 +134,19 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
                 <Select
-                  value={localFilters.category || ""}
-                  onValueChange={(value) => updateFilter("category", value)}
+                  value={localFilters.category || "all"}
+                  onValueChange={(value) =>
+                    updateFilter(
+                      "category",
+                      value === "all" ? undefined : value
+                    )
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Categories</SelectItem>
+                    <SelectItem value="all">All Categories</SelectItem>
                     {Object.values(LogCategory).map((category) => (
                       <SelectItem key={category} value={category}>
                         {category.toUpperCase()}
@@ -157,14 +164,19 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="severity">Severity</Label>
                 <Select
-                  value={localFilters.severity || ""}
-                  onValueChange={(value) => updateFilter("severity", value)}
+                  value={localFilters.severity || "all"}
+                  onValueChange={(value) =>
+                    updateFilter(
+                      "severity",
+                      value === "all" ? undefined : value
+                    )
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Severities" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Severities</SelectItem>
+                    <SelectItem value="all">All Severities</SelectItem>
                     {Object.values(ErrorSeverity).map((severity) => (
                       <SelectItem key={severity} value={severity}>
                         {severity.toUpperCase()}
@@ -189,13 +201,13 @@ export function LogsFilterModal({
                 <Select
                   value={
                     localFilters.isResolved === undefined
-                      ? ""
+                      ? "all"
                       : localFilters.isResolved.toString()
                   }
                   onValueChange={(value) =>
                     updateFilter(
                       "isResolved",
-                      value === "" ? undefined : value === "true"
+                      value === "all" ? undefined : value === "true"
                     )
                   }
                 >
@@ -203,7 +215,7 @@ export function LogsFilterModal({
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
                     <SelectItem value="false">Unresolved</SelectItem>
                     <SelectItem value="true">Resolved</SelectItem>
                   </SelectContent>
@@ -218,14 +230,16 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="model">AI Model</Label>
                 <Select
-                  value={localFilters.model || ""}
-                  onValueChange={(value) => updateFilter("model", value)}
+                  value={localFilters.model || "all"}
+                  onValueChange={(value) =>
+                    updateFilter("model", value === "all" ? undefined : value)
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Models" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Models</SelectItem>
+                    <SelectItem value="all">All Models</SelectItem>
                     {Object.values(AiModel).map((model) => (
                       <SelectItem key={model} value={model}>
                         {model}
@@ -238,14 +252,16 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
                 <Select
-                  value={localFilters.status || ""}
-                  onValueChange={(value) => updateFilter("status", value)}
+                  value={localFilters.status || "all"}
+                  onValueChange={(value) =>
+                    updateFilter("status", value === "all" ? undefined : value)
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
                     <SelectItem value="success">Success</SelectItem>
                     <SelectItem value="error">Error</SelectItem>
                     <SelectItem value="timeout">Timeout</SelectItem>
@@ -292,14 +308,19 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="chatType">Chat Type</Label>
                 <Select
-                  value={localFilters.chatType || ""}
-                  onValueChange={(value) => updateFilter("chatType", value)}
+                  value={localFilters.chatType || "all"}
+                  onValueChange={(value) =>
+                    updateFilter(
+                      "chatType",
+                      value === "all" ? undefined : value
+                    )
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Types" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Types</SelectItem>
+                    <SelectItem value="all">All Types</SelectItem>
                     {Object.values(ChatType).map((type) => (
                       <SelectItem key={type} value={type}>
                         {type.replace(/_/g, " ").toUpperCase()}
@@ -329,14 +350,19 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="eventType">Event Type</Label>
                 <Select
-                  value={localFilters.eventType || ""}
-                  onValueChange={(value) => updateFilter("eventType", value)}
+                  value={localFilters.eventType || "all"}
+                  onValueChange={(value) =>
+                    updateFilter(
+                      "eventType",
+                      value === "all" ? undefined : value
+                    )
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Events" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Events</SelectItem>
+                    <SelectItem value="all">All Events</SelectItem>
                     {Object.values(SystemEventType).map((type) => (
                       <SelectItem key={type} value={type}>
                         {type.replace(/_/g, " ").toUpperCase()}
@@ -349,14 +375,16 @@ export function LogsFilterModal({
               <div className="space-y-2">
                 <Label htmlFor="systemStatus">Status</Label>
                 <Select
-                  value={localFilters.status || ""}
-                  onValueChange={(value) => updateFilter("status", value)}
+                  value={localFilters.status || "all"}
+                  onValueChange={(value) =>
+                    updateFilter("status", value === "all" ? undefined : value)
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
                     {Object.values(SystemStatus).map((status) => (
                       <SelectItem key={status} value={status}>
                         {status.toUpperCase()}
@@ -371,13 +399,13 @@ export function LogsFilterModal({
                 <Select
                   value={
                     localFilters.requiresAction === undefined
-                      ? ""
+                      ? "all"
                       : localFilters.requiresAction.toString()
                   }
                   onValueChange={(value) =>
                     updateFilter(
                       "requiresAction",
-                      value === "" ? undefined : value === "true"
+                      value === "all" ? undefined : value === "true"
                     )
                   }
                 >
@@ -385,7 +413,7 @@ export function LogsFilterModal({
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
                     <SelectItem value="true">Yes</SelectItem>
                     <SelectItem value="false">No</SelectItem>
                   </SelectContent>

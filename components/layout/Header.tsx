@@ -60,6 +60,11 @@ import {
 const MotionButton = motion(Button);
 
 export default function Header() {
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
   const router = useRouter();
   const { user, logout } = useAuth();
   const [logoutOpen, setLogoutOpen] = React.useState(false);
@@ -206,6 +211,24 @@ export default function Header() {
       return "";
     }
   };
+  // Prevent hydration mismatch by only rendering Radix UI components after mount
+  if (!isMounted) {
+    return (
+      <header className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-b border-gray-200 z-50">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
+              <GraduationCap className="h-8 w-8 text-primary" />
+              <span className="text-xl font-bold text-primary">
+                Personal Wings
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <motion.header
       className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-b border-gray-200 z-50"

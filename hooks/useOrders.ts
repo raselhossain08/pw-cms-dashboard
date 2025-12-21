@@ -43,7 +43,12 @@ export function useOrders() {
             setLoading(true);
             try {
                 const response: any = await ordersService.getAllOrders(params);
-                setOrders(response.orders || []);
+                // Normalize orders to ensure items array exists
+                const normalizedOrders = (response.orders || []).map((order: any) => ({
+                    ...order,
+                    items: order.items || [],
+                }));
+                setOrders(normalizedOrders);
                 setTotal(response.total || 0);
                 return response;
             } catch (error: any) {
@@ -78,8 +83,13 @@ export function useOrders() {
             setLoading(true);
             try {
                 const order: any = await ordersService.getOrderById(id);
-                setSelectedOrder(order);
-                return order;
+                // Normalize order to ensure items array exists
+                const normalizedOrder = order ? {
+                    ...order,
+                    items: order.items || [],
+                } : null;
+                setSelectedOrder(normalizedOrder);
+                return normalizedOrder;
             } catch (error: any) {
                 push({
                     message: error.response?.data?.message || "Failed to fetch order details",
@@ -98,14 +108,19 @@ export function useOrders() {
             setLoading(true);
             try {
                 const updatedOrder: any = await ordersService.updateOrder(id, orderData);
+                // Normalize order to ensure items array exists
+                const normalizedOrder = updatedOrder ? {
+                    ...updatedOrder,
+                    items: updatedOrder.items || [],
+                } : null;
                 setOrders((prev) =>
-                    prev.map((order) => (order._id === id ? updatedOrder : order))
+                    prev.map((order) => (order._id === id ? normalizedOrder : order))
                 );
                 push({
                     message: "Order updated successfully",
                     type: "success",
                 });
-                return updatedOrder;
+                return normalizedOrder;
             } catch (error: any) {
                 push({
                     message: error.response?.data?.message || "Failed to update order",
@@ -124,14 +139,19 @@ export function useOrders() {
             setLoading(true);
             try {
                 const cancelledOrder: any = await ordersService.cancelOrder(id, reason);
+                // Normalize order to ensure items array exists
+                const normalizedOrder = cancelledOrder ? {
+                    ...cancelledOrder,
+                    items: cancelledOrder.items || [],
+                } : null;
                 setOrders((prev) =>
-                    prev.map((order) => (order._id === id ? cancelledOrder : order))
+                    prev.map((order) => (order._id === id ? normalizedOrder : order))
                 );
                 push({
                     message: "Order cancelled successfully",
                     type: "success",
                 });
-                return cancelledOrder;
+                return normalizedOrder;
             } catch (error: any) {
                 push({
                     message: error.response?.data?.message || "Failed to cancel order",
@@ -150,14 +170,19 @@ export function useOrders() {
             setLoading(true);
             try {
                 const refundedOrder: any = await ordersService.refundOrder(id, reason);
+                // Normalize order to ensure items array exists
+                const normalizedOrder = refundedOrder ? {
+                    ...refundedOrder,
+                    items: refundedOrder.items || [],
+                } : null;
                 setOrders((prev) =>
-                    prev.map((order) => (order._id === id ? refundedOrder : order))
+                    prev.map((order) => (order._id === id ? normalizedOrder : order))
                 );
                 push({
                     message: "Order refunded successfully",
                     type: "success",
                 });
-                return refundedOrder;
+                return normalizedOrder;
             } catch (error: any) {
                 push({
                     message: error.response?.data?.message || "Failed to refund order",

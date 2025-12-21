@@ -20,9 +20,20 @@ import {
   Loader2,
   LayoutGrid,
   List,
+  RefreshCw,
+  Download,
+  CheckSquare,
+  Square,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  AlertCircle,
+  DollarSign,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProducts } from "@/hooks/useProducts";
+import { useDebounce } from "@/hooks/useDebounce";
 import type { Product } from "@/lib/types/product";
 import ProductForm from "./ProductForm";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
@@ -37,8 +48,18 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/context/ToastContext";
 
 type ProductStatus = "active" | "draft" | "out-of-stock" | "low-stock";
 
@@ -69,42 +90,146 @@ type OrderItem = {
 // Orders will be loaded from API when implemented
 
 export default function Shop() {
+  const { push } = useToast();
+  const [page, setPage] = React.useState(1);
+  const [limit, setLimit] = React.useState(10);
+  const [search, setSearch] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [typeFilter, setTypeFilter] = React.useState<string>("all");
+  const debouncedSearch = useDebounce(search, 500);
+
   const {
     products: apiProducts,
     loading,
+    error,
+    stats,
+    statsLoading,
+    pagination,
     deleteProduct,
+    bulkDeleteProducts,
+    bulkUpdateStatus,
     refreshProducts,
-  } = useProducts();
+    fetchProducts,
+    fetchStats,
+    exportProducts,
+  } = useProducts({
+    page,
+    limit,
+    search: debouncedSearch || undefined,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    type: typeFilter !== "all" ? typeFilter : undefined,
+  });
 
   const [orders] = React.useState<OrderItem[]>([]);
-  const [search, setSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] = React.useState("All Products");
   const [sortBy, setSortBy] = React.useState("Sort by: Newest");
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
   const [viewOpen, setViewOpen] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false);
+  const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = React.useState(false);
   const [deletingProduct, setDeletingProduct] = React.useState<string | null>(
     null
   );
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(
     null
   );
-  const [activeTab, setActiveTab] = React.useState("Products");
+  const [selectedProducts, setSelectedProducts] = React.useState<Set<string>>(
+    new Set()
+  );
   const [viewMode, setViewMode] = React.useState<"grid" | "table">("table");
+  const [filterOpen, setFilterOpen] = React.useState(false);
+  const [actionLoading, setActionLoading] = React.useState(false);
 
   // Handle product created callback
   const handleProductCreated = (newProduct: Product) => {
     refreshProducts();
+    fetchStats();
     setCreateOpen(false);
   };
 
   // Handle product updated callback
   const handleProductUpdated = (updatedProduct: Product) => {
     refreshProducts();
+    fetchStats();
     setEditOpen(false);
     setSelectedProduct(null);
   };
+
+  // Handle bulk delete
+  const handleBulkDelete = async () => {
+    if (selectedProducts.size === 0) return;
+    setActionLoading(true);
+    const success = await bulkDeleteProducts(Array.from(selectedProducts));
+    if (success) {
+      setSelectedProducts(new Set());
+      setBulkDeleteDialogOpen(false);
+      fetchStats();
+    }
+    setActionLoading(false);
+  };
+
+  // Handle bulk status update
+  const handleBulkStatusUpdate = async (status: string) => {
+    if (selectedProducts.size === 0) return;
+    setActionLoading(true);
+    const success = await bulkUpdateStatus(
+      Array.from(selectedProducts),
+      status
+    );
+    if (success) {
+      setSelectedProducts(new Set());
+      setBulkStatusDialogOpen(false);
+      fetchStats();
+    }
+    setActionLoading(false);
+  };
+
+  // Handle export
+  const handleExport = async () => {
+    try {
+      await exportProducts({
+        search: debouncedSearch || undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        type: typeFilter !== "all" ? typeFilter : undefined,
+      });
+    } catch (error) {
+      console.error("Export failed:", error);
+    }
+  };
+
+  // Toggle product selection
+  const toggleProductSelection = (productId: string) => {
+    const newSelected = new Set(selectedProducts);
+    if (newSelected.has(productId)) {
+      newSelected.delete(productId);
+    } else {
+      newSelected.add(productId);
+    }
+    setSelectedProducts(newSelected);
+  };
+
+  // Toggle all products selection
+  const toggleAllSelection = () => {
+    if (selectedProducts.size === filtered.length) {
+      setSelectedProducts(new Set());
+    } else {
+      setSelectedProducts(new Set(filtered.map((p) => p.id)));
+    }
+  };
+
+  // Update filters and reset page
+  React.useEffect(() => {
+    setPage(1);
+    fetchProducts({
+      page: 1,
+      limit,
+      search: debouncedSearch || undefined,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      type: typeFilter !== "all" ? typeFilter : undefined,
+    });
+  }, [debouncedSearch, statusFilter, typeFilter, limit]);
 
   // Handle view product
   const handleViewProduct = async (productId: string) => {
@@ -249,6 +374,46 @@ export default function Shop() {
           </p>
         </div>
         <div className="flex space-x-3">
+          {selectedProducts.size > 0 && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setBulkStatusDialogOpen(true)}
+                disabled={actionLoading}
+              >
+                <Tag className="w-4 h-4 mr-2" /> Update Status (
+                {selectedProducts.size})
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => setBulkDeleteDialogOpen(true)}
+                disabled={actionLoading}
+              >
+                <Trash className="w-4 h-4 mr-2" /> Delete (
+                {selectedProducts.size})
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={loading || actionLoading}
+          >
+            <Download className="w-4 h-4 mr-2" /> Export
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              refreshProducts();
+              fetchStats();
+            }}
+            disabled={loading || actionLoading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />{" "}
+            Refresh
+          </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4 mr-2" /> Add Product
           </Button>
@@ -260,12 +425,18 @@ export default function Shop() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">
-                Active Products
+                Total Products
               </p>
               <p className="text-2xl font-bold text-secondary mt-1">
-                {products.filter((p) => p.status === "active").length}
+                {statsLoading ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  stats?.totalProducts || 0
+                )}
               </p>
-              <p className="text-accent text-sm mt-1">+5 this week</p>
+              <p className="text-gray-500 text-sm mt-1">
+                {stats?.publishedProducts || 0} published
+              </p>
             </div>
             <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
               <Store className="text-primary w-6 h-6" />
@@ -276,45 +447,57 @@ export default function Shop() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm font-medium">
-                Draft Products
+                Published Products
               </p>
               <p className="text-2xl font-bold text-secondary mt-1">
-                {products.filter((p) => p.status === "draft").length}
+                {statsLoading ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  stats?.publishedProducts || 0
+                )}
               </p>
-              <p className="text-gray-500 text-sm mt-1">Review pending</p>
+              <p className="text-gray-500 text-sm mt-1">Active listings</p>
             </div>
-            <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-              <Tag className="text-gray-600 w-6 h-6" />
+            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+              <Tag className="text-green-600 w-6 h-6" />
             </div>
           </div>
         </div>
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Out of Stock</p>
+              <p className="text-gray-600 text-sm font-medium">Total Revenue</p>
               <p className="text-2xl font-bold text-secondary mt-1">
-                {products.filter((p) => p.status === "out-of-stock").length}
+                {statsLoading ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  `$${(stats?.totalRevenue || 0).toLocaleString()}`
+                )}
               </p>
-              <p className="text-red-500 text-sm mt-1">Restock needed</p>
+              <p className="text-gray-500 text-sm mt-1">
+                {stats?.totalSold || 0} sold
+              </p>
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <ShoppingCart className="text-red-600 w-6 h-6" />
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <DollarSign className="text-blue-600 w-6 h-6" />
             </div>
           </div>
         </div>
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">
-                Low Stock Items
-              </p>
+              <p className="text-gray-600 text-sm font-medium">Average Price</p>
               <p className="text-2xl font-bold text-secondary mt-1">
-                {products.filter((p) => p.status === "low-stock").length}
+                {statsLoading ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  `$${(stats?.averagePrice || 0).toLocaleString()}`
+                )}
               </p>
-              <p className="text-red-500 text-sm mt-1">Needs attention</p>
+              <p className="text-gray-500 text-sm mt-1">Per product</p>
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <Box className="text-red-600 w-6 h-6" />
+            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+              <TrendingUp className="text-purple-600 w-6 h-6" />
             </div>
           </div>
         </div>
@@ -341,6 +524,62 @@ export default function Shop() {
             )}
           </div>
           <div className="flex items-center space-x-2">
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline">
+                  <Filter className="w-4 h-4 mr-2" /> Filters
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80">
+                <div className="space-y-4">
+                  <div>
+                    <Label>Status</Label>
+                    <Select
+                      value={statusFilter}
+                      onValueChange={setStatusFilter}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Statuses</SelectItem>
+                        <SelectItem value="published">Published</SelectItem>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="archived">Archived</SelectItem>
+                        <SelectItem value="sold">Sold</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Type</Label>
+                    <Select value={typeFilter} onValueChange={setTypeFilter}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="aircraft">Aircraft</SelectItem>
+                        <SelectItem value="simulator">Simulator</SelectItem>
+                        <SelectItem value="equipment">Equipment</SelectItem>
+                        <SelectItem value="software">Software</SelectItem>
+                        <SelectItem value="service">Service</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setTypeFilter("all");
+                      setFilterOpen(false);
+                    }}
+                    className="w-full"
+                  >
+                    <X className="w-4 h-4 mr-2" /> Clear Filters
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <div className="relative">
               <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Select value={sortBy} onValueChange={setSortBy}>
@@ -386,19 +625,38 @@ export default function Shop() {
             </div>
           </div>
         </div>
-        <div className="flex items-center mt-4">
-          <div className="relative w-full">
+        <div className="flex items-center gap-2 mt-4">
+          <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
+            <Input
               id="shop-search"
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search... (Cmd+K)"
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="Search products... (Cmd+K)"
+              className="pl-9"
             />
           </div>
+          {(statusFilter !== "all" || typeFilter !== "all" || search) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStatusFilter("all");
+                setTypeFilter("all");
+                setSearch("");
+              }}
+            >
+              <X className="w-4 h-4 mr-1" /> Clear
+            </Button>
+          )}
         </div>
+        {error && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600" />
+            <p className="text-sm text-red-600">{error}</p>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -414,6 +672,15 @@ export default function Shop() {
             <table className="w-full min-w-full border-collapse">
               <thead className="bg-gray-50">
                 <tr className="text-left text-gray-600 text-sm border-b-2 border-gray-200">
+                  <th className="py-4 px-4 font-semibold w-12">
+                    <Checkbox
+                      checked={
+                        selectedProducts.size === filtered.length &&
+                        filtered.length > 0
+                      }
+                      onCheckedChange={toggleAllSelection}
+                    />
+                  </th>
                   <th className="py-4 px-4 font-semibold">Image</th>
                   <th className="py-4 px-4 font-semibold">Product</th>
                   <th className="py-4 px-4 font-semibold">Category</th>
@@ -427,7 +694,7 @@ export default function Shop() {
               <tbody className="text-sm bg-white">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-gray-500">
+                    <td colSpan={9} className="py-12 text-center text-gray-500">
                       <Box className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                       <p className="text-lg font-medium">No products found</p>
                       <p className="text-sm">
@@ -439,8 +706,16 @@ export default function Shop() {
                   filtered.map((p) => (
                     <tr
                       key={p.id}
-                      className="border-b border-gray-200 hover:bg-gray-50 transition-colors"
+                      className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${
+                        selectedProducts.has(p.id) ? "bg-blue-50" : ""
+                      }`}
                     >
+                      <td className="py-3 px-4">
+                        <Checkbox
+                          checked={selectedProducts.has(p.id)}
+                          onCheckedChange={() => toggleProductSelection(p.id)}
+                        />
+                      </td>
                       <td className="py-3 px-4">
                         {p.imageUrl ? (
                           <Image
@@ -536,11 +811,38 @@ export default function Shop() {
               </tbody>
             </table>
           </div>
-          <div className="p-4 border-t border-gray-200 bg-gray-50">
-            <Button onClick={() => setCreateOpen(true)} className="w-full">
-              <Plus className="w-4 h-4 mr-2" /> Add New Product
-            </Button>
-          </div>
+          {pagination.totalPages > 1 && (
+            <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Showing {(page - 1) * limit + 1} to{" "}
+                {Math.min(page * limit, pagination.total)} of {pagination.total}{" "}
+                products
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1 || loading}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-sm text-gray-600">
+                  Page {page} of {pagination.totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setPage((p) => Math.min(pagination.totalPages, p + 1))
+                  }
+                  disabled={page === pagination.totalPages || loading}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
@@ -752,8 +1054,59 @@ export default function Shop() {
         confirmText="Delete"
         cancelText="Cancel"
         variant="destructive"
-        loading={loading}
+        loading={loading || actionLoading}
       />
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={bulkDeleteDialogOpen}
+        onOpenChange={setBulkDeleteDialogOpen}
+        onConfirm={handleBulkDelete}
+        title="Delete Products"
+        description={`Are you sure you want to delete ${selectedProducts.size} product(s)? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        loading={actionLoading}
+      />
+
+      {/* Bulk Status Update Dialog - Using custom dialog */}
+      {bulkStatusDialogOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold mb-2">
+              Update Product Status
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Update status for {selectedProducts.size} product(s):
+            </p>
+            <Select
+              onValueChange={async (value) => {
+                await handleBulkStatusUpdate(value);
+              }}
+            >
+              <SelectTrigger className="mb-4">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="published">Published</SelectItem>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="archived">Archived</SelectItem>
+                <SelectItem value="sold">Sold</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setBulkStatusDialogOpen(false)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Product View Dialog */}
       {selectedProduct && (

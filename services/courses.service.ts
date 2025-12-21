@@ -180,6 +180,97 @@ class CoursesService {
         }
     }
 
+    async toggleCourseStatus(id: string) {
+        try {
+            const course = await this.getCourseById(id);
+            const isPublished = (course as any)?.data?.isPublished || (course as any)?.isPublished || (course as any)?.data?.status === 'published' || (course as any)?.status === 'published';
+            if (isPublished) {
+                return await this.unpublishCourse(id);
+            } else {
+                return await this.publishCourse(id);
+            }
+        } catch (error) {
+            console.error(`Failed to toggle course status ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async bulkDeleteCourses(ids: string[]) {
+        try {
+            const { data } = await apiClient.post('/courses/bulk-delete', { ids });
+            return data;
+        } catch (error) {
+            console.error('Failed to bulk delete courses:', error);
+            throw error;
+        }
+    }
+
+    async bulkToggleStatus(ids: string[]) {
+        try {
+            const { data } = await apiClient.post('/courses/bulk-toggle-status', { ids });
+            return data;
+        } catch (error) {
+            console.error('Failed to bulk toggle course status:', error);
+            throw error;
+        }
+    }
+
+    async bulkPublishCourses(ids: string[]) {
+        try {
+            const { data } = await apiClient.post('/courses/bulk-publish', { ids });
+            return data;
+        } catch (error) {
+            console.error('Failed to bulk publish courses:', error);
+            throw error;
+        }
+    }
+
+    async bulkUnpublishCourses(ids: string[]) {
+        try {
+            const { data } = await apiClient.post('/courses/bulk-unpublish', { ids });
+            return data;
+        } catch (error) {
+            console.error('Failed to bulk unpublish courses:', error);
+            throw error;
+        }
+    }
+
+    async exportCourses(format: "csv" | "xlsx" | "pdf", params?: { status?: string; category?: string }) {
+        try {
+            const queryParams = new URLSearchParams();
+            if (params?.status) queryParams.append('status', params.status);
+            if (params?.category) queryParams.append('category', params.category);
+            queryParams.append('format', format);
+
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/api/courses/export?${queryParams.toString()}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error('Failed to export courses');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `courses_export_${new Date().toISOString().split('T')[0]}.${format === 'xlsx' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'csv'}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to export courses:', error);
+            throw error;
+        }
+    }
+
     // Utility Methods
     calculateDiscount(course: Course): number {
         if (!course.originalPrice || course.originalPrice <= course.price) return 0;

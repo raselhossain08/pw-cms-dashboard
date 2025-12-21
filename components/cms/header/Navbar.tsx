@@ -32,6 +32,10 @@ import {
   GripVertical,
   ChevronDown,
   ChevronUp,
+  Download,
+  Copy,
+  Eye,
+  Loader2,
 } from "lucide-react";
 import type { HeaderNavigation } from "@/types/cms";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +47,19 @@ import {
   Draggable,
   DropResult,
 } from "@hello-pangea/dnd";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface HeaderEditorProps {
   headerId?: string;
@@ -108,6 +125,8 @@ export function HeaderEditor({
     [key: string]: number;
   }>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Set<number>>(new Set());
   const [expandedSubmenus, setExpandedSubmenus] = useState<Set<string>>(
     new Set()
@@ -568,26 +587,142 @@ export function HeaderEditor({
               Manage your website's header navigation and settings
             </p>
           </div>
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-2">
-              <Switch
-                checked={data.isActive}
-                onCheckedChange={(checked) =>
-                  setData((prev) =>
-                    prev ? { ...prev, isActive: checked } : prev
-                  )
-                }
-              />
-              <Label
-                className={
-                  data.isActive
-                    ? "text-green-600 font-semibold"
-                    : "text-gray-600"
-                }
-              >
-                {data.isActive ? "Active" : "Inactive"}
-              </Label>
-            </div>
+          <div className="flex items-center space-x-3 flex-wrap gap-2">
+            <Badge variant={data?.isActive ? "default" : "secondary"}>
+              {data?.isActive ? "Active" : "Inactive"}
+            </Badge>
+            <Button
+              variant="outline"
+              onClick={() => setShowPreview(true)}
+              disabled={!data || isSaving}
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Preview
+            </Button>
+            {data?._id && (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      disabled={isExporting || isSaving}
+                    >
+                      {isExporting ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4 mr-2" />
+                      )}
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        if (!data._id) return;
+                        setIsExporting(true);
+                        try {
+                          await headerNavigationApi.export(data._id, "json");
+                          push({
+                            message: "Header exported as JSON",
+                            type: "success",
+                          });
+                        } catch (err) {
+                          push({ message: "Failed to export", type: "error" });
+                        } finally {
+                          setIsExporting(false);
+                        }
+                      }}
+                    >
+                      Export as JSON
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        if (!data._id) return;
+                        setIsExporting(true);
+                        try {
+                          await headerNavigationApi.export(data._id, "pdf");
+                          push({
+                            message: "Header exported as PDF",
+                            type: "success",
+                          });
+                        } catch (err) {
+                          push({ message: "Failed to export", type: "error" });
+                        } finally {
+                          setIsExporting(false);
+                        }
+                      }}
+                    >
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!data._id) return;
+                    setIsSaving(true);
+                    try {
+                      const duplicated = await headerNavigationApi.duplicate(
+                        data._id
+                      );
+                      queryClient.invalidateQueries({ queryKey: ["headers"] });
+                      queryClient.invalidateQueries({
+                        queryKey: ["activeHeader"],
+                      });
+                      push({
+                        message: "Header duplicated successfully",
+                        type: "success",
+                      });
+                      setData(duplicated);
+                    } catch (err) {
+                      push({ message: "Failed to duplicate", type: "error" });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicate
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!data._id) return;
+                    setIsSaving(true);
+                    try {
+                      const toggled = await headerNavigationApi.toggleActive(
+                        data._id
+                      );
+                      queryClient.invalidateQueries({ queryKey: ["headers"] });
+                      queryClient.invalidateQueries({
+                        queryKey: ["activeHeader"],
+                      });
+                      push({
+                        message: `Header ${
+                          toggled.isActive ? "activated" : "deactivated"
+                        }`,
+                        type: "success",
+                      });
+                      setData(toggled);
+                    } catch (err) {
+                      push({
+                        message: "Failed to toggle status",
+                        type: "error",
+                      });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 mr-2 ${isSaving ? "animate-spin" : ""}`}
+                  />
+                  Toggle Active
+                </Button>
+              </>
+            )}
             <Button
               onClick={handleSave}
               disabled={isSaving}
@@ -595,7 +730,7 @@ export function HeaderEditor({
             >
               {isSaving ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   Saving...
                 </>
               ) : (
@@ -2363,6 +2498,83 @@ export function HeaderEditor({
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Preview Dialog */}
+        <Dialog open={showPreview} onOpenChange={setShowPreview}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Header Navigation Preview</DialogTitle>
+              <DialogDescription>
+                Preview how your header navigation will appear to users
+              </DialogDescription>
+            </DialogHeader>
+            {data && (
+              <div className="space-y-6 mt-4">
+                {/* Logo Preview */}
+                {data.logo && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">Logo</h3>
+                    <div className="flex gap-4">
+                      {data.logo.dark && (
+                        <div className="p-4 bg-gray-800 rounded-lg">
+                          <img
+                            src={data.logo.dark}
+                            alt="Dark Logo"
+                            className="h-10"
+                          />
+                        </div>
+                      )}
+                      {data.logo.light && (
+                        <div className="p-4 bg-white border rounded-lg">
+                          <img
+                            src={data.logo.light}
+                            alt="Light Logo"
+                            className="h-10"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Navigation Menu Preview */}
+                {data.navigation && data.navigation.menuItems && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">Navigation Menu</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {data.navigation.menuItems.map((item, idx) => (
+                        <Badge key={idx} variant="outline">
+                          {item.title}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* CTA Preview */}
+                {data.cta && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">Call to Action</h3>
+                    <div className="p-4 border rounded-lg">
+                      <p className="font-medium">{data.cta.text}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {data.cta.href}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Status */}
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Status</h3>
+                  <Badge variant={data.isActive ? "default" : "secondary"}>
+                    {data.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

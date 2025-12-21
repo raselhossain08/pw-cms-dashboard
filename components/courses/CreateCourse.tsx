@@ -188,7 +188,8 @@ export default function CreateCourse() {
             const content = String(fd.get("content") || "").trim();
             const level = String(fd.get("level") || "beginner");
             const type = String(fd.get("type") || "theoretical");
-            const price = Number(fd.get("price") || 0);
+            const isFree = fd.get("isFree") === "on";
+            const price = isFree ? 0 : Number(fd.get("price") || 0);
             const originalPriceRaw = fd.get("originalPrice");
             const originalPrice =
               originalPriceRaw && Number(originalPriceRaw) > 0
@@ -270,6 +271,7 @@ export default function CreateCourse() {
                 type: type as any,
                 price,
                 originalPrice,
+                isFree,
                 duration: Math.max(duration, 1),
                 durationHours: Math.max(duration, 1),
                 maxStudents,
@@ -454,6 +456,33 @@ export default function CreateCourse() {
                       Pricing Information
                     </h3>
                     <div className="space-y-4">
+                      <div>
+                        <label className="flex items-center gap-2 mb-4">
+                          <input
+                            type="checkbox"
+                            name="isFree"
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            onChange={(e) => {
+                              const priceInput = document.querySelector(
+                                'input[name="price"]'
+                              ) as HTMLInputElement;
+                              if (e.target.checked) {
+                                if (priceInput) priceInput.value = "0";
+                                priceInput?.setAttribute("disabled", "true");
+                              } else {
+                                priceInput?.removeAttribute("disabled");
+                              }
+                            }}
+                          />
+                          <span className="text-sm font-medium text-secondary">
+                            Free Course
+                          </span>
+                        </label>
+                        <p className="text-xs text-gray-500 mb-4">
+                          Check this box to make the course free. Price will be
+                          set to $0.
+                        </p>
+                      </div>
                       <div>
                         <label className="text-sm font-medium text-secondary block mb-2">
                           Sale Price ($) *

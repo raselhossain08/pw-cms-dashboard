@@ -29,6 +29,8 @@ import {
   Download,
   Filter,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +72,10 @@ import {
   UpdateInstructorDto,
   Instructor,
 } from "@/hooks/useInstructors";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/context/ToastContext";
+import { CheckSquare, Square } from "lucide-react";
 
 type ViewMode = "grid" | "table";
 
@@ -80,16 +86,20 @@ export default function Instructors() {
     loading,
     statsLoading,
     total,
+    pagination,
     fetchInstructors,
     fetchStats,
     createInstructor,
     updateInstructor,
     deleteInstructor,
+    bulkDeleteInstructors,
     approveInstructor,
     suspendInstructor,
     activateInstructor,
     deactivateInstructor,
+    exportInstructors,
   } = useInstructors();
+  const { push } = useToast();
 
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
@@ -105,8 +115,10 @@ export default function Instructors() {
   const [editOpen, setEditOpen] = React.useState(false);
   const [viewOpen, setViewOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
   const [selectedInstructor, setSelectedInstructor] =
     React.useState<Instructor | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
   // Form states
   const [formData, setFormData] = React.useState<CreateInstructorDto>({
@@ -128,9 +140,54 @@ export default function Instructors() {
 
   // Fetch data on mount
   React.useEffect(() => {
-    fetchInstructors();
+    fetchInstructors({
+      page: 1,
+      limit: itemsPerPage,
+    });
     fetchStats();
-  }, [fetchInstructors, fetchStats]);
+  }, []);
+
+  // Fetch data when filters change
+  React.useEffect(() => {
+    fetchInstructors({
+      page: currentPage,
+      limit: itemsPerPage,
+      search,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      specialization:
+        specializationFilter !== "all" ? specializationFilter : undefined,
+      experience: experienceFilter !== "all" ? experienceFilter : undefined,
+      sortBy,
+    });
+  }, [
+    currentPage,
+    statusFilter,
+    specializationFilter,
+    experienceFilter,
+    sortBy,
+  ]);
+
+  // Debounced search
+  React.useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (currentPage === 1) {
+        fetchInstructors({
+          page: 1,
+          limit: itemsPerPage,
+          search,
+          status: statusFilter !== "all" ? statusFilter : undefined,
+          specialization:
+            specializationFilter !== "all" ? specializationFilter : undefined,
+          experience: experienceFilter !== "all" ? experienceFilter : undefined,
+          sortBy,
+        });
+      } else {
+        setCurrentPage(1);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [search]);
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -146,45 +203,19 @@ export default function Instructors() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Filter instructors
+  // Filter instructors (client-side filtering for tab and additional filters)
   const filteredInstructors = React.useMemo(() => {
     let filtered = [...instructors];
 
-    // Search filter
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filtered = filtered.filter(
-        (i) =>
-          i.name.toLowerCase().includes(searchLower) ||
-          i.email.toLowerCase().includes(searchLower) ||
-          (i.specialization &&
-            i.specialization.toLowerCase().includes(searchLower))
-      );
-    }
-
-    // Tab filter
+    // Tab filter (client-side only, as API doesn't handle tabs)
     if (activeTab !== "all") {
       filtered = filtered.filter((i) => i.status === activeTab);
     }
 
-    // Status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((i) => i.status === statusFilter);
-    }
+    // Additional client-side search filter (if search wasn't sent to API)
+    // Note: Search is handled by API, but we keep this for immediate UI feedback
 
-    // Specialization filter
-    if (specializationFilter !== "all") {
-      filtered = filtered.filter(
-        (i) => i.specialization === specializationFilter
-      );
-    }
-
-    // Experience filter
-    if (experienceFilter !== "all") {
-      filtered = filtered.filter((i) => i.experience === experienceFilter);
-    }
-
-    // Sort
+    // Sort (client-side sorting for immediate feedback)
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "rating":
@@ -205,15 +236,7 @@ export default function Instructors() {
     });
 
     return filtered;
-  }, [
-    instructors,
-    search,
-    activeTab,
-    statusFilter,
-    specializationFilter,
-    experienceFilter,
-    sortBy,
-  ]);
+  }, [instructors, activeTab, sortBy]);
 
   // Pagination
   const paginatedInstructors = React.useMemo(() => {
@@ -226,9 +249,36 @@ export default function Instructors() {
   // Get unique specializations
   const specializations = React.useMemo(() => {
     const specs = new Set(
-      instructors.map((i) => i.specialization).filter(Boolean)
+      instructors
+        .map((i) => i.specialization)
+        .filter((s): s is string => Boolean(s))
     );
     return Array.from(specs);
+  }, [instructors]);
+
+  // Calculate specialization distribution
+  const specializationDistribution = React.useMemo(() => {
+    const distribution: Record<string, number> = {};
+    let totalWithSpecialization = 0;
+
+    instructors.forEach((instructor) => {
+      if (instructor.specialization) {
+        const spec = instructor.specialization;
+        distribution[spec] = (distribution[spec] || 0) + 1;
+        totalWithSpecialization++;
+      }
+    });
+
+    const totalInstructors = instructors.length || 1;
+
+    return Object.entries(distribution)
+      .map(([spec, count]) => ({
+        specialization: spec,
+        count,
+        percentage: Math.round((count / totalInstructors) * 100),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4); // Show top 4 specializations
   }, [instructors]);
 
   // Form handlers
@@ -251,15 +301,28 @@ export default function Instructors() {
   };
 
   const handleCreate = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email) return;
+    if (!formData.firstName || !formData.lastName || !formData.email) {
+      push({ type: "error", message: "Please fill in all required fields" });
+      return;
+    }
     setFormLoading(true);
     try {
       await createInstructor(formData);
       setCreateOpen(false);
       resetForm();
+      fetchInstructors({
+        page: currentPage,
+        limit: itemsPerPage,
+        search,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        specialization:
+          specializationFilter !== "all" ? specializationFilter : undefined,
+        experience: experienceFilter !== "all" ? experienceFilter : undefined,
+        sortBy,
+      });
       fetchStats();
     } catch (error) {
-      console.error(error);
+      // Error handled in hook
     } finally {
       setFormLoading(false);
     }
@@ -276,9 +339,19 @@ export default function Instructors() {
       setEditOpen(false);
       setSelectedInstructor(null);
       resetForm();
+      fetchInstructors({
+        page: currentPage,
+        limit: itemsPerPage,
+        search,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        specialization:
+          specializationFilter !== "all" ? specializationFilter : undefined,
+        experience: experienceFilter !== "all" ? experienceFilter : undefined,
+        sortBy,
+      });
       fetchStats();
     } catch (error) {
-      console.error(error);
+      // Error handled in hook
     } finally {
       setFormLoading(false);
     }
@@ -291,11 +364,60 @@ export default function Instructors() {
       await deleteInstructor(selectedInstructor._id);
       setDeleteOpen(false);
       setSelectedInstructor(null);
+      fetchInstructors({
+        page: currentPage,
+        limit: itemsPerPage,
+        search,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        specialization:
+          specializationFilter !== "all" ? specializationFilter : undefined,
+        experience: experienceFilter !== "all" ? experienceFilter : undefined,
+        sortBy,
+      });
       fetchStats();
     } catch (error) {
-      console.error(error);
+      // Error handled in hook
     } finally {
       setFormLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setFormLoading(true);
+    try {
+      await bulkDeleteInstructors(selectedIds);
+      setBulkDeleteOpen(false);
+      setSelectedIds([]);
+      fetchInstructors({
+        page: currentPage,
+        limit: itemsPerPage,
+        search,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        specialization:
+          specializationFilter !== "all" ? specializationFilter : undefined,
+        experience: experienceFilter !== "all" ? experienceFilter : undefined,
+        sortBy,
+      });
+      fetchStats();
+    } catch (error) {
+      // Error handled in hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === paginatedInstructors.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(paginatedInstructors.map((i) => i._id));
     }
   };
 
@@ -352,41 +474,18 @@ export default function Instructors() {
     setDeleteOpen(true);
   };
 
-  const handleExport = () => {
-    const csv = [
-      [
-        "Name",
-        "Email",
-        "Status",
-        "Specialization",
-        "Experience",
-        "Courses",
-        "Students",
-        "Rating",
-        "Joined Date",
-      ].join(","),
-      ...filteredInstructors.map((i) =>
-        [
-          i.name,
-          i.email,
-          i.status,
-          i.specialization || "",
-          i.experience || "",
-          i.coursesCount || 0,
-          i.studentsCount || 0,
-          i.rating || 0,
-          new Date(i.createdAt).toLocaleDateString(),
-        ].join(",")
-      ),
-    ].join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `instructors-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    try {
+      await exportInstructors({
+        search,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        specialization:
+          specializationFilter !== "all" ? specializationFilter : undefined,
+        experience: experienceFilter !== "all" ? experienceFilter : undefined,
+      });
+    } catch (error) {
+      // Error handled in hook
+    }
   };
 
   const StatusBadge = ({ status }: { status: string }) => {
@@ -604,31 +703,27 @@ export default function Instructors() {
               onValueChange={setSpecializationFilter}
             >
               <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-48">
-                <SelectValue />
+                <SelectValue placeholder="All Specializations" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All Specializations">
-                  All Specializations
-                </SelectItem>
-                <SelectItem value="Web Development">Web Development</SelectItem>
-                <SelectItem value="Data Science">Data Science</SelectItem>
-                <SelectItem value="Digital Marketing">
-                  Digital Marketing
-                </SelectItem>
-                <SelectItem value="UI/UX Design">UI/UX Design</SelectItem>
-                <SelectItem value="Business">Business</SelectItem>
+                <SelectItem value="all">All Specializations</SelectItem>
+                {specializations.filter(Boolean).map((spec) => (
+                  <SelectItem key={spec} value={spec}>
+                    {spec}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-40">
-                <SelectValue />
+                <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All Status">All Status</SelectItem>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Pending">Pending</SelectItem>
-                <SelectItem value="Inactive">Inactive</SelectItem>
-                <SelectItem value="Suspended">Suspended</SelectItem>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="suspended">Suspended</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -636,19 +731,13 @@ export default function Instructors() {
               onValueChange={setExperienceFilter}
             >
               <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-56">
-                <SelectValue />
+                <SelectValue placeholder="All Experience Levels" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All Experience Levels">
-                  All Experience Levels
-                </SelectItem>
-                <SelectItem value="Expert (5+ years)">
-                  Expert (5+ years)
-                </SelectItem>
-                <SelectItem value="Advanced (3-5 years)">
-                  Advanced (3-5 years)
-                </SelectItem>
-                <SelectItem value="Intermediate (1-3 years)">
+                <SelectItem value="all">All Experience Levels</SelectItem>
+                <SelectItem value="expert">Expert (5+ years)</SelectItem>
+                <SelectItem value="advanced">Advanced (3-5 years)</SelectItem>
+                <SelectItem value="intermediate">
                   Intermediate (1-3 years)
                 </SelectItem>
               </SelectContent>
@@ -679,10 +768,26 @@ export default function Instructors() {
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
-            <Button variant="ghost" size="icon" className="text-gray-600">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`text-gray-600 hover:text-primary ${
+                viewMode === "grid" ? "bg-primary/10 text-primary" : ""
+              }`}
+              onClick={() => setViewMode("grid")}
+              title="Grid View"
+            >
               <Grid2x2 className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="text-gray-600">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`text-gray-600 hover:text-primary ${
+                viewMode === "table" ? "bg-primary/10 text-primary" : ""
+              }`}
+              onClick={() => setViewMode("table")}
+              title="Table View"
+            >
               <List className="w-5 h-5" />
             </Button>
           </div>
@@ -697,20 +802,49 @@ export default function Instructors() {
       )}
 
       {/* Empty State */}
-      {!loading && filteredInstructors.length === 0 && (
+      {!loading && instructors.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
           <Users2 className="w-16 h-16 text-gray-400 mb-4" />
           <h3 className="text-xl font-semibold text-gray-700 mb-2">
             No instructors found
           </h3>
           <p className="text-gray-500 mb-6">
-            Try adjusting your filters or add a new instructor
+            {filteredInstructors.length === 0 && instructors.length > 0
+              ? "Try adjusting your filters"
+              : "Get started by adding your first instructor"}
           </p>
           <Button onClick={() => setCreateOpen(true)}>
             <UserPlus className="w-4 h-4 mr-2" /> Add Instructor
           </Button>
         </div>
       )}
+
+      {/* No Results After Filtering */}
+      {!loading &&
+        instructors.length > 0 &&
+        filteredInstructors.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+            <Filter className="w-16 h-16 text-gray-400 mb-4" />
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">
+              No instructors match your filters
+            </h3>
+            <p className="text-gray-500 mb-6">
+              Try adjusting your search or filter criteria
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+                setSpecializationFilter("all");
+                setExperienceFilter("all");
+                setActiveTab("all");
+              }}
+            >
+              <X className="w-4 h-4 mr-2" /> Clear Filters
+            </Button>
+          </div>
+        )}
 
       {/* Grid View */}
       {!loading && viewMode === "grid" && filteredInstructors.length > 0 && (
@@ -852,153 +986,266 @@ export default function Instructors() {
         </div>
       )}
 
-      {/* All Instructors Table */}
-      <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-secondary">
-            All Instructors
-          </h3>
-          <p className="text-gray-600 text-sm">
-            Complete list of instructors with detailed information
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Instructor
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Specialization
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rating
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Courses
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Students
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Join Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {paginatedInstructors.map((it: Instructor) => (
-                <tr key={it._id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="h-8 w-8 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
-                        {it.firstName?.[0]}
-                        {it.lastName?.[0]}
-                      </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">
-                          {it.name}
-                        </div>
-                        <div className="text-sm text-gray-500">{it.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {it.specialization}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {it.experience === "expert" && "Expert"}
-                      {it.experience === "advanced" && "Advanced"}
-                      {it.experience === "intermediate" && "Intermediate"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <Star className="text-yellow-400 w-4 h-4 mr-1" />
-                      <span className="text-sm text-gray-900">
-                        {it.rating?.toFixed(1) || "0.0"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.coursesCount || 0} courses
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.studentsCount || 0}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {it.status === "active" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        Active
-                      </span>
-                    )}
-                    {it.status === "pending" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                        Pending
-                      </span>
-                    )}
-                    {it.status === "inactive" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                        Inactive
-                      </span>
-                    )}
-                    {it.status === "suspended" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                        Suspended
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(it.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+      {/* Table View */}
+      {!loading && viewMode === "table" && paginatedInstructors.length > 0 && (
+        <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-secondary">
+                All Instructors
+              </h3>
+              <p className="text-gray-600 text-sm">
+                Complete list of instructors with detailed information
+              </p>
+            </div>
+            {selectedIds.length > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Selected ({selectedIds.length})
+              </Button>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <button
-                      onClick={() => openViewDialog(it)}
-                      className="text-primary hover:text-primary/80 mr-3"
+                      onClick={toggleSelectAll}
+                      className="flex items-center"
                     >
-                      View
+                      {selectedIds.length === paginatedInstructors.length ? (
+                        <CheckSquare className="w-4 h-4 text-primary" />
+                      ) : (
+                        <Square className="w-4 h-4 text-gray-400" />
+                      )}
                     </button>
-                    <button
-                      onClick={() => openEditDialog(it)}
-                      className="text-gray-600 hover:text-primary"
-                    >
-                      Edit
-                    </button>
-                  </td>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Instructor
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Specialization
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Rating
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Courses
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Students
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Join Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            Showing <span className="font-medium">1-10</span> of{" "}
-            <span className="font-medium">47</span> instructors
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {paginatedInstructors.map((it: Instructor) => (
+                  <tr key={it._id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => toggleSelect(it._id)}
+                        className="flex items-center"
+                      >
+                        {selectedIds.includes(it._id) ? (
+                          <CheckSquare className="w-4 h-4 text-primary" />
+                        ) : (
+                          <Square className="w-4 h-4 text-gray-400" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="h-8 w-8 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
+                          {it.firstName?.[0]}
+                          {it.lastName?.[0]}
+                        </div>
+                        <div className="ml-4">
+                          <div className="text-sm font-medium text-gray-900">
+                            {it.name}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {it.email}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {it.specialization}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {it.experience === "expert" && "Expert"}
+                        {it.experience === "advanced" && "Advanced"}
+                        {it.experience === "intermediate" && "Intermediate"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <Star className="text-yellow-400 w-4 h-4 mr-1" />
+                        <span className="text-sm text-gray-900">
+                          {it.rating?.toFixed(1) || "0.0"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {it.coursesCount || 0} courses
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {it.studentsCount || 0}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {it.status === "active" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                          Active
+                        </span>
+                      )}
+                      {it.status === "pending" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                          Pending
+                        </span>
+                      )}
+                      {it.status === "inactive" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                          Inactive
+                        </span>
+                      )}
+                      {it.status === "suspended" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                          Suspended
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(it.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onClick={() => openViewDialog(it)}>
+                            <Eye className="w-4 h-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openEditDialog(it)}>
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit Instructor
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {it.status === "pending" && (
+                            <DropdownMenuItem onClick={() => handleApprove(it)}>
+                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                              Approve
+                            </DropdownMenuItem>
+                          )}
+                          {it.status === "active" && (
+                            <DropdownMenuItem onClick={() => handleSuspend(it)}>
+                              <Ban className="w-4 h-4 mr-2 text-orange-600" />
+                              Suspend
+                            </DropdownMenuItem>
+                          )}
+                          {it.status === "suspended" && (
+                            <DropdownMenuItem
+                              onClick={() => handleActivate(it)}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                              Reactivate
+                            </DropdownMenuItem>
+                          )}
+                          {it.status === "inactive" && (
+                            <DropdownMenuItem
+                              onClick={() => handleActivate(it)}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                              Activate
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => openDeleteDialog(it)}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm" className="border-gray-300">
-              Previous
-            </Button>
-            <Button size="sm">1</Button>
-            <Button variant="outline" size="sm" className="border-gray-300">
-              2
-            </Button>
-            <Button variant="outline" size="sm" className="border-gray-300">
-              3
-            </Button>
-            <Button variant="outline" size="sm" className="border-gray-300">
-              Next
-            </Button>
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              Showing{" "}
+              <span className="font-medium">
+                {(currentPage - 1) * itemsPerPage + 1}-
+                {Math.min(currentPage * itemsPerPage, total)}
+              </span>{" "}
+              of <span className="font-medium">{total}</span> instructors
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-gray-300"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Previous
+              </Button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    className={currentPage === pageNum ? "" : "border-gray-300"}
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-gray-300"
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+              >
+                Next
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
         <h3 className="text-lg font-semibold text-secondary mb-4">
@@ -1028,33 +1275,48 @@ export default function Instructors() {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
-        <h3 className="text-lg font-semibold text-secondary mb-4">
-          Instructor Specialization Distribution
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-primary mb-2">18</div>
-            <div className="text-sm text-gray-600">Web Development</div>
-            <div className="text-xs text-gray-500 mt-1">38% of instructors</div>
+      {specializationDistribution.length > 0 && (
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+          <h3 className="text-lg font-semibold text-secondary mb-4">
+            Instructor Specialization Distribution
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {specializationDistribution.map((item, index) => {
+              const colors = [
+                "text-primary",
+                "text-blue-600",
+                "text-purple-600",
+                "text-green-600",
+              ];
+              return (
+                <div
+                  key={item.specialization}
+                  className="text-center p-4 border border-gray-200 rounded-lg"
+                >
+                  <div
+                    className={`text-xl font-bold ${
+                      colors[index] || "text-gray-600"
+                    } mb-2`}
+                  >
+                    {item.count}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {item.specialization}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {item.percentage}% of instructors
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-blue-600 mb-2">12</div>
-            <div className="text-sm text-gray-600">Data Science</div>
-            <div className="text-xs text-gray-500 mt-1">26% of instructors</div>
-          </div>
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-purple-600 mb-2">8</div>
-            <div className="text-sm text-gray-600">UI/UX Design</div>
-            <div className="text-xs text-gray-500 mt-1">17% of instructors</div>
-          </div>
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-green-600 mb-2">9</div>
-            <div className="text-sm text-gray-600">Other Fields</div>
-            <div className="text-xs text-gray-500 mt-1">19% of instructors</div>
-          </div>
+          {specializationDistribution.length === 0 && (
+            <p className="text-center text-gray-500 text-sm py-4">
+              No specialization data available
+            </p>
+          )}
         </div>
-      </div>
+      )}
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-secondary mb-4">
@@ -1100,32 +1362,39 @@ export default function Instructors() {
         </div>
       </div>
 
+      {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Instructor</DialogTitle>
-            <DialogDescription></DialogDescription>
+            <DialogDescription>
+              Create a new instructor account with all necessary details
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name
+                  First Name <span className="text-red-500">*</span>
                 </label>
-                <input
+                <Input
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.firstName}
+                  onChange={(e) =>
+                    handleFormChange("firstName", e.target.value)
+                  }
                   placeholder="Enter first name"
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name
+                  Last Name <span className="text-red-500">*</span>
                 </label>
-                <input
+                <Input
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.lastName}
+                  onChange={(e) => handleFormChange("lastName", e.target.value)}
                   placeholder="Enter last name"
                   required
                 />
@@ -1133,11 +1402,12 @@ export default function Instructors() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address
+                Email Address <span className="text-red-500">*</span>
               </label>
-              <input
+              <Input
                 type="email"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                value={formData.email}
+                onChange={(e) => handleFormChange("email", e.target.value)}
                 placeholder="instructor@example.com"
                 required
               />
@@ -1147,9 +1417,10 @@ export default function Instructors() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Phone Number
                 </label>
-                <input
+                <Input
                   type="tel"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={formData.phone || ""}
+                  onChange={(e) => handleFormChange("phone", e.target.value)}
                   placeholder="+1 (555) 123-4567"
                 />
               </div>
@@ -1157,14 +1428,12 @@ export default function Instructors() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Country
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
-                  <option value="">Select country</option>
-                  <option value="us">United States</option>
-                  <option value="uk">United Kingdom</option>
-                  <option value="ca">Canada</option>
-                  <option value="au">Australia</option>
-                  <option value="in">India</option>
-                </select>
+                <Input
+                  type="text"
+                  value={formData.country || ""}
+                  onChange={(e) => handleFormChange("country", e.target.value)}
+                  placeholder="Enter country"
+                />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1172,86 +1441,435 @@ export default function Instructors() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Specialization
                 </label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  required
-                >
-                  <option value="">Select specialization</option>
-                  <option value="web">Web Development</option>
-                  <option value="data">Data Science</option>
-                  <option value="marketing">Digital Marketing</option>
-                  <option value="design">UI/UX Design</option>
-                  <option value="business">Business</option>
-                </select>
+                <Input
+                  type="text"
+                  value={formData.specialization || ""}
+                  onChange={(e) =>
+                    handleFormChange("specialization", e.target.value)
+                  }
+                  placeholder="e.g., Web Development"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Experience Level
                 </label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  required
+                <Select
+                  value={formData.experience}
+                  onValueChange={(value) =>
+                    handleFormChange("experience", value)
+                  }
                 >
-                  <option value="">Select level</option>
-                  <option value="expert">Expert (5+ years)</option>
-                  <option value="advanced">Advanced (3-5 years)</option>
-                  <option value="intermediate">Intermediate (1-3 years)</option>
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="expert">Expert (5+ years)</SelectItem>
+                    <SelectItem value="advanced">
+                      Advanced (3-5 years)
+                    </SelectItem>
+                    <SelectItem value="intermediate">
+                      Intermediate (1-3 years)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Bio/Introduction
               </label>
-              <textarea
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+              <Textarea
+                value={formData.bio || ""}
+                onChange={(e) => handleFormChange("bio", e.target.value)}
                 rows={3}
                 placeholder="Brief introduction about the instructor's background and expertise"
-              ></textarea>
+              />
             </div>
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">
-                Account Settings
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Initial Status
               </label>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                  defaultChecked
-                />
-                <label className="ml-2 block text-sm text-gray-700">
-                  Send welcome email
-                </label>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                  defaultChecked
-                />
-                <label className="ml-2 block text-sm text-gray-700">
-                  Generate temporary password
-                </label>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                />
-                <label className="ml-2 block text-sm text-gray-700">
-                  Require profile completion
-                </label>
-              </div>
+              <Select
+                value={formData.status}
+                onValueChange={(value) => handleFormChange("status", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          <div className="flex justify-end space-x-3 pt-6">
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCreateOpen(false);
+                resetForm();
+              }}
+            >
               Cancel
             </Button>
-            <Button onClick={() => setCreateOpen(false)}>Add Instructor</Button>
-          </div>
+            <Button onClick={handleCreate} disabled={formLoading}>
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Add Instructor"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Instructor</DialogTitle>
+            <DialogDescription>Update instructor information</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  First Name <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="text"
+                  value={formData.firstName}
+                  onChange={(e) =>
+                    handleFormChange("firstName", e.target.value)
+                  }
+                  placeholder="Enter first name"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Last Name <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="text"
+                  value={formData.lastName}
+                  onChange={(e) => handleFormChange("lastName", e.target.value)}
+                  placeholder="Enter last name"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address <span className="text-red-500">*</span>
+              </label>
+              <Input
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleFormChange("email", e.target.value)}
+                placeholder="instructor@example.com"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number
+                </label>
+                <Input
+                  type="tel"
+                  value={formData.phone || ""}
+                  onChange={(e) => handleFormChange("phone", e.target.value)}
+                  placeholder="+1 (555) 123-4567"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Country
+                </label>
+                <Input
+                  type="text"
+                  value={formData.country || ""}
+                  onChange={(e) => handleFormChange("country", e.target.value)}
+                  placeholder="Enter country"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Specialization
+                </label>
+                <Input
+                  type="text"
+                  value={formData.specialization || ""}
+                  onChange={(e) =>
+                    handleFormChange("specialization", e.target.value)
+                  }
+                  placeholder="e.g., Web Development"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Experience Level
+                </label>
+                <Select
+                  value={formData.experience}
+                  onValueChange={(value) =>
+                    handleFormChange("experience", value)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="expert">Expert (5+ years)</SelectItem>
+                    <SelectItem value="advanced">
+                      Advanced (3-5 years)
+                    </SelectItem>
+                    <SelectItem value="intermediate">
+                      Intermediate (1-3 years)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Bio/Introduction
+              </label>
+              <Textarea
+                value={formData.bio || ""}
+                onChange={(e) => handleFormChange("bio", e.target.value)}
+                rows={3}
+                placeholder="Brief introduction about the instructor's background and expertise"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <Select
+                value={formData.status}
+                onValueChange={(value) => handleFormChange("status", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="suspended">Suspended</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setEditOpen(false);
+                resetForm();
+                setSelectedInstructor(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleEdit} disabled={formLoading}>
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Update Instructor"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Dialog */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Instructor Details</DialogTitle>
+            <DialogDescription>
+              View complete instructor information
+            </DialogDescription>
+          </DialogHeader>
+          {selectedInstructor && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-4 pb-4 border-b">
+                <div className="w-16 h-16 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-xl">
+                  {selectedInstructor.firstName?.[0]}
+                  {selectedInstructor.lastName?.[0]}
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold">
+                    {selectedInstructor.name}
+                  </h3>
+                  <p className="text-gray-600">{selectedInstructor.email}</p>
+                  <div className="flex gap-2 mt-2">
+                    <StatusBadge status={selectedInstructor.status} />
+                    <ExperienceBadge
+                      experience={selectedInstructor.experience}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Phone</p>
+                  <p className="font-medium">
+                    {selectedInstructor.phone || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Country</p>
+                  <p className="font-medium">
+                    {selectedInstructor.country || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Specialization</p>
+                  <p className="font-medium">
+                    {selectedInstructor.specialization || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Experience</p>
+                  <p className="font-medium capitalize">
+                    {selectedInstructor.experience || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Courses</p>
+                  <p className="font-medium">
+                    {selectedInstructor.coursesCount || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Students</p>
+                  <p className="font-medium">
+                    {selectedInstructor.studentsCount || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Rating</p>
+                  <p className="font-medium flex items-center gap-1">
+                    <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                    {selectedInstructor.rating?.toFixed(1) || "0.0"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Joined Date</p>
+                  <p className="font-medium">
+                    {new Date(
+                      selectedInstructor.createdAt
+                    ).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+              {selectedInstructor.bio && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Bio</p>
+                  <p className="text-gray-700">{selectedInstructor.bio}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setViewOpen(false);
+                setSelectedInstructor(null);
+              }}
+            >
+              Close
+            </Button>
+            {selectedInstructor && (
+              <Button
+                onClick={() => {
+                  setViewOpen(false);
+                  openEditDialog(selectedInstructor);
+                }}
+              >
+                Edit Instructor
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Instructor</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedInstructor?.name}? This
+              action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setSelectedInstructor(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={formLoading}
+            >
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Multiple Instructors</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedIds.length}{" "}
+              instructor(s)? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={formLoading}
+            >
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete All"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

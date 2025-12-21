@@ -35,6 +35,10 @@ import {
   EyeOff,
   Search,
   ChevronDown,
+  Download,
+  Copy,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { useEvents } from "@/hooks/useEvents";
 import Image from "next/image";
@@ -45,16 +49,34 @@ import type {
   Event,
   SeoMeta,
 } from "@/lib/types/events";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function EventsEditor() {
   const {
     events,
     loading,
+    saving,
     uploadProgress,
     fetchEvents,
     updateEvents,
     updateEventsWithMedia,
     toggleActive,
+    duplicateEvent,
+    exportEvents,
+    refreshEvents,
   } = useEvents();
 
   const [activeTab, setActiveTab] = useState("content");
@@ -187,8 +209,6 @@ export function EventsEditor() {
         }
       });
 
-      
-
       submitFormData.append("isActive", String(formData.isActive ?? true));
 
       await updateEventsWithMedia(submitFormData);
@@ -260,10 +280,15 @@ export function EventsEditor() {
       key={events?._id || "empty"}
       initialEvents={events || null}
       uploadProgress={uploadProgress}
+      saving={saving}
+      loading={loading}
       fetchEvents={fetchEvents}
       updateEvents={updateEvents}
       updateEventsWithMedia={updateEventsWithMedia}
       toggleActive={toggleActive}
+      duplicateEvent={duplicateEvent}
+      exportEvents={exportEvents}
+      refreshEvents={refreshEvents}
     />
   );
 }
@@ -271,19 +296,29 @@ export function EventsEditor() {
 function EventsForm({
   initialEvents,
   uploadProgress,
+  saving,
+  loading,
   fetchEvents,
   updateEvents,
   updateEventsWithMedia,
   toggleActive,
+  duplicateEvent,
+  exportEvents,
+  refreshEvents,
 }: {
   initialEvents: Events | null;
   uploadProgress: number;
+  saving: boolean;
+  loading: boolean;
   fetchEvents: () => Promise<void>;
-  updateEvents: (dto: Partial<UpdateEventsDto>) => Promise<Events>;
+  updateEvents: (dto: Partial<UpdateEventsDto>) => Promise<Events | null>;
   updateEventsWithMedia: (
     fd: FormData
-  ) => Promise<{ data: Events; message: string }>;
-  toggleActive: () => Promise<Events>;
+  ) => Promise<{ data: Events; message: string } | null>;
+  toggleActive: () => Promise<Events | null>;
+  duplicateEvent: (slug: string) => Promise<Events | null>;
+  exportEvents: (format: "json" | "pdf") => Promise<void>;
+  refreshEvents: () => Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState("content");
   const [eventImageFiles, setEventImageFiles] = useState<{
@@ -301,6 +336,8 @@ function EventsForm({
   const [perImageProgress, setPerImageProgress] = useState<{
     [key: number]: number;
   }>({});
+  const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [formData, setFormData] = useState<UpdateEventsDto>(() => ({
     title: initialEvents?.title || "",
@@ -375,11 +412,11 @@ function EventsForm({
           event.description || ""
         );
       });
-      
+
       submitFormData.append("isActive", String(formData.isActive ?? true));
       await updateEventsWithMedia(submitFormData);
       setEventImageFiles({});
-      fetchEvents();
+      await refreshEvents();
     } catch (error) {
       console.error("Failed to update events:", error);
     }
@@ -433,7 +470,76 @@ function EventsForm({
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full space-y-6">
+      {/* Header Actions */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-2">
+          <Badge variant={initialEvents?.isActive ? "default" : "secondary"}>
+            {initialEvents?.isActive ? (
+              <>
+                <Eye className="w-3 h-3 mr-1" /> Active
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3 mr-1" /> Inactive
+              </>
+            )}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (formData.events && formData.events.length > 0) {
+                setPreviewEvent(formData.events[0]);
+              }
+            }}
+            disabled={
+              saving ||
+              loading ||
+              !formData.events ||
+              formData.events.length === 0
+            }
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isExporting || saving || loading}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("json")}>
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            onClick={refreshEvents}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
@@ -612,16 +718,44 @@ function EventsForm({
                                 variant="ghost"
                                 size="sm"
                                 className="h-8 w-8 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                disabled={saving || loading}
                               >
                                 <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
                               </Button>
                             </CollapsibleTrigger>
                             <Button
                               type="button"
+                              onClick={() => {
+                                if (event.slug) {
+                                  handleDuplicate(event.slug);
+                                }
+                              }}
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                              title="Duplicate Event"
+                              disabled={saving || loading || !event.slug}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() => setPreviewEvent(event)}
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-green-500 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                              title="Preview Event"
+                              disabled={saving || loading}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
                               onClick={() => removeEvent(index)}
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              disabled={saving || loading}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -1514,8 +1648,6 @@ function EventsForm({
             </Card>
           </TabsContent>
 
-          
-
           {uploadProgress > 0 && uploadProgress < 100 && (
             <Card className="shadow-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20">
               <CardContent className="pt-6">
@@ -1549,15 +1681,194 @@ function EventsForm({
                 <Button
                   type="submit"
                   className="h-12 px-8 text-base bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
+                  disabled={saving || loading}
                 >
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  {saving ? "Saving..." : "Save Changes"}
                 </Button>
               </div>
             </CardContent>
           </Card>
         </form>
       </Tabs>
+
+      {/* Upload Progress Indicator */}
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading media...</span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog
+        open={!!previewEvent}
+        onOpenChange={(open) => !open && setPreviewEvent(null)}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Event Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your event will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {previewEvent && (
+            <div className="space-y-6 mt-4">
+              {/* Image */}
+              {previewEvent.image && (
+                <div className="relative w-full h-64 rounded-lg overflow-hidden">
+                  <img
+                    src={previewEvent.image}
+                    alt={previewEvent.title}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              {/* Title & Meta */}
+              <div>
+                <h1 className="text-3xl font-bold">{previewEvent.title}</h1>
+                {previewEvent.description && (
+                  <p className="text-muted-foreground mt-2">
+                    {previewEvent.description}
+                  </p>
+                )}
+                <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
+                  {previewEvent.date && (
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-4 h-4" />
+                      {previewEvent.date}
+                    </span>
+                  )}
+                  {previewEvent.time && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      {previewEvent.time}
+                    </span>
+                  )}
+                  {previewEvent.location && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-4 h-4" />
+                      {previewEvent.location}
+                    </span>
+                  )}
+                </div>
+                {previewEvent.venue && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Venue: {previewEvent.venue}
+                  </p>
+                )}
+              </div>
+
+              {/* Price */}
+              {previewEvent.price !== undefined && (
+                <div className="p-4 border rounded-lg">
+                  <p className="text-2xl font-bold">${previewEvent.price}</p>
+                </div>
+              )}
+
+              {/* Training Content */}
+              {previewEvent.trainingContent &&
+                previewEvent.trainingContent.length > 0 && (
+                  <div className="space-y-4">
+                    <h2 className="text-2xl font-semibold">Training Content</h2>
+                    <ul className="list-disc list-inside space-y-2 ml-4">
+                      {previewEvent.trainingContent.map((content, idx) => (
+                        <li key={idx} className="text-muted-foreground">
+                          {content.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+              {/* Learning Points */}
+              {previewEvent.learningPoints &&
+                previewEvent.learningPoints.length > 0 && (
+                  <div className="space-y-4">
+                    <h2 className="text-2xl font-semibold">Learning Points</h2>
+                    <ul className="list-disc list-inside space-y-2 ml-4">
+                      {previewEvent.learningPoints.map((point, idx) => (
+                        <li key={idx} className="text-muted-foreground">
+                          {point.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+              {/* Instructors */}
+              {previewEvent.instructors &&
+                previewEvent.instructors.length > 0 && (
+                  <div className="space-y-4">
+                    <h2 className="text-2xl font-semibold">Instructors</h2>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {previewEvent.instructors.map((instructor, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-4 p-4 border rounded-lg"
+                        >
+                          {instructor.image && (
+                            <div className="relative w-16 h-16 rounded-full overflow-hidden">
+                              <img
+                                src={instructor.image}
+                                alt={instructor.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <h3 className="font-semibold">{instructor.name}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {instructor.title}
+                            </p>
+                            {instructor.bio && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {instructor.bio}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* FAQs */}
+              {previewEvent.faqs && previewEvent.faqs.length > 0 && (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-semibold">
+                    Frequently Asked Questions
+                  </h2>
+                  <div className="space-y-4">
+                    {previewEvent.faqs.map((faq, idx) => (
+                      <div key={idx} className="p-4 border rounded-lg">
+                        <h3 className="font-semibold mb-2">{faq.question}</h3>
+                        <p className="text-muted-foreground">{faq.answer}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

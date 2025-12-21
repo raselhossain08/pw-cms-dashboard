@@ -1,12 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
-import { couponsService, Coupon, CreateCouponDto, UpdateCouponDto } from "@/services/coupons.service";
+import { couponsService, Coupon, CreateCouponDto, UpdateCouponDto, CouponsResponse, CouponAnalytics } from "@/services/coupons.service";
 import { useToast } from "@/context/ToastContext";
 
 interface UseCouponsResult {
     coupons: Coupon[];
     loading: boolean;
     error: string | null;
-    fetchCoupons: () => Promise<void>;
+    pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+    } | null;
+    analytics: CouponAnalytics | null;
+    analyticsLoading: boolean;
+    fetchCoupons: (page?: number, limit?: number, search?: string) => Promise<void>;
     createCoupon: (data: CreateCouponDto) => Promise<Coupon | null>;
     updateCoupon: (id: string, data: UpdateCouponDto) => Promise<Coupon | null>;
     deleteCoupon: (id: string) => Promise<boolean>;
@@ -14,6 +22,9 @@ interface UseCouponsResult {
     duplicateCoupon: (id: string) => Promise<Coupon | null>;
     getCouponById: (id: string) => Promise<Coupon | null>;
     refreshCoupons: () => Promise<void>;
+    bulkDeleteCoupons: (ids: string[]) => Promise<boolean>;
+    bulkToggleStatus: (ids: string[]) => Promise<boolean>;
+    fetchAnalytics: () => Promise<void>;
 }
 
 export function useCoupons(): UseCouponsResult {
@@ -21,13 +32,22 @@ export function useCoupons(): UseCouponsResult {
     const [coupons, setCoupons] = useState<Coupon[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const [pagination, setPagination] = useState<UseCouponsResult['pagination']>(null);
+    const [analytics, setAnalytics] = useState<CouponAnalytics | null>(null);
+    const [analyticsLoading, setAnalyticsLoading] = useState<boolean>(false);
 
-    const fetchCoupons = useCallback(async () => {
+    const fetchCoupons = useCallback(async (page: number = 1, limit: number = 100, search?: string) => {
         setLoading(true);
         setError(null);
         try {
-            const data = await couponsService.getAllCoupons();
-            setCoupons(data);
+            const response = await couponsService.getAllCoupons(page, limit, search);
+            setCoupons(response.data);
+            setPagination({
+                page: response.page,
+                limit: response.limit,
+                total: response.total,
+                totalPages: response.totalPages,
+            });
         } catch (err: any) {
             const errorMessage = err?.response?.data?.message || err?.message || "Failed to fetch coupons";
             setError(errorMessage);
@@ -37,6 +57,22 @@ export function useCoupons(): UseCouponsResult {
             });
         } finally {
             setLoading(false);
+        }
+    }, [push]);
+
+    const fetchAnalytics = useCallback(async () => {
+        setAnalyticsLoading(true);
+        try {
+            const data = await couponsService.getCouponsAnalytics();
+            setAnalytics(data);
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || "Failed to fetch analytics";
+            push({
+                message: errorMessage,
+                type: "error",
+            });
+        } finally {
+            setAnalyticsLoading(false);
         }
     }, [push]);
 
@@ -178,14 +214,63 @@ export function useCoupons(): UseCouponsResult {
         await fetchCoupons();
     }, [fetchCoupons]);
 
+    const bulkDeleteCoupons = useCallback(async (ids: string[]): Promise<boolean> => {
+        setLoading(true);
+        try {
+            const result = await couponsService.bulkDeleteCoupons(ids);
+            setCoupons((prev) => prev.filter((c) => !ids.includes(c._id)));
+            push({
+                message: result.message,
+                type: "success",
+            });
+            return true;
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || "Failed to delete coupons";
+            push({
+                message: errorMessage,
+                type: "error",
+            });
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    }, [push]);
+
+    const bulkToggleStatus = useCallback(async (ids: string[]): Promise<boolean> => {
+        setLoading(true);
+        try {
+            const result = await couponsService.bulkToggleStatus(ids);
+            // Refresh coupons to get updated status
+            await fetchCoupons();
+            push({
+                message: result.message,
+                type: "success",
+            });
+            return true;
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || "Failed to toggle coupon status";
+            push({
+                message: errorMessage,
+                type: "error",
+            });
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    }, [push, fetchCoupons]);
+
     useEffect(() => {
         fetchCoupons();
-    }, [fetchCoupons]);
+        fetchAnalytics();
+    }, [fetchCoupons, fetchAnalytics]);
 
     return {
         coupons,
         loading,
         error,
+        pagination,
+        analytics,
+        analyticsLoading,
         fetchCoupons,
         createCoupon,
         updateCoupon,
@@ -194,5 +279,8 @@ export function useCoupons(): UseCouponsResult {
         duplicateCoupon,
         getCouponById,
         refreshCoupons,
+        bulkDeleteCoupons,
+        bulkToggleStatus,
+        fetchAnalytics,
     };
 }

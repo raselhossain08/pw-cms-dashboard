@@ -27,6 +27,11 @@ import {
   UserCheck,
   UserX,
   AlertCircle,
+  CheckSquare,
+  Square,
+  X,
+  FileUp,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +55,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStudents } from "@/hooks/useStudents";
+import { certificatesService } from "@/services/certificates.service";
+import { coursesService } from "@/services/courses.service";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { downloadCertificate } from "@/lib/certificate-generator";
 
 type StudentItem = {
   _id: string;
@@ -80,6 +89,7 @@ export default function Students() {
     updateStudent,
     deleteStudent,
     updateStudentStatus,
+    bulkDeleteStudents,
     exportStudents,
   } = useStudents();
 
@@ -88,14 +98,24 @@ export default function Students() {
   const [statusFilter, setStatusFilter] = React.useState("All Status");
   const [countryFilter, setCountryFilter] = React.useState("All Countries");
   const [sortBy, setSortBy] = React.useState("Newest");
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
   const [viewOpen, setViewOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [certificateOpen, setCertificateOpen] = React.useState(false);
+  const [selectedStudentForCert, setSelectedStudentForCert] =
+    React.useState<StudentItem | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = React.useState<string>("");
   const [selectedStudent, setSelectedStudent] =
     React.useState<StudentItem | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [pageSize] = React.useState(10);
+  const [viewMode, setViewMode] = React.useState<"grid" | "table">("grid");
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [broadcastOpen, setBroadcastOpen] = React.useState(false);
 
   // Form state
   const [formData, setFormData] = React.useState({
@@ -255,12 +275,158 @@ export default function Students() {
     setDeleteOpen(true);
   };
 
+  const openCertificateDialog = (student: StudentItem) => {
+    setSelectedStudentForCert(student);
+    setCertificateOpen(true);
+  };
+
+  // Query for courses list
+  const { data: coursesData } = useQuery({
+    queryKey: ["courses", { page: 1, limit: 100 }],
+    queryFn: () => coursesService.getAllCourses({ page: 1, limit: 100 }),
+  });
+
+  const courseList: any[] = React.useMemo(() => {
+    const raw: any = coursesData as any;
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw?.data)) return raw.data;
+    if (Array.isArray(raw?.courses)) return raw.courses;
+    return [];
+  }, [coursesData]);
+
+  // Certificate generation mutation
+  const sendCertificateMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedStudentForCert || !selectedCourseId) {
+        throw new Error("Please select a course");
+      }
+      // Generate certificate in backend
+      const certificate = await certificatesService.adminGenerateCertificate(
+        selectedStudentForCert._id,
+        selectedCourseId,
+        true // Send email
+      );
+
+      // Also generate and download PDF locally
+      const config = await certificatesService.getCertificateTemplate();
+      const studentFullName =
+        selectedStudentForCert.name && selectedStudentForCert.name.trim() !== ""
+          ? selectedStudentForCert.name
+          : "Student";
+      await downloadCertificate({
+        studentName: studentFullName,
+        certificateId: certificate.certificateId,
+        config: config as any,
+      });
+
+      return certificate;
+    },
+    onSuccess() {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      setCertificateOpen(false);
+      setSelectedCourseId("");
+      setSelectedStudentForCert(null);
+    },
+  });
+
+  const handleSendCertificate = async () => {
+    try {
+      await sendCertificateMutation.mutateAsync();
+    } catch (error) {
+      console.error("Failed to send certificate:", error);
+    }
+  };
+
   const handleExport = async () => {
     try {
       await exportStudents();
     } catch (error) {
       console.error("Failed to export students:", error);
     }
+  };
+
+  // Bulk operations
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filtered.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filtered.map((s) => s._id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await bulkDeleteStudents(selectedIds);
+      setBulkDeleteOpen(false);
+      setSelectedIds([]);
+      fetchStudents({
+        page: currentPage,
+        limit: pageSize,
+        search: search || undefined,
+        status:
+          statusFilter !== "All Status"
+            ? statusFilter.toLowerCase()
+            : undefined,
+      });
+    } catch (error) {
+      console.error("Failed to bulk delete students:", error);
+    }
+  };
+
+  const handleBulkStatusChange = async (
+    status: "active" | "inactive" | "suspended"
+  ) => {
+    if (selectedIds.length === 0) return;
+    try {
+      await Promise.all(
+        selectedIds.map((id) => updateStudentStatus(id, status))
+      );
+      setSelectedIds([]);
+      fetchStudents({
+        page: currentPage,
+        limit: pageSize,
+        search: search || undefined,
+        status:
+          statusFilter !== "All Status"
+            ? statusFilter.toLowerCase()
+            : undefined,
+      });
+    } catch (error) {
+      console.error("Failed to bulk update status:", error);
+    }
+  };
+
+  // Missing button handlers
+  const handleSendBroadcast = () => {
+    setBroadcastOpen(true);
+  };
+
+  const handleViewAnalytics = () => {
+    // Navigate to analytics page or open analytics modal
+    window.location.href = "/analytics?filter=students";
+  };
+
+  const handleImport = () => {
+    setImportOpen(true);
+  };
+
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // TODO: Implement CSV/Excel import logic
+    // This would parse the file and create students
+    console.log("Import file:", file);
+    setImportOpen(false);
   };
 
   return (
@@ -385,6 +551,57 @@ export default function Students() {
         </div>
       )}
 
+      {/* Bulk Actions Bar */}
+      {selectedIds.length > 0 && (
+        <div className="bg-primary/5 border border-primary/10 rounded-xl p-4 mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckSquare className="w-5 h-5 text-primary" />
+            <span className="font-medium text-secondary">
+              {selectedIds.length} student{selectedIds.length > 1 ? "s" : ""}{" "}
+              selected
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkStatusChange("active")}
+              disabled={loading}
+            >
+              <UserCheck className="w-4 h-4 mr-2" />
+              Activate
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkStatusChange("inactive")}
+              disabled={loading}
+            >
+              <UserX className="w-4 h-4 mr-2" />
+              Deactivate
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+              disabled={loading}
+              className="text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Selected
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedIds([])}
+            >
+              <X className="w-4 h-4 mr-2" />
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
           <div className="flex flex-wrap gap-2">
@@ -458,27 +675,39 @@ export default function Students() {
                 variant="ghost"
                 size="icon"
                 className="text-gray-600 hover:text-primary"
+                onClick={handleImport}
+                title="Import Students"
               >
-                <SlidersHorizontal className="w-5 h-5" />
+                <Upload className="w-5 h-5" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 className="text-gray-600 hover:text-primary"
+                onClick={handleExport}
+                title="Export Students"
               >
                 <Download className="w-5 h-5" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-gray-600 hover:text-primary"
+                className={`text-gray-600 hover:text-primary ${
+                  viewMode === "grid" ? "bg-primary/10 text-primary" : ""
+                }`}
+                onClick={() => setViewMode("grid")}
+                title="Grid View"
               >
                 <Grid2x2 className="w-5 h-5" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-gray-600 hover:text-primary"
+                className={`text-gray-600 hover:text-primary ${
+                  viewMode === "table" ? "bg-primary/10 text-primary" : ""
+                }`}
+                onClick={() => setViewMode("table")}
+                title="Table View"
               >
                 <List className="w-5 h-5" />
               </Button>
@@ -487,324 +716,368 @@ export default function Students() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        {loading ? (
-          <div className="col-span-full flex justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-gray-500">
-            No students found
-          </div>
-        ) : (
-          filtered.map((it) => (
-            <div
-              key={`card-${it._id}`}
-              className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 transition-all duration-300 hover:-translate-y-0.5"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center space-x-3">
-                  <img
-                    src={it.avatarUrl}
-                    alt={it.name}
-                    className="w-12 h-12 rounded-full"
-                  />
-                  <div>
-                    <h3 className="font-semibold text-secondary">{it.name}</h3>
-                    <p className="text-sm text-gray-500">{it.email}</p>
-                  </div>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="p-1 text-gray-400 hover:text-primary rounded">
-                      <EllipsisVertical className="w-5 h-5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuItem onClick={() => openViewDialog(it)}>
-                      <Eye className="w-4 h-4 mr-2" /> View Profile
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => openEditDialog(it)}>
-                      <Pencil className="w-4 h-4 mr-2" /> Edit Student
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <Mail className="w-4 h-4 mr-2" /> Send Message
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <ChartLine className="w-4 h-4 mr-2" /> View Progress
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-600 focus:text-red-700"
-                      onClick={() =>
-                        it.status === "active"
-                          ? handleStatusChange(it._id, "inactive")
-                          : handleStatusChange(it._id, "active")
-                      }
-                    >
-                      {it.status === "active" ? (
-                        <UserX className="w-4 h-4 mr-2" />
-                      ) : (
-                        <UserCheck className="w-4 h-4 mr-2" />
-                      )}
-                      {it.status === "active" ? "Deactivate" : "Activate"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-600 focus:text-red-700"
-                      onClick={() => openDeleteDialog(it)}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              <div className="mb-4">
-                <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
-                  <span>{it.course || "General"} Course</span>
-                  {it.status === "pending" && (
-                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-yellow-500">
-                      Pending
-                    </span>
-                  )}
-                  {it.status === "inactive" && (
-                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-gray-500">
-                      Inactive
-                    </span>
-                  )}
-                  {it.status === "active" && (
-                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-green-600">
-                      Active
-                    </span>
-                  )}
-                  {it.status === "suspended" && (
-                    <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-red-600">
-                      Suspended
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2 text-sm text-gray-600">
-                  <span>Joined: </span>
-                  <span className="font-medium">{it.joinedDate}</span>
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <div className="flex justify-between text-sm text-gray-600 mb-1">
-                  <span>Course Progress</span>
-                  <span>{it.progressPercent || 0}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full ${
-                      (it.progressPercent || 0) >= 80
-                        ? "bg-accent"
-                        : (it.progressPercent || 0) >= 60
-                        ? "bg-yellow-500"
-                        : "bg-red-500"
-                    }`}
-                    style={{ width: `${it.progressPercent || 0}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center text-sm text-gray-600">
-                <div className="flex items-center space-x-2">
-                  <span className="flex items-center">
-                    <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />{" "}
-                    {it.rating || 0}
-                  </span>
-                  <span>{it.location || "Unknown"}</span>
-                </div>
-                <div className="text-primary font-medium">
-                  {it.courseCount || 0}{" "}
-                  {(it.courseCount || 0) === 1 ? "course" : "courses"}
-                </div>
-              </div>
+      {viewMode === "grid" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          {loading ? (
+            <div className="col-span-full flex justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
-          ))
-        )}
-      </div>
+          ) : filtered.length === 0 ? (
+            <div className="col-span-full text-center py-12 text-gray-500">
+              No students found
+            </div>
+          ) : (
+            filtered.map((it) => (
+              <div
+                key={`card-${it._id}`}
+                className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 transition-all duration-300 hover:-translate-y-0.5"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(it._id)}
+                      onChange={() => toggleSelection(it._id)}
+                      className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <img
+                      src={it.avatarUrl}
+                      alt={it.name}
+                      className="w-12 h-12 rounded-full"
+                    />
+                    <div>
+                      <h3 className="font-semibold text-secondary">
+                        {it.name}
+                      </h3>
+                      <p className="text-sm text-gray-500">{it.email}</p>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="p-1 text-gray-400 hover:text-primary rounded">
+                        <EllipsisVertical className="w-5 h-5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => openViewDialog(it)}>
+                        <Eye className="w-4 h-4 mr-2" /> View Profile
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => openEditDialog(it)}>
+                        <Pencil className="w-4 h-4 mr-2" /> Edit Student
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Mail className="w-4 h-4 mr-2" /> Send Message
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => openCertificateDialog(it)}
+                      >
+                        <GraduationCap className="w-4 h-4 mr-2" /> Send
+                        Certificate
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <ChartLine className="w-4 h-4 mr-2" /> View Progress
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-red-600 focus:text-red-700"
+                        onClick={() =>
+                          it.status === "active"
+                            ? handleStatusChange(it._id, "inactive")
+                            : handleStatusChange(it._id, "active")
+                        }
+                      >
+                        {it.status === "active" ? (
+                          <UserX className="w-4 h-4 mr-2" />
+                        ) : (
+                          <UserCheck className="w-4 h-4 mr-2" />
+                        )}
+                        {it.status === "active" ? "Deactivate" : "Activate"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-red-600 focus:text-red-700"
+                        onClick={() => openDeleteDialog(it)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
 
-      {/* All Students Table */}
-      <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-secondary">All Students</h3>
-          <p className="text-gray-600 text-sm">
-            Complete list of enrolled students with detailed information
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Course
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Progress
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Avg. Score
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Enrollment Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filtered.map((it) => (
-                <tr
-                  key={`row-${it._id}`}
-                  className="hover:bg-gray-50 transition-colors"
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <img
-                        className="h-8 w-8 rounded-full"
-                        src={it.avatarUrl}
-                        alt=""
-                      />
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">
-                          {it.name}
-                        </div>
-                        <div className="text-sm text-gray-500">{it.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {it.course || "General"}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {it.courseDetail || "Course Details"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                        <div
-                          className={`h-2 rounded-full ${
-                            (it.progressPercent || 0) >= 80
-                              ? "bg-accent"
-                              : (it.progressPercent || 0) >= 60
-                              ? "bg-yellow-500"
-                              : "bg-red-500"
-                          }`}
-                          style={{ width: `${it.progressPercent || 0}%` }}
-                        />
-                      </div>
-                      <span className="text-sm text-gray-900">
-                        {it.progressPercent || 0}%
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {it.scorePercent || 0}%
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {it.status === "active" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        Active
-                      </span>
-                    )}
-                    {it.status === "inactive" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                        Inactive
-                      </span>
-                    )}
+                <div className="mb-4">
+                  <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
+                    <span>{it.course || "General"} Course</span>
                     {it.status === "pending" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                      <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-yellow-500">
                         Pending
                       </span>
                     )}
+                    {it.status === "inactive" && (
+                      <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-gray-500">
+                        Inactive
+                      </span>
+                    )}
+                    {it.status === "active" && (
+                      <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-green-600">
+                        Active
+                      </span>
+                    )}
                     {it.status === "suspended" && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                      <span className="text-white text-xs font-medium px-2 py-1 rounded-full bg-red-600">
                         Suspended
                       </span>
                     )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {it.joinedDate || "N/A"}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      className="text-primary hover:text-primary/80 mr-3"
-                      onClick={() => openViewDialog(it)}
-                    >
-                      View
-                    </button>
-                    <button
-                      className="text-primary hover:text-primary/80 mr-3"
-                      onClick={() => openEditDialog(it)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="text-red-600 hover:text-red-700"
-                      onClick={() => openDeleteDialog(it)}
-                    >
-                      Delete
-                    </button>
-                  </td>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <span>Joined: </span>
+                    <span className="font-medium">{it.joinedDate}</span>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Course Progress</span>
+                    <span>{it.progressPercent || 0}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full ${
+                        (it.progressPercent || 0) >= 80
+                          ? "bg-accent"
+                          : (it.progressPercent || 0) >= 60
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                      }`}
+                      style={{ width: `${it.progressPercent || 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center text-sm text-gray-600">
+                  <div className="flex items-center space-x-2">
+                    <span className="flex items-center">
+                      <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />{" "}
+                      {it.rating || 0}
+                    </span>
+                    <span>{it.location || "Unknown"}</span>
+                  </div>
+                  <div className="text-primary font-medium">
+                    {it.courseCount || 0}{" "}
+                    {(it.courseCount || 0) === 1 ? "course" : "courses"}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* All Students Table */}
+      {viewMode === "table" && (
+        <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-secondary">
+              All Students
+            </h3>
+            <p className="text-gray-600 text-sm">
+              Complete list of enrolled students with detailed information
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedIds.length === filtered.length &&
+                        filtered.length > 0
+                      }
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                    />
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Student
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Course
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Progress
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Avg. Score
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Enrollment Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            Showing{" "}
-            <span className="font-medium">
-              {(currentPage - 1) * pageSize + 1}-
-              {Math.min(currentPage * pageSize, total)}
-            </span>{" "}
-            of <span className="font-medium">{total}</span> students
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filtered.map((it) => (
+                  <tr
+                    key={`row-${it._id}`}
+                    className="hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(it._id)}
+                        onChange={() => toggleSelection(it._id)}
+                        className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <img
+                          className="h-8 w-8 rounded-full"
+                          src={it.avatarUrl}
+                          alt=""
+                        />
+                        <div className="ml-4">
+                          <div className="text-sm font-medium text-gray-900">
+                            {it.name}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {it.email}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {it.course || "General"}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {it.courseDetail || "Course Details"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
+                          <div
+                            className={`h-2 rounded-full ${
+                              (it.progressPercent || 0) >= 80
+                                ? "bg-accent"
+                                : (it.progressPercent || 0) >= 60
+                                ? "bg-yellow-500"
+                                : "bg-red-500"
+                            }`}
+                            style={{ width: `${it.progressPercent || 0}%` }}
+                          />
+                        </div>
+                        <span className="text-sm text-gray-900">
+                          {it.progressPercent || 0}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {it.scorePercent || 0}%
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {it.status === "active" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                          Active
+                        </span>
+                      )}
+                      {it.status === "inactive" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                          Inactive
+                        </span>
+                      )}
+                      {it.status === "pending" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                          Pending
+                        </span>
+                      )}
+                      {it.status === "suspended" && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                          Suspended
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {it.joinedDate || "N/A"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        className="text-primary hover:text-primary/80 mr-3"
+                        onClick={() => openViewDialog(it)}
+                      >
+                        View
+                      </button>
+                      <button
+                        className="text-primary hover:text-primary/80 mr-3"
+                        onClick={() => openEditDialog(it)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="text-red-600 hover:text-red-700"
+                        onClick={() => openDeleteDialog(it)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="flex space-x-2">
-            <button
-              className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1 || loading}
-            >
-              <ChevronLeft className="w-4 h-4 inline" /> Previous
-            </button>
-            {[...Array(Math.min(5, totalPages))].map((_, i) => {
-              const page = i + 1;
-              return (
-                <button
-                  key={page}
-                  className={`px-3 py-1 rounded text-sm transition-colors ${
-                    currentPage === page
-                      ? "bg-primary text-white"
-                      : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-                  }`}
-                  onClick={() => setCurrentPage(page)}
-                  disabled={loading}
-                >
-                  {page}
-                </button>
-              );
-            })}
-            <button
-              className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages || loading}
-            >
-              Next <ChevronRight className="w-4 h-4 inline" />
-            </button>
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              Showing{" "}
+              <span className="font-medium">
+                {(currentPage - 1) * pageSize + 1}-
+                {Math.min(currentPage * pageSize, total)}
+              </span>{" "}
+              of <span className="font-medium">{total}</span> students
+            </div>
+            <div className="flex space-x-2">
+              <button
+                className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1 || loading}
+              >
+                <ChevronLeft className="w-4 h-4 inline" /> Previous
+              </button>
+              {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                const page = i + 1;
+                return (
+                  <button
+                    key={page}
+                    className={`px-3 py-1 rounded text-sm transition-colors ${
+                      currentPage === page
+                        ? "bg-primary text-white"
+                        : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    }`}
+                    onClick={() => setCurrentPage(page)}
+                    disabled={loading}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+              <button
+                className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages || loading}
+              >
+                Next <ChevronRight className="w-4 h-4 inline" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
         <h3 className="text-lg font-semibold text-secondary mb-4">
@@ -852,7 +1125,10 @@ export default function Students() {
             </div>
           </button>
 
-          <button className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg transition-colors">
+          <button
+            className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg transition-colors"
+            onClick={handleSendBroadcast}
+          >
             <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
               <Mail className="text-white" />
             </div>
@@ -862,7 +1138,10 @@ export default function Students() {
             </div>
           </button>
 
-          <button className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+          <button
+            className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            onClick={handleExport}
+          >
             <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
               <Download className="text-white" />
             </div>
@@ -872,7 +1151,10 @@ export default function Students() {
             </div>
           </button>
 
-          <button className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors">
+          <button
+            className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors"
+            onClick={handleViewAnalytics}
+          >
             <div className="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center">
               <ChartLine className="text-white" />
             </div>
@@ -1374,6 +1656,282 @@ export default function Students() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <DialogTitle>Delete Selected Students</DialogTitle>
+                <DialogDescription>
+                  This action cannot be undone
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete{" "}
+              <span className="font-semibold">{selectedIds.length}</span>{" "}
+              student{selectedIds.length > 1 ? "s" : ""}? This will permanently
+              remove their accounts and all associated data.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleBulkDelete}
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete {selectedIds.length} Student
+                    {selectedIds.length > 1 ? "s" : ""}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Certificate Dialog */}
+      <Dialog open={certificateOpen} onOpenChange={setCertificateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-primary" />
+              Send Certificate
+            </DialogTitle>
+            <DialogDescription>
+              Generate and send certificate to{" "}
+              <strong>{selectedStudentForCert?.name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Select Course</label>
+              <Select
+                value={selectedCourseId}
+                onValueChange={setSelectedCourseId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a course" />
+                </SelectTrigger>
+                <SelectContent>
+                  {courseList.map((course) => (
+                    <SelectItem key={course._id} value={course._id}>
+                      {course.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+              <div className="flex items-start gap-2">
+                <Mail className="w-4 h-4 text-blue-600 mt-0.5" />
+                <div className="text-xs text-blue-900">
+                  <p className="font-medium mb-1">Certificate will include:</p>
+                  <ul className="space-y-1 list-disc list-inside">
+                    <li>Student name: {selectedStudentForCert?.name}</li>
+                    <li>Course completion certificate</li>
+                    <li>Unique barcode for verification</li>
+                    <li>Automatic email notification</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setCertificateOpen(false);
+                setSelectedCourseId("");
+                setSelectedStudentForCert(null);
+              }}
+              disabled={sendCertificateMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendCertificate}
+              disabled={!selectedCourseId || sendCertificateMutation.isPending}
+            >
+              {sendCertificateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Generate & Send
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Students Dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                <FileUp className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <DialogTitle>Import Students</DialogTitle>
+                <DialogDescription>
+                  Upload a CSV or Excel file to import students
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+              <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+              <p className="text-sm text-gray-600 mb-2">
+                Drag and drop your file here, or click to browse
+              </p>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+              />
+              <label htmlFor="file-upload">
+                <Button variant="outline" asChild>
+                  <span>Choose File</span>
+                </Button>
+              </label>
+            </div>
+            <div className="text-xs text-gray-500">
+              <p className="font-medium mb-1">File format requirements:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>CSV or Excel format (.csv, .xlsx, .xls)</li>
+                <li>Required columns: Name, Email, First Name, Last Name</li>
+                <li>Optional columns: Phone, Country, Status</li>
+              </ul>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setImportOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Broadcast Dialog */}
+      <Dialog open={broadcastOpen} onOpenChange={setBroadcastOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
+                <Mail className="w-5 h-5 text-accent" />
+              </div>
+              <div>
+                <DialogTitle>Send Broadcast Message</DialogTitle>
+                <DialogDescription>
+                  Send an email to all students
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              // TODO: Implement broadcast email sending
+              setBroadcastOpen(false);
+            }}
+          >
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Subject
+              </label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="Enter email subject"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Message
+              </label>
+              <textarea
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                rows={8}
+                placeholder="Enter your message..."
+                required
+              />
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                defaultChecked
+              />
+              <label className="ml-2 block text-sm text-gray-700">
+                Send to all {total} students
+              </label>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setBroadcastOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-4 h-4 mr-2" />
+                    Send Broadcast
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </main>

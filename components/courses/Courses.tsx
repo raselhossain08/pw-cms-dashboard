@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
+import { useCourses } from "@/hooks/useCourses";
 import { coursesService, Course } from "@/services/courses.service";
 import { courseCategoriesService } from "@/services/course-categories.service";
 import {
@@ -19,6 +20,10 @@ import {
   Grid3x3,
   List,
   RefreshCw,
+  Power,
+  PowerOff,
+  CheckSquare,
+  Trash2,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -31,6 +36,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,29 +59,35 @@ export default function Courses() {
   const router = useRouter();
   const { push } = useToast();
   const { user } = useAuth();
-  const qc = useQueryClient();
+  const {
+    courses,
+    loading: coursesLoading,
+    stats: backendStats,
+    statsLoading,
+    deleteCourse: deleteCourseHook,
+    duplicateCourse: duplicateCourseHook,
+    publishCourse: publishCourseHook,
+    unpublishCourse: unpublishCourseHook,
+    toggleCourseStatus,
+    bulkDeleteCourses,
+    bulkToggleStatus,
+    bulkPublish,
+    bulkUnpublish,
+    exportCourses,
+    refreshCourses,
+    getCourseStats,
+  } = useCourses();
   const [search, setSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] =
     React.useState<string>("All Categories");
   const [statusFilter, setStatusFilter] = React.useState<string>("All Status");
   const [sortBy, setSortBy] = React.useState<string>("Newest");
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
-  const [actionLoading, setActionLoading] = React.useState<string | null>(null);
+  const [actionLoading, setActionLoading] = React.useState(false);
   const [viewMode, setViewMode] = React.useState<"table" | "grid">("table");
   const [isExporting, setIsExporting] = React.useState(false);
-
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["courses", { search, statusFilter }],
-    queryFn: async () => {
-      const params: any = { page: 1, limit: 100 };
-      if (search) params.search = search;
-      if (statusFilter === "Published") params.status = "published";
-      if (statusFilter === "Draft") params.status = "draft";
-      // Don't filter by status when "All Status" is selected - fetch everything
-      const res = await coursesService.getAllCourses(params);
-      return res;
-    },
-  });
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
 
   // Fetch categories from API
   const { data: categoriesData } = useQuery({
@@ -78,34 +96,19 @@ export default function Courses() {
     staleTime: 60000,
   });
 
+  // Fetch courses when filters change
   React.useEffect(() => {
-    if (isError) {
-      const message =
-        error && error instanceof Error
-          ? error.message
-          : "Failed to load courses";
-      push({ type: "error", message });
-    }
-  }, [isError, error, push]);
+    const params: any = { page: 1, limit: 100 };
+    if (search) params.search = search;
+    if (statusFilter === "Published") params.status = "published";
+    if (statusFilter === "Draft") params.status = "draft";
+    fetchCourses(params);
+  }, [search, statusFilter]);
 
-  const courses: Course[] = React.useMemo(() => {
-    // API returns { success, data: { courses: [...], total }, meta }
-    const apiData = (data as any)?.data || data;
-    const list = apiData?.courses || [];
-    return list.map((c: any) => ({
-      ...c,
-      id: c._id || c.id,
-      enrollmentCount: c.studentCount || c.enrollmentCount || 0,
-      totalRatings: c.totalRatings || c.ratingsCount || c.reviewCount || 0,
-      maxStudents: c.maxStudents || 100,
-      rating: c.rating || 0,
-      price: c.price || 0,
-      duration: c.duration || c.durationHours || 0,
-      status: c.status || (c.isPublished ? "published" : "draft"),
-      categories: Array.isArray(c.categories) ? c.categories : [],
-      thumbnail: c.thumbnail || "",
-    }));
-  }, [data]);
+  // Fetch stats on mount
+  React.useEffect(() => {
+    getCourseStats();
+  }, [getCourseStats]);
 
   const roleCanManage =
     user?.role === "super_admin" ||
@@ -170,6 +173,29 @@ export default function Courses() {
   }, [courses, categoryFilter, statusFilter, search, sortBy]);
 
   const stats = React.useMemo(() => {
+    // Use backend stats if available, otherwise calculate from courses
+    if (backendStats) {
+      const discountImpact = coursesService.calculateDiscountImpact(courses);
+      return {
+        totalCourses: backendStats.totalCourses || courses.length,
+        totalStudents:
+          backendStats.totalStudents ||
+          courses.reduce((sum, c) => sum + (c.enrollmentCount || 0), 0),
+        avgRating:
+          backendStats.averageRating ||
+          (courses.length > 0
+            ? courses.reduce((sum, c) => sum + (c.rating || 0), 0) /
+              courses.length
+            : 0),
+        published:
+          backendStats.publishedCourses ||
+          courses.filter((c) => c.isPublished || c.status === "published")
+            .length,
+        discountImpact,
+      };
+    }
+
+    // Fallback to calculated stats
     const totalCourses = courses.length;
     const totalStudents = courses.reduce(
       (sum, c) => sum + (c.enrollmentCount || 0),
@@ -179,7 +205,9 @@ export default function Courses() {
       courses.length > 0
         ? courses.reduce((sum, c) => sum + (c.rating || 0), 0) / courses.length
         : 0;
-    const published = courses.filter((c) => c.isPublished).length;
+    const published = courses.filter(
+      (c) => c.isPublished || c.status === "published"
+    ).length;
 
     // Calculate discount impact
     const discountImpact = coursesService.calculateDiscountImpact(courses);
@@ -191,136 +219,168 @@ export default function Courses() {
       published,
       discountImpact,
     };
-  }, [courses]);
+  }, [courses, backendStats]);
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    setActionLoading(deleteId);
+    setActionLoading(true);
     try {
-      await coursesService.deleteCourse(deleteId);
-      push({ type: "success", message: "Course deleted successfully" });
-      qc.invalidateQueries({ queryKey: ["courses"] });
+      await deleteCourseHook(deleteId);
       setDeleteId(null);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to delete course";
-      push({ type: "error", message: msg });
+      console.error("Failed to delete course:", err);
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
   const handleDuplicate = async (courseId: string) => {
-    setActionLoading(courseId);
+    setActionLoading(true);
     try {
-      await coursesService.duplicateCourse(courseId);
-      push({ type: "success", message: "Course duplicated successfully" });
-      qc.invalidateQueries({ queryKey: ["courses"] });
+      await duplicateCourseHook(courseId);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to duplicate course";
-      push({ type: "error", message: msg });
+      console.error("Failed to duplicate course:", err);
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
   const handlePublish = async (courseId: string) => {
-    setActionLoading(courseId);
+    setActionLoading(true);
     try {
-      await coursesService.publishCourse(courseId);
-      push({ type: "success", message: "Course published successfully" });
-      qc.invalidateQueries({ queryKey: ["courses"] });
+      await publishCourseHook(courseId);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to publish course";
-      push({ type: "error", message: msg });
+      console.error("Failed to publish course:", err);
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
   const handleUnpublish = async (courseId: string) => {
-    setActionLoading(courseId);
+    setActionLoading(true);
     try {
-      await coursesService.unpublishCourse(courseId);
-      push({ type: "success", message: "Course unpublished successfully" });
-      qc.invalidateQueries({ queryKey: ["courses"] });
+      await unpublishCourseHook(courseId);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to unpublish course";
-      push({ type: "error", message: msg });
+      console.error("Failed to unpublish course:", err);
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (courseId: string) => {
+    setActionLoading(true);
+    try {
+      await toggleCourseStatus(courseId);
+    } catch (err) {
+      console.error("Failed to toggle course status:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkDeleteCourses(selectedIds);
+      setSelectedIds([]);
+      setBulkDeleteOpen(false);
+    } catch (err) {
+      console.error("Failed to bulk delete courses:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkToggleStatus = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkToggleStatus(selectedIds);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error("Failed to bulk toggle status:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkPublish = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkPublish(selectedIds);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error("Failed to bulk publish courses:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkUnpublish = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkUnpublish(selectedIds);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error("Failed to bulk unpublish courses:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredCourses.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(
+        filteredCourses
+          .map((c) => c.id || c._id)
+          .filter((id): id is string => !!id)
+      );
     }
   };
 
   const handleEdit = (course: Course) => {
-    router.push(`/courses/${course.id}/edit`);
+    router.push(`/courses/${course.id || course._id}/edit`);
   };
 
   const handleReorder = async (reorderedCourses: Course[]) => {
     // Here you could implement API call to save the new order
     console.log(
       "Courses reordered:",
-      reorderedCourses.map((c) => c.id)
+      reorderedCourses.map((c) => c.id || c._id)
     );
     push({ type: "success", message: "Course order updated" });
   };
 
-  const handleExportCSV = () => {
+  const handleExport = async (format: "csv" | "xlsx" | "pdf") => {
     setIsExporting(true);
     try {
-      const headers = [
-        "Title",
-        "Level",
-        "Price",
-        "Original Price",
-        "Duration",
-        "Students",
-        "Rating",
-        "Status",
-        "Categories",
-        "Created Date",
-      ];
-
-      const rows = filteredCourses.map((course) => [
-        course.title,
-        course.level,
-        course.price,
-        course.originalPrice || "",
-        course.duration,
-        course.enrollmentCount || 0,
-        course.rating || 0,
-        course.status || (course.isPublished ? "published" : "draft"),
-        (course.categories || []).join("; "),
-        new Date(course.createdAt || "").toLocaleDateString(),
-      ]);
-
-      const csvContent =
-        "data:text/csv;charset=utf-8," +
-        [headers, ...rows].map((row) => row.join(",")).join("\n");
-
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute(
-        "download",
-        `courses_export_${new Date().toISOString().split("T")[0]}.csv`
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      push({ type: "success", message: "Courses exported successfully" });
+      await exportCourses(format, {
+        status:
+          statusFilter !== "All Status"
+            ? statusFilter.toLowerCase()
+            : undefined,
+        category:
+          categoryFilter !== "All Categories" ? categoryFilter : undefined,
+      });
     } catch (err) {
-      push({ type: "error", message: "Failed to export courses" });
+      console.error("Failed to export courses:", err);
     } finally {
       setIsExporting(false);
     }
   };
 
-  if (isLoading) {
+  if (coursesLoading) {
     return (
       <div className="p-8">
         <div className="flex items-center justify-between mb-8">
@@ -385,28 +445,42 @@ export default function Courses() {
             </Button>
           </div>
 
-          {/* Export Button */}
-          <Button
-            variant="outline"
-            onClick={handleExportCSV}
-            disabled={isExporting || filteredCourses.length === 0}
-          >
-            {isExporting ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4 mr-2" />
-            )}
-            Export CSV
-          </Button>
+          {/* Export Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isExporting || filteredCourses.length === 0}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("csv")}>
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                Export as Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Refresh Button */}
           <Button
             variant="outline"
-            onClick={() => qc.invalidateQueries({ queryKey: ["courses"] })}
-            disabled={isLoading}
+            onClick={() => refreshCourses()}
+            disabled={coursesLoading}
           >
             <RefreshCw
-              className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
+              className={`w-4 h-4 ${coursesLoading ? "animate-spin" : ""}`}
             />
           </Button>
 
@@ -583,6 +657,64 @@ export default function Courses() {
         </div>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selectedIds.length > 0 && (
+        <div className="bg-primary/5 border border-primary/10 rounded-xl p-4 mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckSquare className="w-5 h-5 text-primary" />
+            <span className="font-medium text-secondary">
+              {selectedIds.length} course{selectedIds.length > 1 ? "s" : ""}{" "}
+              selected
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkPublish}
+              disabled={actionLoading}
+            >
+              <Power className="w-4 h-4 mr-2" />
+              Publish
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkUnpublish}
+              disabled={actionLoading}
+            >
+              <PowerOff className="w-4 h-4 mr-2" />
+              Unpublish
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkToggleStatus}
+              disabled={actionLoading}
+            >
+              Toggle Status
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+              disabled={actionLoading}
+              className="text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedIds([])}
+            >
+              Clear Selection
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Data Table */}
       <CoursesTable
         courses={filteredCourses}
@@ -591,9 +723,13 @@ export default function Courses() {
         onDuplicate={handleDuplicate}
         onPublish={handlePublish}
         onUnpublish={handleUnpublish}
+        onToggleStatus={handleToggleStatus}
         onReorder={handleReorder}
-        actionLoading={actionLoading}
+        actionLoading={actionLoading ? "loading" : null}
         viewMode={viewMode}
+        selectedIds={selectedIds}
+        onToggleSelection={toggleSelection}
+        onToggleSelectAll={toggleSelectAll}
       />
 
       {/* Delete Confirmation */}
@@ -607,13 +743,13 @@ export default function Courses() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={!!actionLoading}>
+            <AlertDialogCancel disabled={actionLoading}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-red-600 hover:bg-red-700"
-              disabled={!!actionLoading}
+              disabled={actionLoading}
             >
               {actionLoading ? (
                 <>
@@ -622,6 +758,41 @@ export default function Courses() {
                 </>
               ) : (
                 "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete{" "}
+              {selectedIds.length} course{selectedIds.length > 1 ? "s" : ""} and
+              all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionLoading}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                `Delete ${selectedIds.length} Course${
+                  selectedIds.length > 1 ? "s" : ""
+                }`
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

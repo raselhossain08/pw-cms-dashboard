@@ -211,6 +211,67 @@ class UploadsService {
         await apiClient.post(`/uploads/${id}/download`);
     }
 
+    async bulkDownload(fileIds: string[]): Promise<void> {
+        // This will trigger downloads for each file
+        for (const id of fileIds) {
+            const file = await this.getFileById(id);
+            window.open(file.url, "_blank");
+        }
+    }
+
+    async exportFiles(format: "json" | "csv" = "json"): Promise<void> {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+        let token = '';
+        try {
+            const { cookieService } = await import('@/lib/cookie.service');
+            token = cookieService.get('token') || '';
+        } catch {
+            if (typeof window !== 'undefined') {
+                token = localStorage.getItem('token') || '';
+            }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/uploads/export?format=${format}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+
+        if (!res.ok) {
+            throw new Error('Failed to export files');
+        }
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `media-library-export_${new Date().toISOString().split('T')[0]}.${format === 'csv' ? 'csv' : 'json'}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    }
+
+    async duplicateFile(id: string): Promise<UploadFile> {
+        const response = await apiClient.post<ApiResponse<UploadFile>>(`/uploads/${id}/duplicate`);
+        return response.data.data;
+    }
+
+    async bulkUpdateVisibility(fileIds: string[], visibility: "public" | "private"): Promise<void> {
+        await apiClient.post<ApiResponse<void>>("/uploads/bulk-update-visibility", {
+            fileIds,
+            visibility,
+        });
+    }
+
+    async bulkAddTags(fileIds: string[], tags: string[]): Promise<void> {
+        await apiClient.post<ApiResponse<void>>("/uploads/bulk-add-tags", {
+            fileIds,
+            tags,
+        });
+    }
+
     // Helper methods
     getFileIcon(type: string): string {
         const iconMap: Record<string, string> = {

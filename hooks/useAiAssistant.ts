@@ -41,8 +41,17 @@ export function useAiAssistant() {
     compactMode: boolean;
     retainDays: number;
   }>({ showTimestamps: true, compactMode: false, retainDays: 30 });
+  const [connectionStatus, setConnectionStatus] = React.useState<"connected" | "disconnected" | "connecting">("connecting");
+  const [aiStatus, setAiStatus] = React.useState<{
+    status: string;
+    aiEnabled: boolean;
+    openAIEnabled: boolean;
+    geminiEnabled: boolean;
+  } | null>(null);
+  const [canStopGeneration, setCanStopGeneration] = React.useState(false);
   const sessionIdRef = React.useRef<string>("");
   const socketRef = React.useRef<Socket | null>(null);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const containerRef = React.useRef<HTMLDivElement>(null);
   const scrollToBottom = React.useCallback(() => {
@@ -68,7 +77,24 @@ export function useAiAssistant() {
     if (!user?.id) return;
     const socket = aiBotService.connect(user.id, sessionIdRef.current);
     socketRef.current = socket;
-    socket.on("bot-typing", ({ isTyping }) => setTyping(!!isTyping));
+    
+    socket.on("connect", () => {
+      setConnectionStatus("connected");
+    });
+    
+    socket.on("disconnect", () => {
+      setConnectionStatus("disconnected");
+    });
+    
+    socket.on("connect_error", () => {
+      setConnectionStatus("disconnected");
+    });
+    
+    socket.on("bot-typing", ({ isTyping }) => {
+      setTyping(!!isTyping);
+      setCanStopGeneration(!!isTyping);
+    });
+    
     socket.on("bot-message", (resp: BotMessageResponse) => {
       const reply = resp?.message || "";
       const qr = Array.isArray(resp?.quickReplies) ? resp.quickReplies : [];
@@ -78,13 +104,38 @@ export function useAiAssistant() {
         { from: "ai", content: reply, timestamp: "Personal Wings AI • Just now" },
       ]);
       if (qr.length) setQuickReplies(qr);
+      setCanStopGeneration(false);
+      setTyping(false);
       void loadRecentConversations();
     });
+    
+    socket.on("generation-stopped", () => {
+      setTyping(false);
+      setCanStopGeneration(false);
+    });
+    
+    socket.on("error", (error: any) => {
+      setError(error.message || "Connection error occurred");
+      setTyping(false);
+      setCanStopGeneration(false);
+    });
+    
+    void loadAiStatus();
+    
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
   }, [user?.id]);
+  
+  async function loadAiStatus() {
+    try {
+      const { data } = await aiBotService.getStatus();
+      setAiStatus(data);
+    } catch {
+      setAiStatus(null);
+    }
+  }
 
   async function loadSessionHistory() {
     try {
@@ -162,10 +213,79 @@ export function useAiAssistant() {
   }
 
   function clearCurrentMessages() { setMessages([]); }
+  
+  async function rateConversation(rating: number, feedback?: string) {
+    try {
+      await aiBotService.rateConversation(sessionIdRef.current, rating, feedback);
+      await loadRecentConversations();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  
+  async function escalateToHuman(reason?: string) {
+    try {
+      await aiBotService.escalateToHuman(sessionIdRef.current, reason);
+      await loadRecentConversations();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  
+  async function deleteConversation(sessionId: string) {
+    try {
+      await aiBotService.deleteConversation(sessionId);
+      if (sessionId === sessionIdRef.current) {
+        newConversation();
+      }
+      await loadRecentConversations();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  
+  function stopGeneration() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setTyping(false);
+    setCanStopGeneration(false);
+    const socket = socketRef.current;
+    if (socket && socket.connected) {
+      socket.emit("stop-generation", { sessionId: sessionIdRef.current });
+    }
+  }
+  
+  async function regenerateLastResponse() {
+    if (messages.length < 2) return;
+    const lastUserMessage = [...messages].reverse().find(m => m.from === "user");
+    if (!lastUserMessage) return;
+    
+    // Remove last AI response
+    setMessages(prev => {
+      const newMessages = [...prev];
+      const lastAiIndex = newMessages.map((m, i) => ({ m, i })).reverse().find(({ m }) => m.from === "ai")?.i;
+      if (lastAiIndex !== undefined) {
+        newMessages.splice(lastAiIndex, 1);
+      }
+      return newMessages;
+    });
+    
+    // Resend the last user message
+    await sendMessage(lastUserMessage.content);
+  }
 
   async function sendMessage(content?: string) {
     const text = (content ?? input).trim();
     if (!text) return;
+    
+    // Create abort controller for this request
+    abortControllerRef.current = new AbortController();
+    
     setMessages((prev) => [
       ...prev,
       { from: "user", content: text, timestamp: "You • Just now" },
@@ -174,32 +294,48 @@ export function useAiAssistant() {
     setTyping(true);
     setSending(true);
     setError(undefined);
+    setCanStopGeneration(true);
+    
     try {
       const socket = socketRef.current;
       const context = attachments.length ? { attachments: attachments.filter((a) => a.uploaded && a.url).map((a) => ({ id: a.id, url: a.url, name: a.name, type: a.type, size: a.size })) } : undefined;
+      
       if (socket && socket.connected) {
         socket.emit("message", { message: text, sessionId: sessionIdRef.current, context });
       } else {
+        // Fallback to REST API
         const { data } = await aiBotService.sendMessageRest(text, sessionIdRef.current, context);
         const reply = data?.message || "";
         const qr = Array.isArray(data?.quickReplies) ? data.quickReplies : [];
+        if (data?.sessionId) sessionIdRef.current = data.sessionId;
         setMessages((prev) => [
           ...prev,
           { from: "ai", content: reply, timestamp: "Personal Wings AI • Just now" },
         ]);
         if (qr.length) setQuickReplies(qr);
         await loadRecentConversations();
+        setTyping(false);
+        setCanStopGeneration(false);
       }
       clearAttachments();
-    } catch {
-      setError("Failed to send message");
+    } catch (err: any) {
+      // Check if request was aborted
+      if (err.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+        setTyping(false);
+        setCanStopGeneration(false);
+        return;
+      }
+      
+      setError("Failed to send message. Please try again.");
       setMessages((prev) => [
         ...prev,
-        { from: "ai", content: "Sorry, something went wrong.", timestamp: "Personal Wings AI • Just now" },
+        { from: "ai", content: "Sorry, something went wrong. Please try again or escalate to a human agent.", timestamp: "Personal Wings AI • Just now" },
       ]);
-    } finally {
       setTyping(false);
+      setCanStopGeneration(false);
+    } finally {
       setSending(false);
+      abortControllerRef.current = null;
     }
   }
 
@@ -224,6 +360,9 @@ export function useAiAssistant() {
     containerRef,
     attachments,
     preferences,
+    connectionStatus,
+    aiStatus,
+    canStopGeneration,
     // setters
     setInput,
     setListening,
@@ -238,5 +377,10 @@ export function useAiAssistant() {
     clearAttachments,
     newConversation,
     clearCurrentMessages,
+    rateConversation,
+    escalateToHuman,
+    deleteConversation,
+    stopGeneration,
+    regenerateLastResponse,
   };
 }

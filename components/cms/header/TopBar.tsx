@@ -28,11 +28,28 @@ import {
   Share2,
   Image,
   Languages,
+  Download,
+  Copy,
+  Eye,
+  Loader2,
 } from "lucide-react";
 import type { TopBar, Language, Currency, SocialLink } from "@/types/cms";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { topBarApi } from "@/services/cms.service";
 import { useToast } from "@/context/ToastContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface TopBarEditorProps {
   topBarId?: string;
@@ -71,6 +88,8 @@ export function TopBarEditor({
     [key: string]: number;
   }>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     if (effectiveTopBar && !data) {
@@ -823,6 +842,254 @@ export function TopBarEditor({
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Header Actions */}
+        <div className="flex items-center justify-between flex-wrap gap-4 mt-6 p-4 bg-white rounded-lg border">
+          <Badge variant={data?.isActive ? "default" : "secondary"}>
+            {data?.isActive ? "Active" : "Inactive"}
+          </Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => setShowPreview(true)}
+              disabled={!data || isSaving}
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Preview
+            </Button>
+            {data?._id && (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      disabled={isExporting || isSaving}
+                    >
+                      {isExporting ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4 mr-2" />
+                      )}
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        if (!data._id) return;
+                        setIsExporting(true);
+                        try {
+                          await topBarApi.export(data._id, "json");
+                          push({
+                            message: "Top bar exported as JSON",
+                            type: "success",
+                          });
+                        } catch (err) {
+                          push({ message: "Failed to export", type: "error" });
+                        } finally {
+                          setIsExporting(false);
+                        }
+                      }}
+                    >
+                      Export as JSON
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        if (!data._id) return;
+                        setIsExporting(true);
+                        try {
+                          await topBarApi.export(data._id, "pdf");
+                          push({
+                            message: "Top bar exported as PDF",
+                            type: "success",
+                          });
+                        } catch (err) {
+                          push({ message: "Failed to export", type: "error" });
+                        } finally {
+                          setIsExporting(false);
+                        }
+                      }}
+                    >
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!data._id) return;
+                    setIsSaving(true);
+                    try {
+                      const duplicated = await topBarApi.duplicate(data._id);
+                      queryClient.invalidateQueries({ queryKey: ["top-bars"] });
+                      queryClient.invalidateQueries({
+                        queryKey: ["activeTopBar"],
+                      });
+                      push({
+                        message: "Top bar duplicated successfully",
+                        type: "success",
+                      });
+                      setData(duplicated);
+                    } catch (err) {
+                      push({ message: "Failed to duplicate", type: "error" });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicate
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!data._id) return;
+                    setIsSaving(true);
+                    try {
+                      const toggled = await topBarApi.toggleActive(data._id);
+                      queryClient.invalidateQueries({ queryKey: ["top-bars"] });
+                      queryClient.invalidateQueries({
+                        queryKey: ["activeTopBar"],
+                      });
+                      push({
+                        message: `Top bar ${
+                          toggled.isActive ? "activated" : "deactivated"
+                        }`,
+                        type: "success",
+                      });
+                      setData(toggled);
+                    } catch (err) {
+                      push({
+                        message: "Failed to toggle status",
+                        type: "error",
+                      });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 mr-2 ${isSaving ? "animate-spin" : ""}`}
+                  />
+                  Toggle Active
+                </Button>
+              </>
+            )}
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="min-w-[120px]"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Preview Dialog */}
+        <Dialog open={showPreview} onOpenChange={setShowPreview}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Top Bar Preview</DialogTitle>
+              <DialogDescription>
+                Preview how your top bar will appear to users
+              </DialogDescription>
+            </DialogHeader>
+            {data && (
+              <div className="space-y-6 mt-4">
+                {/* News Preview */}
+                {data.news && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">News Announcement</h3>
+                    <div className="p-4 border rounded-lg">
+                      {data.news.icon && (
+                        <img
+                          src={data.news.icon}
+                          alt="News Icon"
+                          className="w-8 h-8 mb-2"
+                        />
+                      )}
+                      <p className="font-medium">{data.news.text}</p>
+                      {data.news.link && (
+                        <p className="text-sm text-muted-foreground">
+                          {data.news.link}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Languages Preview */}
+                {data.languages && data.languages.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">Languages</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {data.languages.map((lang, idx) => (
+                        <Badge key={idx} variant="outline">
+                          {lang.flag && (
+                            <img
+                              src={lang.flag}
+                              alt={lang.name}
+                              className="w-4 h-4 mr-1"
+                            />
+                          )}
+                          {lang.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Currencies Preview */}
+                {data.currencies && data.currencies.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">Currencies</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {data.currencies.map((curr, idx) => (
+                        <Badge key={idx} variant="outline">
+                          {curr.symbol} {curr.code}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Social Links Preview */}
+                {data.socialLinks && data.socialLinks.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">Social Links</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {data.socialLinks.map((social, idx) => (
+                        <Badge key={idx} variant="outline">
+                          {social.platform}: {social.url}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Status */}
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Status</h3>
+                  <Badge variant={data.isActive ? "default" : "secondary"}>
+                    {data.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

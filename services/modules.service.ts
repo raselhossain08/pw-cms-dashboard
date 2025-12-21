@@ -108,12 +108,92 @@ class ModulesService {
 
   async duplicateModule(id: string) {
     try {
-      const { data } = await apiClient.patch(`/course-modules/course/${id}/reorder`, { moduleIds: [] });
+      const { data } = await apiClient.post<ModuleDto>(`/course-modules/${id}/duplicate`);
       return data;
     } catch (error) {
-      console.error(`Failed to reorder modules for course ${id}:`, error);
+      console.error(`Failed to duplicate module ${id}:`, error);
       throw error;
     }
+  }
+
+  async toggleModuleStatus(id: string) {
+    try {
+      const { data } = await apiClient.patch<ModuleDto>(`/course-modules/${id}/toggle-status`);
+      return data;
+    } catch (error) {
+      console.error(`Failed to toggle module status ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async reorderModules(courseId: string, moduleIds: string[]) {
+    try {
+      const { data } = await apiClient.patch(`/course-modules/course/${courseId}/reorder`, { moduleIds });
+      return data;
+    } catch (error) {
+      console.error(`Failed to reorder modules for course ${courseId}:`, error);
+      throw error;
+    }
+  }
+
+  async bulkDeleteModules(ids: string[]) {
+    try {
+      const { data } = await apiClient.post<{ message: string }>("/course-modules/bulk-delete", { ids });
+      return data;
+    } catch (error) {
+      console.error("Failed to bulk delete modules:", error);
+      throw error;
+    }
+  }
+
+  async bulkToggleStatus(ids: string[]) {
+    try {
+      const { data } = await apiClient.post<{ message: string }>("/course-modules/bulk-toggle-status", { ids });
+      return data;
+    } catch (error) {
+      console.error("Failed to bulk toggle module status:", error);
+      throw error;
+    }
+  }
+
+  async getModuleStats(id: string) {
+    try {
+      const { data } = await apiClient.get(`/course-modules/${id}/stats`);
+      return data;
+    } catch (error) {
+      console.error(`Failed to fetch module stats ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async exportModules(format: "csv" | "xlsx" | "pdf", params?: { courseId?: string }): Promise<Blob> {
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+    const { getAccessToken } = await import('@/lib/cookies');
+    const token = getAccessToken();
+
+    const queryParams = new URLSearchParams();
+    if (params?.courseId) {
+      queryParams.append('courseId', params.courseId);
+    }
+    const queryString = queryParams.toString();
+    const url = `${BASE_URL}/course-modules/export/${format}${queryString ? `?${queryString}` : ''}`;
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to export modules: ${response.statusText}`);
+    }
+
+    return await response.blob();
   }
 }
 

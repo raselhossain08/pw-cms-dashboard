@@ -53,4 +53,33 @@ export const aiBotService = {
       params: sessionId ? { sessionId } : undefined,
     });
   },
+
+  rateConversation(sessionId: string, rating: number, feedback?: string) {
+    return apiClient.post("/ai-bot/rate", {
+      sessionId,
+      rating: rating.toString(),
+      feedback,
+    });
+  },
+
+  escalateToHuman(sessionId: string, reason?: string) {
+    return apiClient.post("/ai-bot/escalate", {
+      sessionId,
+      reason: reason || "user_request",
+    });
+  },
+
+  deleteConversation(sessionId: string) {
+    return apiClient.delete(`/ai-bot/conversations/${sessionId}`);
+  },
+
+  getStatus() {
+    return apiClient.get<{
+      status: string;
+      aiEnabled: boolean;
+      openAIEnabled: boolean;
+      geminiEnabled: boolean;
+      timestamp: string;
+    }>("/ai-bot/status");
+  },
 };

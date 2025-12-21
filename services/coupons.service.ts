@@ -38,13 +38,50 @@ export interface CreateCouponDto {
 
 export type UpdateCouponDto = Partial<CreateCouponDto>;
 
+export interface CouponsResponse {
+    data: Coupon[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
+export interface CouponAnalytics {
+    total: number;
+    active: number;
+    inactive: number;
+    expired: number;
+    scheduled: number;
+    totalUses: number;
+    totalRevenueSaved: number;
+    mostUsed: Coupon[];
+    recentCoupons: Coupon[];
+}
+
 class CouponsService {
-    async getAllCoupons() {
+    async getAllCoupons(page: number = 1, limit: number = 100, search?: string) {
         try {
-            const { data } = await apiClient.get<Coupon[]>("/coupons");
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: limit.toString(),
+            });
+            if (search) {
+                params.append('search', search);
+            }
+            const { data } = await apiClient.get<CouponsResponse>(`/coupons?${params.toString()}`);
             return data;
         } catch (error) {
             console.error("Failed to fetch coupons:", error);
+            throw error;
+        }
+    }
+
+    async getCouponsAnalytics() {
+        try {
+            const { data } = await apiClient.get<CouponAnalytics>("/coupons/analytics");
+            return data;
+        } catch (error) {
+            console.error("Failed to fetch coupon analytics:", error);
             throw error;
         }
     }
@@ -105,6 +142,26 @@ class CouponsService {
             return data;
         } catch (error) {
             console.error("Failed to validate coupon:", error);
+            throw error;
+        }
+    }
+
+    async bulkDeleteCoupons(ids: string[]) {
+        try {
+            const { data } = await apiClient.post<{ deletedCount: number; message: string }>("/coupons/bulk/delete", { ids });
+            return data;
+        } catch (error) {
+            console.error("Failed to bulk delete coupons:", error);
+            throw error;
+        }
+    }
+
+    async bulkToggleStatus(ids: string[]) {
+        try {
+            const { data } = await apiClient.post<{ updatedCount: number; message: string }>("/coupons/bulk/toggle-status", { ids });
+            return data;
+        } catch (error) {
+            console.error("Failed to bulk toggle coupon status:", error);
             throw error;
         }
     }

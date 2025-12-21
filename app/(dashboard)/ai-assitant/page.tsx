@@ -27,6 +27,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  ThumbsUp,
+  ThumbsDown,
+  UserPlus,
+  Trash2,
+  RefreshCw,
+  X,
+  Search,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 
 export default function AIAssistantPage() {
   const { push } = useToast();
@@ -43,6 +54,9 @@ export default function AIAssistantPage() {
     containerRef,
     attachments,
     preferences,
+    connectionStatus,
+    aiStatus,
+    canStopGeneration,
     setInput,
     setListening,
     setHistoryOpen,
@@ -55,62 +69,237 @@ export default function AIAssistantPage() {
     clearAttachments,
     newConversation,
     clearCurrentMessages,
+    rateConversation,
+    escalateToHuman,
+    deleteConversation,
+    stopGeneration,
+    regenerateLastResponse,
   } = useAiAssistant();
 
   const typingTimeoutRef = React.useRef<number | null>(null);
   const canSend = (input || "").trim().length > 0;
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [ratingOpen, setRatingOpen] = React.useState(false);
+  const [escalateOpen, setEscalateOpen] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [ratingValue, setRatingValue] = React.useState(0);
+  const [feedbackText, setFeedbackText] = React.useState("");
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const recognitionRef = React.useRef<any>(null);
+
+  // Initialize Web Speech API
+  React.useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)
+    ) {
+      const SpeechRecognition =
+        (window as any).webkitSpeechRecognition ||
+        (window as any).SpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = "en-US";
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(transcript);
+        setListening(false);
+      };
+
+      recognitionRef.current.onerror = () => {
+        setListening(false);
+        push({ message: "Speech recognition error", type: "error" });
+      };
+
+      recognitionRef.current.onend = () => {
+        setListening(false);
+      };
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (listening && recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+      } catch {
+        setListening(false);
+      }
+    } else if (!listening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+    }
+  }, [listening]);
 
   function renderMarkdown(text: string) {
-    const parts = text.split(/```([\s\S]*?)```/g);
-    const nodes: React.ReactNode[] = [];
-    for (let i = 0; i < parts.length; i++) {
-      const chunk = parts[i];
-      if (i % 2 === 1) {
-        nodes.push(
-          <pre
-            key={`code-${i}`}
-            className="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs"
+    // Split by code blocks first
+    const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+    const parts: Array<{
+      type: "code" | "text";
+      lang?: string;
+      content: string;
+    }> = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = codeBlockRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({
+          type: "text",
+          content: text.substring(lastIndex, match.index),
+        });
+      }
+      parts.push({ type: "code", lang: match[1] || "", content: match[2] });
+      lastIndex = codeBlockRegex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({ type: "text", content: text.substring(lastIndex) });
+    }
+
+    if (parts.length === 0) {
+      parts.push({ type: "text", content: text });
+    }
+
+    return (
+      <div className="space-y-3">
+        {parts.map((part, partIdx) => {
+          if (part.type === "code") {
+            return (
+              <pre
+                key={`code-${partIdx}`}
+                className="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto text-sm font-mono"
+              >
+                <code>{part.content.trim()}</code>
+              </pre>
+            );
+          }
+
+          // Process text content
+          const lines = part.content.split("\n");
+          return (
+            <div key={`text-${partIdx}`} className="space-y-2">
+              {lines.map((line, lineIdx) => {
+                // Headers
+                if (/^###\s/.test(line)) {
+                  return (
+                    <h3 key={lineIdx} className="text-lg font-bold mt-4 mb-2">
+                      {line.replace(/^###\s/, "")}
+                    </h3>
+                  );
+                }
+                if (/^##\s/.test(line)) {
+                  return (
+                    <h2 key={lineIdx} className="text-xl font-bold mt-4 mb-2">
+                      {line.replace(/^##\s/, "")}
+                    </h2>
+                  );
+                }
+                if (/^#\s/.test(line)) {
+                  return (
+                    <h1 key={lineIdx} className="text-2xl font-bold mt-4 mb-2">
+                      {line.replace(/^#\s/, "")}
+                    </h1>
+                  );
+                }
+
+                // Lists
+                if (/^[-*]\s/.test(line)) {
+                  return (
+                    <div key={lineIdx} className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>
+                        {renderInlineMarkdown(line.replace(/^[-*]\s/, ""))}
+                      </span>
+                    </div>
+                  );
+                }
+                if (/^\d+\.\s/.test(line)) {
+                  const num = line.match(/^(\d+)\./)?.[1];
+                  return (
+                    <div key={lineIdx} className="flex items-start">
+                      <span className="mr-2 font-semibold">{num}.</span>
+                      <span>
+                        {renderInlineMarkdown(line.replace(/^\d+\.\s/, ""))}
+                      </span>
+                    </div>
+                  );
+                }
+
+                // Empty line
+                if (!line.trim()) {
+                  return <br key={lineIdx} />;
+                }
+
+                // Regular paragraph
+                return (
+                  <p key={lineIdx} className="leading-relaxed">
+                    {renderInlineMarkdown(line)}
+                  </p>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderInlineMarkdown(text: string) {
+    const segments = text
+      .split(
+        /(https?:\/\/[^\s)]+)|(\*\*[^*]+\*\*)|(_[^_]+_)|(`[^`]+`)|(\*[^*]+\*)/g
+      )
+      .filter(Boolean);
+
+    return segments.map((seg, idx) => {
+      if (/^https?:\/\//.test(seg)) {
+        return (
+          <a
+            key={idx}
+            href={seg}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline hover:text-primary/80"
           >
-            <code>{chunk}</code>
-          </pre>
-        );
-      } else {
-        const segments = chunk
-          .split(/(https?:\/\/[^\s)]+)|(\*\*[^*]+\*\*)|(_[^_]+_)/g)
-          .filter(Boolean);
-        nodes.push(
-          <span key={`txt-${i}`}>
-            {segments.map((seg, idx) => {
-              if (/^https?:\/\//.test(seg)) {
-                return (
-                  <a
-                    key={idx}
-                    href={seg}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary underline"
-                  >
-                    {seg}
-                  </a>
-                );
-              }
-              if (/^\*\*.*\*\*$/.test(seg)) {
-                return (
-                  <strong key={idx}>{seg.replace(/^\*\*|\*\*$/g, "")}</strong>
-                );
-              }
-              if (/^_.*_$/.test(seg)) {
-                return <em key={idx}>{seg.replace(/^_|_$/g, "")}</em>;
-              }
-              return <span key={idx}>{seg}</span>;
-            })}
-          </span>
+            {seg}
+          </a>
         );
       }
-    }
-    return <div className="space-y-3">{nodes}</div>;
+      if (/^\*\*.*\*\*$/.test(seg)) {
+        return (
+          <strong key={idx} className="font-bold">
+            {seg.replace(/^\*\*|\*\*$/g, "")}
+          </strong>
+        );
+      }
+      if (/^_.*_$/.test(seg)) {
+        return (
+          <em key={idx} className="italic">
+            {seg.replace(/^_|_$/g, "")}
+          </em>
+        );
+      }
+      if (/^`.*`$/.test(seg)) {
+        return (
+          <code
+            key={idx}
+            className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono"
+          >
+            {seg.replace(/^`|`$/g, "")}
+          </code>
+        );
+      }
+      if (/^\*.*\*$/.test(seg)) {
+        return (
+          <em key={idx} className="italic">
+            {seg.replace(/^\*|\*$/g, "")}
+          </em>
+        );
+      }
+      return <span key={idx}>{seg}</span>;
+    });
   }
 
   function saveToNotes(content: string) {
@@ -180,14 +369,32 @@ export default function AIAssistantPage() {
             <div className="flex items-center gap-4 flex-wrap">
               <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                    <Brain className="text-primary w-5 h-5" />
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      connectionStatus === "connected"
+                        ? "bg-green-100"
+                        : connectionStatus === "connecting"
+                        ? "bg-yellow-100"
+                        : "bg-red-100"
+                    }`}
+                  >
+                    {connectionStatus === "connected" ? (
+                      <Wifi className="text-green-600 w-5 h-5" />
+                    ) : (
+                      <WifiOff className="text-red-600 w-5 h-5" />
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-secondary">
-                      AI Status
+                      {connectionStatus === "connected"
+                        ? "Connected"
+                        : connectionStatus === "connecting"
+                        ? "Connecting..."
+                        : "Disconnected"}
                     </p>
-                    <p className="text-xs text-accent">Online & Ready</p>
+                    <p className="text-xs text-accent">
+                      {aiStatus?.aiEnabled ? "AI Enabled" : "AI Disabled"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -293,32 +500,75 @@ export default function AIAssistantPage() {
                   Recent Conversations
                 </h3>
                 <div className="space-y-3">
-                  {conversations.map((c) => {
-                    const lastMsg =
-                      Array.isArray(c.messages) && c.messages.length
-                        ? c.messages[c.messages.length - 1]
-                        : null;
-                    const title = lastMsg?.content || "Conversation";
-                    const time = c.lastActiveAt
-                      ? formatDistanceToNow(new Date(c.lastActiveAt), {
-                          addSuffix: true,
-                        })
-                      : "";
-                    return (
-                      <button
-                        key={c.sessionId}
-                        className="w-full text-left p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-primary/5 transition-colors"
-                        onClick={() => {
-                          selectConversation(c.sessionId);
-                        }}
-                      >
-                        <p className="text-sm font-medium text-secondary truncate">
-                          {title}
-                        </p>
-                        <p className="text-xs text-gray-500">{time}</p>
-                      </button>
-                    );
-                  })}
+                  <div className="mb-3">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search conversations..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+                  {conversations
+                    .filter((c) => {
+                      if (!searchQuery) return true;
+                      const lastMsg =
+                        Array.isArray(c.messages) && c.messages.length
+                          ? c.messages[c.messages.length - 1]
+                          : null;
+                      const title = lastMsg?.content || "Conversation";
+                      return title
+                        .toLowerCase()
+                        .includes(searchQuery.toLowerCase());
+                    })
+                    .map((c) => {
+                      const lastMsg =
+                        Array.isArray(c.messages) && c.messages.length
+                          ? c.messages[c.messages.length - 1]
+                          : null;
+                      const title = lastMsg?.content || "Conversation";
+                      const time = c.lastActiveAt
+                        ? formatDistanceToNow(new Date(c.lastActiveAt), {
+                            addSuffix: true,
+                          })
+                        : "";
+                      return (
+                        <div key={c.sessionId} className="group relative">
+                          <button
+                            className="w-full text-left p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-primary/5 transition-colors"
+                            onClick={() => {
+                              selectConversation(c.sessionId);
+                            }}
+                          >
+                            <p className="text-sm font-medium text-secondary truncate">
+                              {title.length > 50
+                                ? `${title.substring(0, 50)}...`
+                                : title}
+                            </p>
+                            <p className="text-xs text-gray-500">{time}</p>
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (confirm("Delete this conversation?")) {
+                                await deleteConversation(c.sessionId);
+                                push({
+                                  message: "Conversation deleted",
+                                  type: "success",
+                                });
+                              }
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:bg-red-50 rounded transition-opacity"
+                            aria-label="Delete conversation"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   {!conversations.length && (
                     <p className="text-xs text-gray-500">
                       No conversations yet
@@ -375,7 +625,7 @@ export default function AIAssistantPage() {
                 <div className="border-b border-gray-200 p-4">
                   <div className="flex items-center space-x-3">
                     <div className="relative">
-                      <div className="w-12 h-12 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center">
+                      <div className="w-12 h-12 bg-linear-to-br from-primary to-accent rounded-full flex items-center justify-center">
                         <Bot className="text-white w-6 h-6" />
                       </div>
                       <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-accent rounded-full border-2 border-white" />
@@ -406,7 +656,7 @@ export default function AIAssistantPage() {
                     >
                       {m.from === "ai" ? (
                         <div className="flex space-x-3">
-                          <div className="flex-shrink-0">
+                          <div className="shrink-0">
                             <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                               <Bot className="text-white w-4 h-4" />
                             </div>
@@ -416,7 +666,7 @@ export default function AIAssistantPage() {
                               {renderMarkdown(m.content)}
                               <div className="mt-3 flex flex-wrap gap-2">
                                 <button
-                                  className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200"
+                                  className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 flex items-center gap-1"
                                   onClick={async () => {
                                     try {
                                       await navigator.clipboard.writeText(
@@ -437,23 +687,41 @@ export default function AIAssistantPage() {
                                   Copy
                                 </button>
                                 <button
-                                  className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200"
+                                  className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 flex items-center gap-1"
                                   onClick={() => saveToNotes(m.content)}
                                 >
                                   Save to Notes
                                 </button>
                                 <button
-                                  className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200"
-                                  onClick={exportTranscriptCSV}
+                                  className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200 flex items-center gap-1"
+                                  onClick={() => {
+                                    setRatingValue(5);
+                                    setRatingOpen(true);
+                                  }}
                                 >
-                                  Export CSV
+                                  <ThumbsUp className="w-3 h-3" />
+                                  Like
                                 </button>
                                 <button
-                                  className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200"
-                                  onClick={exportTranscriptHTML}
+                                  className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200 flex items-center gap-1"
+                                  onClick={() => {
+                                    setRatingValue(1);
+                                    setRatingOpen(true);
+                                  }}
                                 >
-                                  Export PDF
+                                  <ThumbsDown className="w-3 h-3" />
+                                  Dislike
                                 </button>
+                                {idx === messages.length - 1 &&
+                                  m.from === "ai" && (
+                                    <button
+                                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 flex items-center gap-1"
+                                      onClick={regenerateLastResponse}
+                                    >
+                                      <RefreshCw className="w-3 h-3" />
+                                      Regenerate
+                                    </button>
+                                  )}
                               </div>
                             </div>
                             <p className="text-xs text-gray-500 mt-1">
@@ -471,7 +739,7 @@ export default function AIAssistantPage() {
                               {m.timestamp}
                             </p>
                           </div>
-                          <div className="flex-shrink-0">
+                          <div className="shrink-0">
                             <div className="w-8 h-8 bg-accent rounded-full flex items-center justify-center">
                               <User className="text-white w-4 h-4" />
                             </div>
@@ -484,7 +752,7 @@ export default function AIAssistantPage() {
                   {typing && (
                     <div className="message-ai mb-6">
                       <div className="flex space-x-3">
-                        <div className="flex-shrink-0">
+                        <div className="shrink-0">
                           <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                             <Bot className="text-white w-4 h-4" />
                           </div>
@@ -496,6 +764,15 @@ export default function AIAssistantPage() {
                               <span className="typing-dot" />
                               <span className="typing-dot" />
                             </div>
+                            {canStopGeneration && (
+                              <button
+                                onClick={stopGeneration}
+                                className="mt-2 text-xs text-red-600 hover:text-red-700 flex items-center gap-1"
+                              >
+                                <X className="w-3 h-3" />
+                                Stop generating
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -572,7 +849,11 @@ export default function AIAssistantPage() {
                           <Paperclip className="w-4 h-4" />
                         </button>
                         <button
-                          className="text-gray-400 hover:text-primary transition-colors"
+                          className={`transition-colors ${
+                            listening
+                              ? "text-red-500 hover:text-red-600"
+                              : "text-gray-400 hover:text-primary"
+                          }`}
                           onClick={() => setListening((v) => !v)}
                           aria-label={listening ? "Stop voice" : "Start voice"}
                         >
@@ -698,6 +979,141 @@ export default function AIAssistantPage() {
           </div>
         </div>
       </main>
+      <Dialog open={ratingOpen} onOpenChange={setRatingOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rate this conversation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Rating</label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setRatingValue(star)}
+                    className={`w-10 h-10 rounded-lg ${
+                      star <= ratingValue
+                        ? "bg-yellow-400 text-white"
+                        : "bg-gray-100 text-gray-400"
+                    } hover:bg-yellow-300 transition-colors`}
+                  >
+                    ⭐
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Feedback (optional)
+              </label>
+              <textarea
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                placeholder="Tell us what you think..."
+                className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
+                onClick={async () => {
+                  const success = await rateConversation(
+                    ratingValue,
+                    feedbackText
+                  );
+                  if (success) {
+                    push({
+                      message: "Thank you for your feedback!",
+                      type: "success",
+                    });
+                    setRatingOpen(false);
+                    setRatingValue(0);
+                    setFeedbackText("");
+                  } else {
+                    push({ message: "Failed to submit rating", type: "error" });
+                  }
+                }}
+              >
+                Submit
+              </button>
+              <button
+                className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+                onClick={() => {
+                  setRatingOpen(false);
+                  setRatingValue(0);
+                  setFeedbackText("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={escalateOpen} onOpenChange={setEscalateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Escalate to Human Agent</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Would you like to connect with a human agent? They can provide
+              more personalized assistance.
+            </p>
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Reason (optional)
+              </label>
+              <select
+                onChange={(e) => setFeedbackText(e.target.value)}
+                className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="user_request">I prefer human assistance</option>
+                <option value="complex_issue">Complex issue</option>
+                <option value="bot_not_helpful">Bot wasn't helpful</option>
+                <option value="technical_problem">Technical problem</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 flex items-center justify-center gap-2"
+                onClick={async () => {
+                  const success = await escalateToHuman(
+                    feedbackText || "user_request"
+                  );
+                  if (success) {
+                    push({
+                      message: "Escalated to human agent",
+                      type: "success",
+                    });
+                    setEscalateOpen(false);
+                    setFeedbackText("");
+                  } else {
+                    push({ message: "Failed to escalate", type: "error" });
+                  }
+                }}
+              >
+                <UserPlus className="w-4 h-4" />
+                Escalate Now
+              </button>
+              <button
+                className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+                onClick={() => {
+                  setEscalateOpen(false);
+                  setFeedbackText("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent aria-describedby="chat-settings">
           <DialogHeader>
@@ -763,6 +1179,16 @@ export default function AIAssistantPage() {
                 }}
               >
                 New conversation
+              </button>
+              <button
+                className="px-3 py-2 border rounded flex items-center gap-2"
+                onClick={() => {
+                  setEscalateOpen(true);
+                  setSettingsOpen(false);
+                }}
+              >
+                <UserPlus className="w-4 h-4" />
+                Escalate to Human
               </button>
               <button
                 className="px-3 py-2 border rounded"

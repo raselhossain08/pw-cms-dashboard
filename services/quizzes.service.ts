@@ -129,6 +129,61 @@ class QuizzesService {
     const { data } = await apiClient.get(`/quizzes/${id}/stats`);
     return data;
   }
+
+  async getSubmission(submissionId: string) {
+    const { data } = await apiClient.get(`/quizzes/submissions/${submissionId}`);
+    return data;
+  }
+
+  async toggleQuizStatus(id: string) {
+    const { data } = await apiClient.patch<QuizDto>(`/quizzes/${id}/toggle-status`);
+    return data;
+  }
+
+  async duplicateQuiz(id: string) {
+    const { data } = await apiClient.post<QuizDto>(`/quizzes/${id}/duplicate`);
+    return data;
+  }
+
+  async bulkDeleteQuizzes(ids: string[]) {
+    const { data } = await apiClient.post<{ message: string }>("/quizzes/bulk-delete", { ids });
+    return data;
+  }
+
+  async bulkToggleStatus(ids: string[]) {
+    const { data } = await apiClient.post<{ message: string }>("/quizzes/bulk-toggle-status", { ids });
+    return data;
+  }
+
+  async exportQuizzes(format: "csv" | "xlsx" | "pdf", params?: { courseId?: string }): Promise<Blob> {
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+    const { getAccessToken } = await import('@/lib/cookies');
+    const token = getAccessToken();
+
+    const queryParams = new URLSearchParams();
+    if (params?.courseId) {
+      queryParams.append('courseId', params.courseId);
+    }
+    const queryString = queryParams.toString();
+    const url = `${BASE_URL}/quizzes/export/${format}${queryString ? `?${queryString}` : ''}`;
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to export quizzes: ${response.statusText}`);
+    }
+
+    return await response.blob();
+  }
 }
 
 export const quizzesService = new QuizzesService();

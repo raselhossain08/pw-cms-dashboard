@@ -15,6 +15,17 @@ import {
   FileText,
   Mail,
   Trash2,
+  Calendar,
+  Filter,
+  Printer,
+  Send,
+  Package,
+  CreditCard,
+  MapPin,
+  Clock,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,13 +50,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { useOrders } from "@/hooks/useOrders";
-import { Order } from "@/services/orders.service";
+import { Order, ordersService } from "@/services/orders.service";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/context/ToastContext";
 
 type ActionDialog = {
-  type: "view" | "refund" | "cancel" | "delete" | "status" | null;
+  type:
+    | "view"
+    | "refund"
+    | "cancel"
+    | "delete"
+    | "status"
+    | "tracking"
+    | "paymentStatus"
+    | null;
   order: Order | null;
 };
 
@@ -66,9 +96,11 @@ export default function Orders() {
     resendReceipt,
     exportOrders,
   } = useOrders();
+  const { push } = useToast();
 
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("all");
+  const [paymentStatusFilter, setPaymentStatusFilter] = React.useState("all");
   const [sortBy, setSortBy] = React.useState("newest");
   const [currentPage, setCurrentPage] = React.useState(1);
   const [selectedOrders, setSelectedOrders] = React.useState<string[]>([]);
@@ -79,6 +111,18 @@ export default function Orders() {
   const [actionReason, setActionReason] = React.useState("");
   const [actionLoading, setActionLoading] = React.useState(false);
   const [newStatus, setNewStatus] = React.useState<Order["status"]>("pending");
+  const [newPaymentStatus, setNewPaymentStatus] =
+    React.useState<Order["paymentStatus"]>("pending");
+  const [trackingNumber, setTrackingNumber] = React.useState("");
+  const [dateRange, setDateRange] = React.useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({
+    from: undefined,
+    to: undefined,
+  });
+  const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
+  const [showBulkActions, setShowBulkActions] = React.useState(false);
   const limit = 10;
 
   // Initial data fetch
@@ -93,13 +137,17 @@ export default function Orders() {
 
     if (search) params.search = search;
     if (statusFilter !== "all") params.status = statusFilter;
+    if (paymentStatusFilter !== "all")
+      params.paymentStatus = paymentStatusFilter;
+    if (dateRange.from) params.startDate = dateRange.from.toISOString();
+    if (dateRange.to) params.endDate = dateRange.to.toISOString();
 
     const debounce = setTimeout(() => {
       fetchOrders(params);
     }, 500);
 
     return () => clearTimeout(debounce);
-  }, [search, statusFilter, currentPage]);
+  }, [search, statusFilter, paymentStatusFilter, currentPage, dateRange]);
 
   // Keyboard shortcut for search
   React.useEffect(() => {
@@ -146,20 +194,26 @@ export default function Orders() {
   };
 
   const sortedOrders = React.useMemo(() => {
+    if (!orders || !Array.isArray(orders)) {
+      return [];
+    }
+
     const sorted = [...orders];
 
     if (sortBy === "newest") {
       sorted.sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime()
       );
     } else if (sortBy === "oldest") {
       sorted.sort(
         (a, b) =>
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          new Date(a.createdAt || 0).getTime() -
+          new Date(b.createdAt || 0).getTime()
       );
     } else if (sortBy === "amount") {
-      sorted.sort((a, b) => b.total - a.total);
+      sorted.sort((a, b) => (b.total || 0) - (a.total || 0));
     }
 
     return sorted;
@@ -167,7 +221,7 @@ export default function Orders() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedOrders(orders.map((o) => o._id));
+      setSelectedOrders((orders || []).map((o) => o._id).filter(Boolean));
     } else {
       setSelectedOrders([]);
     }
@@ -232,6 +286,7 @@ export default function Orders() {
   };
 
   const handleExport = async () => {
+    // Export with current filters - backend should handle filters via query params
     await exportOrders("csv");
   };
 
@@ -269,7 +324,153 @@ export default function Orders() {
         setActionLoading(false);
         fetchOrderStats();
       }
+    } else if (action === "status") {
+      setShowBulkActions(true);
+    } else if (action === "paymentStatus") {
+      setShowBulkActions(true);
     }
+  };
+
+  const handleBulkStatusUpdate = async () => {
+    if (selectedOrders.length === 0 || !newStatus) return;
+    setActionLoading(true);
+    try {
+      for (const orderId of selectedOrders) {
+        await updateOrder(orderId, { status: newStatus });
+      }
+      setSelectedOrders([]);
+      setShowBulkActions(false);
+      fetchOrderStats();
+    } catch (error) {
+      console.error("Failed to update bulk status:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkPaymentStatusUpdate = async () => {
+    if (selectedOrders.length === 0 || !newPaymentStatus) return;
+    setActionLoading(true);
+    try {
+      for (const orderId of selectedOrders) {
+        await updateOrder(orderId, { paymentStatus: newPaymentStatus });
+      }
+      setSelectedOrders([]);
+      setShowBulkActions(false);
+      fetchOrderStats();
+    } catch (error) {
+      console.error("Failed to update bulk payment status:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDownloadReceipt = async (orderId: string) => {
+    setActionLoading(true);
+    try {
+      const response = (await ordersService.downloadOrder(orderId)) as {
+        url?: string;
+      };
+      if (response && response.url) {
+        window.open(response.url, "_blank");
+        push({
+          message: "Receipt download started",
+          type: "success",
+        });
+      } else {
+        push({
+          message: "Receipt URL not available",
+          type: "error",
+        });
+      }
+    } catch (error: any) {
+      push({
+        message: error.response?.data?.message || "Failed to download receipt",
+        type: "error",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePrintOrder = (order: Order) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const content = `
+      <html>
+        <head>
+          <title>Order ${order.orderNumber}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+            .section { margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+            .total { font-weight: bold; font-size: 1.2em; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Order ${order.orderNumber}</h1>
+            <p>Date: ${formatDate(order.createdAt)}</p>
+          </div>
+          <div class="section">
+            <h3>Customer Information</h3>
+            <p>${order.user.name || order.user.email}</p>
+            <p>${order.user.email}</p>
+          </div>
+          <div class="section">
+            <h3>Order Items</h3>
+            <table>
+              <tr><th>Item</th><th>Quantity</th><th>Price</th></tr>
+              ${order.items
+                .map(
+                  (item) => `
+                <tr>
+                  <td>${item.title}</td>
+                  <td>${item.quantity}</td>
+                  <td>${formatCurrency(item.price)}</td>
+                </tr>
+              `
+                )
+                .join("")}
+            </table>
+          </div>
+          <div class="section">
+            <p>Subtotal: ${formatCurrency(order.subtotal)}</p>
+            <p>Tax: ${formatCurrency(order.tax)}</p>
+            <p>Discount: -${formatCurrency(order.discount)}</p>
+            <p class="total">Total: ${formatCurrency(order.total)}</p>
+          </div>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const handleUpdateTrackingNumber = async () => {
+    if (!actionDialog.order || !trackingNumber) return;
+    setActionLoading(true);
+    try {
+      await updateOrder(actionDialog.order._id, { trackingNumber });
+      setActionDialog({ type: null, order: null });
+      setTrackingNumber("");
+      fetchOrderStats();
+    } catch (error) {
+      console.error("Failed to update tracking number:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setPaymentStatusFilter("all");
+    setDateRange({ from: undefined, to: undefined });
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -303,20 +504,7 @@ export default function Orders() {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-1 shadow-sm border border-gray-100 mb-8 inline-flex">
-        {["Products", "Categories", "Orders", "Discounts"].map((t) => (
-          <button
-            key={t}
-            className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
-              t === "Orders"
-                ? "bg-primary text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
@@ -380,59 +568,151 @@ export default function Orders() {
       </div>
 
       <div className="bg-card rounded-xl shadow-sm border border-gray-100 mb-8 overflow-hidden">
-        <div className="p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="relative w-64">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                id="orders-search"
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search orders... (Cmd+K)"
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
+        <div className="p-6 flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative w-64">
+                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  id="orders-search"
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search orders... (Cmd+K)"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+              <div className="relative">
+                <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 z-10" />
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="pl-10 w-44">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Sort by: Newest</SelectItem>
+                    <SelectItem value="oldest">Sort by: Oldest</SelectItem>
+                    <SelectItem value="amount">Sort by: Amount</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="relative">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="shipped">Shipped</SelectItem>
+                    <SelectItem value="refunded">Refunded</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="relative">
+                <Select
+                  value={paymentStatusFilter}
+                  onValueChange={setPaymentStatusFilter}
+                >
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Payment Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Payment Status</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                    <SelectItem value="refunded">Refunded</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-[280px] justify-start text-left font-normal",
+                      !dateRange.from && "text-muted-foreground"
+                    )}
+                  >
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {dateRange.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, "LLL dd, y")} -{" "}
+                          {format(dateRange.to, "LLL dd, y")}
+                        </>
+                      ) : (
+                        format(dateRange.from, "LLL dd, y")
+                      )
+                    ) : (
+                      <span>Pick a date range</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange.from}
+                    selected={{ from: dateRange.from, to: dateRange.to }}
+                    onSelect={(range) => {
+                      setDateRange({
+                        from: range?.from,
+                        to: range?.to,
+                      });
+                    }}
+                    numberOfMonths={2}
+                  />
+                </PopoverContent>
+              </Popover>
+              <Button
+                variant="outline"
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className="border-gray-300"
+              >
+                <Filter className="w-4 h-4 mr-2" />
+                Filters
+              </Button>
+              {(search ||
+                statusFilter !== "all" ||
+                paymentStatusFilter !== "all" ||
+                dateRange.from ||
+                dateRange.to) && (
+                <Button
+                  variant="ghost"
+                  onClick={clearFilters}
+                  className="text-gray-600"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear
+                </Button>
+              )}
             </div>
-            <div className="relative">
-              <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="pl-10 w-44">
-                  <SelectValue placeholder="Sort by" />
+            <div className="flex items-center gap-2">
+              {selectedOrders.length > 0 && (
+                <Badge variant="secondary" className="mr-2">
+                  {selectedOrders.length} selected
+                </Badge>
+              )}
+              <Select onValueChange={handleBulkAction}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Bulk Actions" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="newest">Sort by: Newest</SelectItem>
-                  <SelectItem value="oldest">Sort by: Oldest</SelectItem>
-                  <SelectItem value="amount">Sort by: Amount</SelectItem>
+                  <SelectItem value="export">Export Selected</SelectItem>
+                  <SelectItem value="status">Update Status</SelectItem>
+                  <SelectItem value="paymentStatus">
+                    Update Payment Status
+                  </SelectItem>
+                  <SelectItem value="delete">Delete Selected</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="relative">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="All Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                  <SelectItem value="shipped">Shipped</SelectItem>
-                  <SelectItem value="refunded">Refunded</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select onValueChange={handleBulkAction}>
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="Bulk Actions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="export">Export</SelectItem>
-                <SelectItem value="delete">Delete</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -445,8 +725,9 @@ export default function Orders() {
                       type="checkbox"
                       className="rounded"
                       checked={
-                        selectedOrders.length === orders.length &&
-                        orders.length > 0
+                        orders &&
+                        orders.length > 0 &&
+                        selectedOrders.length === orders.length
                       }
                       onChange={(e) => handleSelectAll(e.target.checked)}
                     />
@@ -463,15 +744,65 @@ export default function Orders() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {loading ? (
-                <tr>
-                  <td colSpan={7} className="py-20 text-center">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
-                  </td>
-                </tr>
+                <>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="py-4 px-6">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-4 h-4 bg-gray-200 rounded"></div>
+                          <div className="h-4 bg-gray-200 rounded w-24"></div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="h-4 bg-gray-200 rounded w-32"></div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="h-4 bg-gray-200 rounded w-24"></div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="h-4 bg-gray-200 rounded w-20"></div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="h-6 bg-gray-200 rounded w-20"></div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="h-4 bg-gray-200 rounded w-16"></div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="h-8 bg-gray-200 rounded w-16"></div>
+                      </td>
+                    </tr>
+                  ))}
+                </>
               ) : sortedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-20 text-center text-gray-500">
-                    No orders found
+                  <td colSpan={7} className="py-20 text-center">
+                    <div className="flex flex-col items-center justify-center">
+                      <Package className="w-12 h-12 text-gray-400 mb-4" />
+                      <p className="text-gray-500 text-lg font-medium mb-2">
+                        No orders found
+                      </p>
+                      <p className="text-gray-400 text-sm">
+                        {search ||
+                        statusFilter !== "all" ||
+                        paymentStatusFilter !== "all" ||
+                        dateRange.from
+                          ? "Try adjusting your filters"
+                          : "Orders will appear here once customers make purchases"}
+                      </p>
+                      {(search ||
+                        statusFilter !== "all" ||
+                        paymentStatusFilter !== "all" ||
+                        dateRange.from) && (
+                        <Button
+                          variant="outline"
+                          onClick={clearFilters}
+                          className="mt-4"
+                        >
+                          Clear Filters
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -489,10 +820,12 @@ export default function Orders() {
                         />
                         <div>
                           <div className="font-medium text-primary">
-                            {o.orderNumber}
+                            {o.orderNumber || "N/A"}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {o.items.length > 0 ? o.items[0].type : "Order"}
+                            {o.items && o.items.length > 0
+                              ? o.items[0].type
+                              : "Order"}
                           </div>
                         </div>
                       </div>
@@ -531,11 +864,12 @@ export default function Orders() {
                     </td>
                     <td className="py-4 px-6 whitespace-nowrap">
                       <div className="text-sm text-secondary">
-                        {o.items.length} item{o.items.length !== 1 ? "s" : ""}
+                        {o.items?.length || 0} item
+                        {(o.items?.length || 0) !== 1 ? "s" : ""}
                       </div>
-                      {o.items.length > 0 && (
+                      {o.items && o.items.length > 0 && (
                         <div className="text-sm text-gray-500">
-                          {o.items[0].title}
+                          {o.items[0]?.title || "N/A"}
                         </div>
                       )}
                     </td>
@@ -597,6 +931,45 @@ export default function Orders() {
                               <FileText className="w-4 h-4 mr-2" />
                               Resend Receipt
                             </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDownloadReceipt(o._id)}
+                              disabled={o.status !== "completed"}
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              Download Receipt
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handlePrintOrder(o)}
+                            >
+                              <Printer className="w-4 h-4 mr-2" />
+                              Print Order
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setTrackingNumber("");
+                                setActionDialog({ type: "tracking", order: o });
+                              }}
+                              disabled={
+                                o.status === "cancelled" ||
+                                o.status === "refunded"
+                              }
+                            >
+                              <Package className="w-4 h-4 mr-2" />
+                              Update Tracking
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setNewPaymentStatus(o.paymentStatus);
+                                setActionDialog({
+                                  type: "paymentStatus",
+                                  order: o,
+                                });
+                              }}
+                            >
+                              <CreditCard className="w-4 h-4 mr-2" />
+                              Update Payment Status
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() =>
@@ -618,11 +991,11 @@ export default function Orders() {
           </table>
         </div>
         <div className="bg-white px-6 py-4 border-t border-gray-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-gray-700">
               Showing{" "}
               <span className="font-medium">
-                {(currentPage - 1) * limit + 1}
+                {total === 0 ? 0 : (currentPage - 1) * limit + 1}
               </span>{" "}
               to{" "}
               <span className="font-medium">
@@ -630,38 +1003,57 @@ export default function Orders() {
               </span>{" "}
               of <span className="font-medium">{total}</span> orders
             </div>
-            <div className="flex space-x-2">
+            <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
+                size="sm"
                 className="border-gray-300"
-                disabled={currentPage === 1}
+                disabled={currentPage === 1 || loading}
                 onClick={() => setCurrentPage(currentPage - 1)}
               >
+                <ChevronLeft className="w-4 h-4 mr-1" />
                 Previous
               </Button>
-              {Array.from({ length: Math.min(totalPages, 3) }, (_, i) => {
-                const page = currentPage <= 2 ? i + 1 : currentPage - 1 + i;
-                if (page > totalPages) return null;
-                return (
-                  <Button
-                    key={page}
-                    variant={currentPage === page ? "default" : "outline"}
-                    className={
-                      currentPage === page ? "bg-primary" : "border-gray-300"
-                    }
-                    onClick={() => setCurrentPage(page)}
-                  >
-                    {page}
-                  </Button>
-                );
-              })}
+              <div className="flex space-x-1">
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  let page: number;
+                  if (totalPages <= 5) {
+                    page = i + 1;
+                  } else if (currentPage <= 3) {
+                    page = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    page = totalPages - 4 + i;
+                  } else {
+                    page = currentPage - 2 + i;
+                  }
+                  if (page > totalPages) return null;
+                  return (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? "default" : "outline"}
+                      size="sm"
+                      className={
+                        currentPage === page
+                          ? "bg-primary text-white"
+                          : "border-gray-300"
+                      }
+                      onClick={() => setCurrentPage(page)}
+                      disabled={loading}
+                    >
+                      {page}
+                    </Button>
+                  );
+                })}
+              </div>
               <Button
                 variant="outline"
+                size="sm"
                 className="border-gray-300"
-                disabled={currentPage === totalPages}
+                disabled={currentPage === totalPages || loading}
                 onClick={() => setCurrentPage(currentPage + 1)}
               >
                 Next
+                <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
           </div>
@@ -684,56 +1076,175 @@ export default function Orders() {
             <DialogDescription>{selectedOrder?.orderNumber}</DialogDescription>
           </DialogHeader>
           {selectedOrder && (
-            <div className="space-y-4">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b pb-4">
+                <div>
+                  <h3 className="text-lg font-semibold">
+                    Order {selectedOrder.orderNumber}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Created: {formatDate(selectedOrder.createdAt)}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePrintOrder(selectedOrder)}
+                  >
+                    <Printer className="w-4 h-4 mr-2" />
+                    Print
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadReceipt(selectedOrder._id)}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-gray-500">Customer</Label>
-                  <p className="font-medium">
+                  <Label className="text-gray-500 flex items-center gap-2">
+                    <Mail className="w-4 h-4" />
+                    Customer
+                  </Label>
+                  <p className="font-medium mt-1">
                     {selectedOrder.user.name || selectedOrder.user.email}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {selectedOrder.user.email}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-gray-500">Order Date</Label>
-                  <p className="font-medium">
+                  <Label className="text-gray-500 flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Order Date
+                  </Label>
+                  <p className="font-medium mt-1">
                     {formatDate(selectedOrder.createdAt)}
                   </p>
                 </div>
                 <div>
                   <Label className="text-gray-500">Status</Label>
-                  <span
-                    className={`status-badge px-3 py-1 rounded-full text-xs ${statusBadge(
-                      selectedOrder.status
-                    )}`}
-                  >
-                    {selectedOrder.status.charAt(0).toUpperCase() +
-                      selectedOrder.status.slice(1)}
-                  </span>
+                  <div className="mt-1">
+                    <span
+                      className={`status-badge px-3 py-1 rounded-full text-xs ${statusBadge(
+                        selectedOrder.status
+                      )}`}
+                    >
+                      {selectedOrder.status.charAt(0).toUpperCase() +
+                        selectedOrder.status.slice(1)}
+                    </span>
+                  </div>
                 </div>
                 <div>
-                  <Label className="text-gray-500">Payment Method</Label>
-                  <p className="font-medium">{selectedOrder.paymentMethod}</p>
+                  <Label className="text-gray-500 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" />
+                    Payment
+                  </Label>
+                  <p className="font-medium mt-1">
+                    {selectedOrder.paymentMethod || "N/A"}
+                  </p>
+                  <span
+                    className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${
+                      selectedOrder.paymentStatus === "paid"
+                        ? "bg-green-100 text-green-700"
+                        : selectedOrder.paymentStatus === "pending"
+                        ? "bg-yellow-100 text-yellow-700"
+                        : selectedOrder.paymentStatus === "failed"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    {selectedOrder.paymentStatus?.charAt(0).toUpperCase() +
+                      selectedOrder.paymentStatus?.slice(1) || "N/A"}
+                  </span>
                 </div>
               </div>
+
+              {selectedOrder.shippingAddress && (
+                <div>
+                  <Label className="text-gray-500 flex items-center gap-2 mb-2">
+                    <MapPin className="w-4 h-4" />
+                    Shipping Address
+                  </Label>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <p className="font-medium">
+                      {selectedOrder.shippingAddress.street}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {selectedOrder.shippingAddress.city},{" "}
+                      {selectedOrder.shippingAddress.state}{" "}
+                      {selectedOrder.shippingAddress.zipCode}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {selectedOrder.shippingAddress.country}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {(selectedOrder as any).refund && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <Label className="text-red-700 font-semibold flex items-center gap-2 mb-2">
+                    <AlertCircle className="w-4 h-4" />
+                    Refund Information
+                  </Label>
+                  <p className="text-sm text-red-600">
+                    Amount:{" "}
+                    {formatCurrency((selectedOrder as any).refund.amount)}
+                  </p>
+                  <p className="text-sm text-red-600">
+                    Reason: {(selectedOrder as any).refund.reason || "N/A"}
+                  </p>
+                  <p className="text-sm text-red-600">
+                    Processed:{" "}
+                    {(selectedOrder as any).refund.processedAt
+                      ? formatDate((selectedOrder as any).refund.processedAt)
+                      : "N/A"}
+                  </p>
+                </div>
+              )}
+
+              {(selectedOrder as any).cancellationReason && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <Label className="text-orange-700 font-semibold flex items-center gap-2 mb-2">
+                    <X className="w-4 h-4" />
+                    Cancellation Reason
+                  </Label>
+                  <p className="text-sm text-orange-600">
+                    {(selectedOrder as any).cancellationReason}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <Label className="text-gray-500 mb-2 block">Items</Label>
                 <div className="space-y-2">
-                  {selectedOrder.items.map((item) => (
-                    <div
-                      key={item._id}
-                      className="flex justify-between border-b pb-2"
-                    >
-                      <div>
-                        <p className="font-medium">{item.title}</p>
-                        <p className="text-sm text-gray-500">
-                          Qty: {item.quantity}
+                  {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                    selectedOrder.items.map((item) => (
+                      <div
+                        key={item._id || Math.random()}
+                        className="flex justify-between border-b pb-2"
+                      >
+                        <div>
+                          <p className="font-medium">{item.title || "N/A"}</p>
+                          <p className="text-sm text-gray-500">
+                            Qty: {item.quantity || 0}
+                          </p>
+                        </div>
+                        <p className="font-medium">
+                          {formatCurrency(item.price || 0)}
                         </p>
                       </div>
-                      <p className="font-medium">
-                        {formatCurrency(item.price)}
-                      </p>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500">No items found</p>
+                  )}
                 </div>
               </div>
 
@@ -955,6 +1466,198 @@ export default function Orders() {
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               )}
               Delete Order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Tracking Number Dialog */}
+      <Dialog
+        open={actionDialog.type === "tracking"}
+        onOpenChange={(open) =>
+          !open && setActionDialog({ type: null, order: null })
+        }
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-blue-600" />
+              Update Tracking Number
+            </DialogTitle>
+            <DialogDescription>
+              Add or update tracking number for order{" "}
+              {actionDialog.order?.orderNumber}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="tracking-number">Tracking Number</Label>
+              <Input
+                id="tracking-number"
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+                placeholder="Enter tracking number..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setActionDialog({ type: null, order: null });
+                setTrackingNumber("");
+              }}
+              disabled={actionLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateTrackingNumber}
+              disabled={actionLoading || !trackingNumber}
+            >
+              {actionLoading && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Update Tracking
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Payment Status Dialog */}
+      <Dialog
+        open={actionDialog.type === "paymentStatus"}
+        onOpenChange={(open) =>
+          !open && setActionDialog({ type: null, order: null })
+        }
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-green-600" />
+              Update Payment Status
+            </DialogTitle>
+            <DialogDescription>
+              Update payment status for order {actionDialog.order?.orderNumber}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="payment-status">Payment Status</Label>
+              <Select
+                value={newPaymentStatus}
+                onValueChange={(value: any) => setNewPaymentStatus(value)}
+              >
+                <SelectTrigger id="payment-status">
+                  <SelectValue placeholder="Select payment status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="refunded">Refunded</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setActionDialog({ type: null, order: null })}
+              disabled={actionLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!actionDialog.order) return;
+                setActionLoading(true);
+                const result = await updateOrder(actionDialog.order._id, {
+                  paymentStatus: newPaymentStatus,
+                });
+                setActionLoading(false);
+                if (result) {
+                  setActionDialog({ type: null, order: null });
+                  fetchOrderStats();
+                }
+              }}
+              disabled={actionLoading}
+            >
+              {actionLoading && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Update Payment Status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Actions Dialog */}
+      <Dialog open={showBulkActions} onOpenChange={setShowBulkActions}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bulk Actions</DialogTitle>
+            <DialogDescription>
+              Apply action to {selectedOrders.length} selected orders
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Update Status</Label>
+              <Select
+                value={newStatus}
+                onValueChange={(value: any) => setNewStatus(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="processing">Processing</SelectItem>
+                  <SelectItem value="shipped">Shipped</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="refunded">Refunded</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Update Payment Status</Label>
+              <Select
+                value={newPaymentStatus}
+                onValueChange={(value: any) => setNewPaymentStatus(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select payment status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="refunded">Refunded</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowBulkActions(false)}
+              disabled={actionLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                await handleBulkStatusUpdate();
+                await handleBulkPaymentStatusUpdate();
+              }}
+              disabled={actionLoading}
+            >
+              {actionLoading && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Apply to Selected
             </Button>
           </DialogFooter>
         </DialogContent>

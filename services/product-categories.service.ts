@@ -120,6 +120,26 @@ class ProductCategoriesService {
             throw error;
         }
     }
+
+    async bulkUpdateStatus(ids: string[], status: "active" | "inactive"): Promise<{ updated: number }> {
+        try {
+            const { data } = await apiClient.post<{ data: { updated: number } }>("/products/categories/bulk/status", { ids, status });
+            return data.data;
+        } catch (error) {
+            console.error("Failed to bulk update category status:", error);
+            throw error;
+        }
+    }
+
+    async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
+        try {
+            const { data } = await apiClient.post<{ data: { deleted: number; errors: string[] } }>("/products/categories/bulk/delete", { ids });
+            return data.data;
+        } catch (error) {
+            console.error("Failed to bulk delete categories:", error);
+            throw error;
+        }
+    }
 }
 
 export const productCategoriesService = new ProductCategoriesService();

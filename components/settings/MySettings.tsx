@@ -48,6 +48,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import {
+  settingsService,
+  type SettingsData,
+} from "@/services/settings.service";
+import { useToast } from "@/context/ToastContext";
 
 interface SystemConfig {
   _id: string;
@@ -109,7 +114,17 @@ export default function MySettings({
   const [activeTab, setActiveTab] = React.useState(
     externalActiveTab || "General"
   );
-  const { updateConfig, testConnection } = useSystemSettings();
+  const { updateConfig, testConnection, bulkUpdateConfigs, isSaving } =
+    useSystemSettings();
+  const { push } = useToast();
+
+  // Change tracking
+  const [hasChanges, setHasChanges] = React.useState(false);
+  const [pendingChanges, setPendingChanges] = React.useState<
+    Record<string, any>
+  >({});
+  const [isLoading, setIsLoading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Payment Config Dialogs
   const [stripeDialogOpen, setStripeDialogOpen] = React.useState(false);
@@ -145,33 +160,135 @@ export default function MySettings({
     }
   }, [externalActiveTab]);
 
-  // Load payment configs from backend
+  // Initialize all settings from backend configs
   React.useEffect(() => {
-    const stripeConfig = configs.find((c) => c.key === "stripe_config");
-    const paypalConfig = configs.find((c) => c.key === "paypal_config");
+    if (configs.length === 0) return;
 
-    if (stripeConfig?.value) {
-      try {
-        const parsed = JSON.parse(stripeConfig.value);
-        setStripePublishableKey(parsed.publishableKey || "");
-        setStripeSecretKey(parsed.secretKey || "");
-        setStripeWebhookSecret(parsed.webhookSecret || "");
-      } catch (e) {
-        console.error("Failed to parse Stripe config", e);
-      }
-    }
+    setIsLoading(true);
+    try {
+      const settings = settingsService.mapConfigsToSettings(configs);
 
-    if (paypalConfig?.value) {
-      try {
-        const parsed = JSON.parse(paypalConfig.value);
-        setPaypalClientId(parsed.clientId || "");
-        setPaypalClientSecret(parsed.clientSecret || "");
-        setPaypalMode(parsed.mode || "sandbox");
-      } catch (e) {
-        console.error("Failed to parse PayPal config", e);
+      // General Settings
+      if (settings.platformName) setPlatformName(settings.platformName);
+      if (settings.platformUrl) setPlatformUrl(settings.platformUrl);
+      if (settings.contactEmail) setContactEmail(settings.contactEmail);
+      if (settings.supportPhone) setSupportPhone(settings.supportPhone);
+      if (settings.platformDesc) setPlatformDesc(settings.platformDesc);
+      if (settings.timeZone) setTimeZone(settings.timeZone);
+      if (settings.dateFormat) setDateFormat(settings.dateFormat);
+      if (settings.currency) setCurrency(settings.currency);
+      if (settings.units) setUnits(settings.units);
+      if (settings.defaultLanguage)
+        setDefaultLanguage(settings.defaultLanguage);
+      if (settings.autoDetectLang !== undefined)
+        setAutoDetectLang(settings.autoDetectLang);
+      if (settings.availableLangs) setAvailableLangs(settings.availableLangs);
+
+      // Performance
+      if (settings.cachingEnabled !== undefined)
+        setCachingEnabled(settings.cachingEnabled);
+      if (settings.imageOptimization !== undefined)
+        setImageOptimization(settings.imageOptimization);
+      if (settings.cdnEnabled !== undefined) setCdnEnabled(settings.cdnEnabled);
+      if (settings.cacheDuration) setCacheDuration(settings.cacheDuration);
+      if (settings.imageQuality) setImageQuality(settings.imageQuality);
+
+      // Security
+      if (settings.twoFactor !== undefined) setTwoFactor(settings.twoFactor);
+      if (settings.passwordPolicy) setPasswordPolicy(settings.passwordPolicy);
+      if (settings.sslEnforce !== undefined) setSslEnforce(settings.sslEnforce);
+      if (settings.apiRateLimit !== undefined)
+        setApiRateLimit(settings.apiRateLimit);
+      if (settings.sessionTimeout) setSessionTimeout(settings.sessionTimeout);
+
+      // Integrations
+      if (settings.shopifyConnected !== undefined)
+        setShopifyConnected(settings.shopifyConnected);
+      if (settings.gaConnected !== undefined)
+        setGaConnected(settings.gaConnected);
+      if (settings.emailServiceEnabled !== undefined)
+        setEmailServiceEnabled(settings.emailServiceEnabled);
+
+      // Branding
+      if (settings.brandPrimary) setBrandPrimary(settings.brandPrimary);
+      if (settings.brandSecondary) setBrandSecondary(settings.brandSecondary);
+      if (settings.brandAccent) setBrandAccent(settings.brandAccent);
+      if (settings.logoUrl) setLogoUrl(settings.logoUrl);
+      if (settings.faviconUrl) setFaviconUrl(settings.faviconUrl);
+
+      // Payments
+      if (settings.stripeEnabled !== undefined)
+        setStripeEnabled(settings.stripeEnabled);
+      if (settings.paypalEnabled !== undefined)
+        setPaypalEnabled(settings.paypalEnabled);
+      if (settings.stripeConfig) {
+        setStripePublishableKey(settings.stripeConfig.publishableKey || "");
+        setStripeSecretKey(settings.stripeConfig.secretKey || "");
+        setStripeWebhookSecret(settings.stripeConfig.webhookSecret || "");
       }
+      if (settings.paypalConfig) {
+        setPaypalClientId(settings.paypalConfig.clientId || "");
+        setPaypalClientSecret(settings.paypalConfig.clientSecret || "");
+        setPaypalMode(settings.paypalConfig.mode || "sandbox");
+      }
+      if (settings.invoicePrefix) setInvoicePrefix(settings.invoicePrefix);
+      if (settings.taxRate) setTaxRate(settings.taxRate);
+      if (settings.paymentCurrency)
+        setPaymentCurrency(settings.paymentCurrency);
+
+      // SEO
+      if (settings.seoTitle) setSeoTitle(settings.seoTitle);
+      if (settings.seoDescription) setSeoDescription(settings.seoDescription);
+      if (settings.seoKeywords) setSeoKeywords(settings.seoKeywords);
+      if (settings.ogImage) setOgImage(settings.ogImage);
+      if (settings.sitemapEnabled !== undefined)
+        setSitemapEnabled(settings.sitemapEnabled);
+      if (settings.robotsIndex) setRobotsIndex(settings.robotsIndex);
+      if (settings.canonicalUrl) setCanonicalUrl(settings.canonicalUrl);
+
+      // Backup
+      if (settings.backupFrequency)
+        setBackupFrequency(settings.backupFrequency);
+      if (settings.retentionPeriod)
+        setRetentionPeriod(settings.retentionPeriod);
+      if (settings.backupDestination)
+        setBackupDestination(settings.backupDestination);
+      if (settings.encryptionEnabled !== undefined)
+        setEncryptionEnabled(settings.encryptionEnabled);
+
+      // Notifications
+      if (settings.notificationPrefs) {
+        const prefs = settings.notificationPrefs;
+        if (prefs.system) {
+          setSystemPrefs((prev) =>
+            prev.map((p) => {
+              const found = prefs.system?.find((s) => s.id === p.id);
+              return found ? { ...p, enabled: found.enabled } : p;
+            })
+          );
+        }
+        if (prefs.emailMarketing) {
+          setEmailMarketing((prev) => ({ ...prev, ...prefs.emailMarketing }));
+        }
+        if (prefs.emailEducation) {
+          setEmailEducation((prev) => ({ ...prev, ...prefs.emailEducation }));
+        }
+        if (prefs.quietStart) setQuietStart(prefs.quietStart);
+        if (prefs.quietEnd) setQuietEnd(prefs.quietEnd);
+        if (prefs.days) setDays(prefs.days);
+        if (prefs.pushEnabled !== undefined) setPushEnabled(prefs.pushEnabled);
+        if (prefs.smsEnabled !== undefined) setSmsEnabled(prefs.smsEnabled);
+      }
+    } catch (error) {
+      console.error("Failed to initialize settings from configs:", error);
+      push({
+        message: "Failed to load settings from backend",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
     }
-  }, [configs]);
+  }, [configs, push]);
 
   const handleSaveStripeConfig = async () => {
     try {
@@ -392,27 +509,614 @@ export default function MySettings({
     }
   };
 
-  // Handle export settings
-  const handleExportSettings = () => {
-    const settings = {
-      system: systemPrefs,
-      email: { marketing: emailMarketing, education: emailEducation },
-      schedule: { quietStart, quietEnd, days },
-      push: pushEnabled,
-      sms: smsEnabled,
+  // Track changes
+  const markAsChanged = React.useCallback((key: string, value: any) => {
+    setPendingChanges((prev) => ({ ...prev, [key]: value }));
+    setHasChanges(true);
+  }, []);
+
+  // Helper to wrap setState with change tracking
+  const createChangeHandler = React.useCallback(
+    <T,>(setter: React.Dispatch<React.SetStateAction<T>>, key: string) => {
+      return (value: T) => {
+        setter(value);
+        markAsChanged(key, value);
+      };
+    },
+    [markAsChanged]
+  );
+
+  // Validation helper
+  const validateSettings = React.useCallback((): {
+    isValid: boolean;
+    errors: string[];
+  } => {
+    const errors: string[] = [];
+
+    if (!platformName?.trim()) {
+      errors.push("Platform name is required");
+    }
+
+    if (platformUrl && !/^https?:\/\/.+\..+/.test(platformUrl)) {
+      errors.push("Platform URL must be a valid URL");
+    }
+
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+      errors.push("Contact email must be a valid email address");
+    }
+
+    if (seoTitle && seoTitle.length > 60) {
+      errors.push("SEO title should be 60 characters or less");
+    }
+
+    if (seoDescription && seoDescription.length > 160) {
+      errors.push("SEO description should be 160 characters or less");
+    }
+
+    if (stripeEnabled && (!stripePublishableKey || !stripeSecretKey)) {
+      errors.push("Stripe credentials are required when Stripe is enabled");
+    }
+
+    if (paypalEnabled && (!paypalClientId || !paypalClientSecret)) {
+      errors.push("PayPal credentials are required when PayPal is enabled");
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
     };
-    const blob = new Blob([JSON.stringify(settings, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `notification-settings-${
-      new Date().toISOString().split("T")[0]
-    }.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  }, [
+    platformName,
+    platformUrl,
+    contactEmail,
+    seoTitle,
+    seoDescription,
+    stripeEnabled,
+    stripePublishableKey,
+    stripeSecretKey,
+    paypalEnabled,
+    paypalClientId,
+    paypalClientSecret,
+  ]);
+
+  // Handle export settings
+  const handleExportSettings = React.useCallback(() => {
+    try {
+      const settings: SettingsData = {
+        platformName,
+        platformUrl,
+        contactEmail,
+        supportPhone,
+        platformDesc,
+        timeZone,
+        dateFormat,
+        currency,
+        units,
+        defaultLanguage,
+        autoDetectLang,
+        availableLangs,
+        cachingEnabled,
+        imageOptimization,
+        cdnEnabled,
+        cacheDuration,
+        imageQuality,
+        twoFactor,
+        passwordPolicy,
+        sslEnforce,
+        apiRateLimit,
+        sessionTimeout,
+        shopifyConnected,
+        gaConnected,
+        emailServiceEnabled,
+        brandPrimary,
+        brandSecondary,
+        brandAccent,
+        logoUrl,
+        faviconUrl,
+        stripeEnabled,
+        paypalEnabled,
+        stripeConfig: {
+          publishableKey: stripePublishableKey,
+          secretKey: stripeSecretKey,
+          webhookSecret: stripeWebhookSecret,
+        },
+        paypalConfig: {
+          clientId: paypalClientId,
+          clientSecret: paypalClientSecret,
+          mode: paypalMode,
+        },
+        invoicePrefix,
+        taxRate,
+        paymentCurrency,
+        seoTitle,
+        seoDescription,
+        seoKeywords,
+        ogImage,
+        sitemapEnabled,
+        robotsIndex,
+        canonicalUrl,
+        backupFrequency,
+        retentionPeriod,
+        backupDestination,
+        encryptionEnabled,
+        notificationPrefs: {
+          system: systemPrefs.map((p) => ({ id: p.id, enabled: p.enabled })),
+          emailMarketing,
+          emailEducation,
+          quietStart,
+          quietEnd,
+          days,
+          pushEnabled,
+          smsEnabled,
+        },
+      };
+
+      const json = settingsService.exportSettings(settings);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `settings-export-${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      push({
+        message: "Settings exported successfully",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Failed to export settings:", error);
+      push({
+        message: "Failed to export settings",
+        type: "error",
+      });
+    }
+  }, [
+    platformName,
+    platformUrl,
+    contactEmail,
+    supportPhone,
+    platformDesc,
+    timeZone,
+    dateFormat,
+    currency,
+    units,
+    defaultLanguage,
+    autoDetectLang,
+    availableLangs,
+    cachingEnabled,
+    imageOptimization,
+    cdnEnabled,
+    cacheDuration,
+    imageQuality,
+    twoFactor,
+    passwordPolicy,
+    sslEnforce,
+    apiRateLimit,
+    sessionTimeout,
+    shopifyConnected,
+    gaConnected,
+    emailServiceEnabled,
+    brandPrimary,
+    brandSecondary,
+    brandAccent,
+    logoUrl,
+    faviconUrl,
+    stripeEnabled,
+    paypalEnabled,
+    stripePublishableKey,
+    stripeSecretKey,
+    stripeWebhookSecret,
+    paypalClientId,
+    paypalClientSecret,
+    paypalMode,
+    invoicePrefix,
+    taxRate,
+    paymentCurrency,
+    seoTitle,
+    seoDescription,
+    seoKeywords,
+    ogImage,
+    sitemapEnabled,
+    robotsIndex,
+    canonicalUrl,
+    backupFrequency,
+    retentionPeriod,
+    backupDestination,
+    encryptionEnabled,
+    systemPrefs,
+    emailMarketing,
+    emailEducation,
+    quietStart,
+    quietEnd,
+    days,
+    pushEnabled,
+    smsEnabled,
+    push,
+  ]);
+
+  // Handle import settings
+  const handleImportSettings = React.useCallback(async () => {
+    if (!fileInputRef.current) return;
+
+    fileInputRef.current.click();
+  }, []);
+
+  const handleFileChange = React.useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const settings = settingsService.importSettings(text);
+
+        // Apply imported settings
+        if (settings.platformName) setPlatformName(settings.platformName);
+        if (settings.platformUrl) setPlatformUrl(settings.platformUrl);
+        if (settings.contactEmail) setContactEmail(settings.contactEmail);
+        if (settings.supportPhone) setSupportPhone(settings.supportPhone);
+        if (settings.platformDesc) setPlatformDesc(settings.platformDesc);
+        if (settings.timeZone) setTimeZone(settings.timeZone);
+        if (settings.dateFormat) setDateFormat(settings.dateFormat);
+        if (settings.currency) setCurrency(settings.currency);
+        if (settings.units) setUnits(settings.units);
+        if (settings.defaultLanguage)
+          setDefaultLanguage(settings.defaultLanguage);
+        if (settings.autoDetectLang !== undefined)
+          setAutoDetectLang(settings.autoDetectLang);
+        if (settings.availableLangs) setAvailableLangs(settings.availableLangs);
+        if (settings.cachingEnabled !== undefined)
+          setCachingEnabled(settings.cachingEnabled);
+        if (settings.imageOptimization !== undefined)
+          setImageOptimization(settings.imageOptimization);
+        if (settings.cdnEnabled !== undefined)
+          setCdnEnabled(settings.cdnEnabled);
+        if (settings.cacheDuration) setCacheDuration(settings.cacheDuration);
+        if (settings.imageQuality) setImageQuality(settings.imageQuality);
+        if (settings.twoFactor !== undefined) setTwoFactor(settings.twoFactor);
+        if (settings.passwordPolicy) setPasswordPolicy(settings.passwordPolicy);
+        if (settings.sslEnforce !== undefined)
+          setSslEnforce(settings.sslEnforce);
+        if (settings.apiRateLimit !== undefined)
+          setApiRateLimit(settings.apiRateLimit);
+        if (settings.sessionTimeout) setSessionTimeout(settings.sessionTimeout);
+        if (settings.shopifyConnected !== undefined)
+          setShopifyConnected(settings.shopifyConnected);
+        if (settings.gaConnected !== undefined)
+          setGaConnected(settings.gaConnected);
+        if (settings.emailServiceEnabled !== undefined)
+          setEmailServiceEnabled(settings.emailServiceEnabled);
+        if (settings.brandPrimary) setBrandPrimary(settings.brandPrimary);
+        if (settings.brandSecondary) setBrandSecondary(settings.brandSecondary);
+        if (settings.brandAccent) setBrandAccent(settings.brandAccent);
+        if (settings.logoUrl) setLogoUrl(settings.logoUrl);
+        if (settings.faviconUrl) setFaviconUrl(settings.faviconUrl);
+        if (settings.stripeEnabled !== undefined)
+          setStripeEnabled(settings.stripeEnabled);
+        if (settings.paypalEnabled !== undefined)
+          setPaypalEnabled(settings.paypalEnabled);
+        if (settings.stripeConfig) {
+          setStripePublishableKey(settings.stripeConfig.publishableKey || "");
+          setStripeSecretKey(settings.stripeConfig.secretKey || "");
+          setStripeWebhookSecret(settings.stripeConfig.webhookSecret || "");
+        }
+        if (settings.paypalConfig) {
+          setPaypalClientId(settings.paypalConfig.clientId || "");
+          setPaypalClientSecret(settings.paypalConfig.clientSecret || "");
+          setPaypalMode(settings.paypalConfig.mode || "sandbox");
+        }
+        if (settings.invoicePrefix) setInvoicePrefix(settings.invoicePrefix);
+        if (settings.taxRate) setTaxRate(settings.taxRate);
+        if (settings.paymentCurrency)
+          setPaymentCurrency(settings.paymentCurrency);
+        if (settings.seoTitle) setSeoTitle(settings.seoTitle);
+        if (settings.seoDescription) setSeoDescription(settings.seoDescription);
+        if (settings.seoKeywords) setSeoKeywords(settings.seoKeywords);
+        if (settings.ogImage) setOgImage(settings.ogImage);
+        if (settings.sitemapEnabled !== undefined)
+          setSitemapEnabled(settings.sitemapEnabled);
+        if (settings.robotsIndex) setRobotsIndex(settings.robotsIndex);
+        if (settings.canonicalUrl) setCanonicalUrl(settings.canonicalUrl);
+        if (settings.backupFrequency)
+          setBackupFrequency(settings.backupFrequency);
+        if (settings.retentionPeriod)
+          setRetentionPeriod(settings.retentionPeriod);
+        if (settings.backupDestination)
+          setBackupDestination(settings.backupDestination);
+        if (settings.encryptionEnabled !== undefined)
+          setEncryptionEnabled(settings.encryptionEnabled);
+        if (settings.notificationPrefs) {
+          const prefs = settings.notificationPrefs;
+          if (prefs.system) {
+            setSystemPrefs((prev) =>
+              prev.map((p) => {
+                const found = prefs.system?.find((s) => s.id === p.id);
+                return found ? { ...p, enabled: found.enabled } : p;
+              })
+            );
+          }
+          if (prefs.emailMarketing) {
+            setEmailMarketing((prev) => ({ ...prev, ...prefs.emailMarketing }));
+          }
+          if (prefs.emailEducation) {
+            setEmailEducation((prev) => ({ ...prev, ...prefs.emailEducation }));
+          }
+          if (prefs.quietStart) setQuietStart(prefs.quietStart);
+          if (prefs.quietEnd) setQuietEnd(prefs.quietEnd);
+          if (prefs.days) setDays(prefs.days);
+          if (prefs.pushEnabled !== undefined)
+            setPushEnabled(prefs.pushEnabled);
+          if (prefs.smsEnabled !== undefined) setSmsEnabled(prefs.smsEnabled);
+        }
+
+        setHasChanges(true);
+        push({
+          message:
+            "Settings imported successfully. Click Save to apply changes.",
+          type: "success",
+        });
+      } catch (error) {
+        console.error("Failed to import settings:", error);
+        push({
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to import settings",
+          type: "error",
+        });
+      } finally {
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      }
+    },
+    [push]
+  );
+
+  // Save all changes
+  const handleSaveAll = React.useCallback(async () => {
+    if (!hasChanges && Object.keys(pendingChanges).length === 0) {
+      push({
+        message: "No changes to save",
+        type: "info",
+      });
+      return;
+    }
+
+    // Validate before saving
+    const validation = validateSettings();
+    if (!validation.isValid) {
+      push({
+        message: `Validation failed: ${validation.errors.join(", ")}`,
+        type: "error",
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      const settings: Partial<SettingsData> = {
+        platformName,
+        platformUrl,
+        contactEmail,
+        supportPhone,
+        platformDesc,
+        timeZone,
+        dateFormat,
+        currency,
+        units,
+        defaultLanguage,
+        autoDetectLang,
+        availableLangs,
+        cachingEnabled,
+        imageOptimization,
+        cdnEnabled,
+        cacheDuration,
+        imageQuality,
+        twoFactor,
+        passwordPolicy,
+        sslEnforce,
+        apiRateLimit,
+        sessionTimeout,
+        shopifyConnected,
+        gaConnected,
+        emailServiceEnabled,
+        brandPrimary,
+        brandSecondary,
+        brandAccent,
+        logoUrl,
+        faviconUrl,
+        stripeEnabled,
+        paypalEnabled,
+        stripeConfig: {
+          publishableKey: stripePublishableKey,
+          secretKey: stripeSecretKey,
+          webhookSecret: stripeWebhookSecret,
+        },
+        paypalConfig: {
+          clientId: paypalClientId,
+          clientSecret: paypalClientSecret,
+          mode: paypalMode,
+        },
+        invoicePrefix,
+        taxRate,
+        paymentCurrency,
+        seoTitle,
+        seoDescription,
+        seoKeywords,
+        ogImage,
+        sitemapEnabled,
+        robotsIndex,
+        canonicalUrl,
+        backupFrequency,
+        retentionPeriod,
+        backupDestination,
+        encryptionEnabled,
+        notificationPrefs: {
+          system: systemPrefs.map((p) => ({ id: p.id, enabled: p.enabled })),
+          emailMarketing,
+          emailEducation,
+          quietStart,
+          quietEnd,
+          days,
+          pushEnabled,
+          smsEnabled,
+        },
+      };
+
+      const updates = settingsService.mapSettingsToBulkUpdate(settings);
+      await bulkUpdateConfigs(updates);
+
+      setPendingChanges({});
+      setHasChanges(false);
+
+      if (onConfigChange) {
+        updates.forEach((update) => {
+          onConfigChange(update.key, update.value);
+        });
+      }
+
+      push({
+        message: "Settings saved successfully",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Failed to save settings:", error);
+      push({
+        message:
+          error instanceof Error ? error.message : "Failed to save settings",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    hasChanges,
+    pendingChanges,
+    platformName,
+    platformUrl,
+    contactEmail,
+    supportPhone,
+    platformDesc,
+    timeZone,
+    dateFormat,
+    currency,
+    units,
+    defaultLanguage,
+    autoDetectLang,
+    availableLangs,
+    cachingEnabled,
+    imageOptimization,
+    cdnEnabled,
+    cacheDuration,
+    imageQuality,
+    twoFactor,
+    passwordPolicy,
+    sslEnforce,
+    apiRateLimit,
+    sessionTimeout,
+    shopifyConnected,
+    gaConnected,
+    emailServiceEnabled,
+    brandPrimary,
+    brandSecondary,
+    brandAccent,
+    logoUrl,
+    faviconUrl,
+    stripeEnabled,
+    paypalEnabled,
+    stripePublishableKey,
+    stripeSecretKey,
+    stripeWebhookSecret,
+    paypalClientId,
+    paypalClientSecret,
+    paypalMode,
+    invoicePrefix,
+    taxRate,
+    paymentCurrency,
+    seoTitle,
+    seoDescription,
+    seoKeywords,
+    ogImage,
+    sitemapEnabled,
+    robotsIndex,
+    canonicalUrl,
+    backupFrequency,
+    retentionPeriod,
+    backupDestination,
+    encryptionEnabled,
+    systemPrefs,
+    emailMarketing,
+    emailEducation,
+    quietStart,
+    quietEnd,
+    days,
+    pushEnabled,
+    smsEnabled,
+    bulkUpdateConfigs,
+    onConfigChange,
+    push,
+  ]);
+
+  // Reset to defaults (reload from backend)
+  const [resetConfirmOpen, setResetConfirmOpen] = React.useState(false);
+
+  const handleResetToDefaults = React.useCallback(async () => {
+    if (hasChanges) {
+      setResetConfirmOpen(true);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      // This will trigger the useEffect to reload from configs
+      if (onConfigChange) {
+        onConfigChange("refresh", "");
+      }
+      setPendingChanges({});
+      setHasChanges(false);
+      push({
+        message: "Settings reset to saved values",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Failed to reset settings:", error);
+      push({
+        message: "Failed to reset settings",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [hasChanges, onConfigChange, push]);
+
+  const confirmReset = React.useCallback(async () => {
+    setResetConfirmOpen(false);
+    try {
+      setIsLoading(true);
+      if (onConfigChange) {
+        onConfigChange("refresh", "");
+      }
+      setPendingChanges({});
+      setHasChanges(false);
+      push({
+        message: "Settings reset to saved values",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Failed to reset settings:", error);
+      push({
+        message: "Failed to reset settings",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onConfigChange, push]);
 
   function resetToDefault() {
     setPlatformName("Personal Wings");
@@ -452,6 +1156,79 @@ export default function MySettings({
 
   return (
     <>
+      {/* Hidden file input for import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      {/* Global Action Bar */}
+      <div className="mb-6 flex items-center justify-between bg-card rounded-xl p-4 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-2">
+          {hasChanges && (
+            <span className="text-sm text-amber-600 font-medium">
+              You have unsaved changes
+            </span>
+          )}
+          {isLoading && (
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleImportSettings}
+            disabled={isLoading || isSaving}
+            className="flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            Import
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleExportSettings}
+            disabled={isLoading || isSaving}
+            className="flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleResetToDefaults}
+            disabled={isLoading || isSaving}
+            className="flex items-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Reset
+          </Button>
+          <Button
+            onClick={handleSaveAll}
+            disabled={
+              (!hasChanges && Object.keys(pendingChanges).length === 0) ||
+              isLoading ||
+              isSaving
+            }
+            className="flex items-center gap-2 bg-primary hover:bg-primary/90"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                Save All Changes
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
       {activeTab === "General" && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
           <div className="lg:col-span-1">
@@ -534,7 +1311,10 @@ export default function MySettings({
                   </label>
                   <Select
                     value={cacheDuration}
-                    onValueChange={setCacheDuration}
+                    onValueChange={(v) => {
+                      setCacheDuration(v);
+                      markAsChanged("cacheDuration", v);
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -551,7 +1331,13 @@ export default function MySettings({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Image Quality
                   </label>
-                  <Select value={imageQuality} onValueChange={setImageQuality}>
+                  <Select
+                    value={imageQuality}
+                    onValueChange={(v) => {
+                      setImageQuality(v);
+                      markAsChanged("imageQuality", v);
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -582,7 +1368,10 @@ export default function MySettings({
                   </label>
                   <input
                     value={platformName}
-                    onChange={(e) => setPlatformName(e.target.value)}
+                    onChange={(e) => {
+                      setPlatformName(e.target.value);
+                      markAsChanged("platformName", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -592,7 +1381,11 @@ export default function MySettings({
                   </label>
                   <input
                     value={platformUrl}
-                    onChange={(e) => setPlatformUrl(e.target.value)}
+                    onChange={(e) => {
+                      setPlatformUrl(e.target.value);
+                      markAsChanged("platformUrl", e.target.value);
+                    }}
+                    type="url"
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -603,7 +1396,10 @@ export default function MySettings({
                   <input
                     type="email"
                     value={contactEmail}
-                    onChange={(e) => setContactEmail(e.target.value)}
+                    onChange={(e) => {
+                      setContactEmail(e.target.value);
+                      markAsChanged("contactEmail", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -613,7 +1409,10 @@ export default function MySettings({
                   </label>
                   <input
                     value={supportPhone}
-                    onChange={(e) => setSupportPhone(e.target.value)}
+                    onChange={(e) => {
+                      setSupportPhone(e.target.value);
+                      markAsChanged("supportPhone", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -625,7 +1424,10 @@ export default function MySettings({
                 <textarea
                   rows={3}
                   value={platformDesc}
-                  onChange={(e) => setPlatformDesc(e.target.value)}
+                  onChange={(e) => {
+                    setPlatformDesc(e.target.value);
+                    markAsChanged("platformDesc", e.target.value);
+                  }}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
@@ -640,7 +1442,13 @@ export default function MySettings({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Time Zone
                   </label>
-                  <Select value={timeZone} onValueChange={setTimeZone}>
+                  <Select
+                    value={timeZone}
+                    onValueChange={(v) => {
+                      setTimeZone(v);
+                      markAsChanged("timeZone", v);
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -667,7 +1475,13 @@ export default function MySettings({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Date Format
                   </label>
-                  <Select value={dateFormat} onValueChange={setDateFormat}>
+                  <Select
+                    value={dateFormat}
+                    onValueChange={(v) => {
+                      setDateFormat(v);
+                      markAsChanged("dateFormat", v);
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -688,7 +1502,13 @@ export default function MySettings({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Currency
                   </label>
-                  <Select value={currency} onValueChange={setCurrency}>
+                  <Select
+                    value={currency}
+                    onValueChange={(v) => {
+                      setCurrency(v);
+                      markAsChanged("currency", v);
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -713,7 +1533,13 @@ export default function MySettings({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Measurement Units
                   </label>
-                  <Select value={units} onValueChange={setUnits}>
+                  <Select
+                    value={units}
+                    onValueChange={(v) => {
+                      setUnits(v);
+                      markAsChanged("units", v);
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -741,7 +1567,10 @@ export default function MySettings({
                   </label>
                   <Select
                     value={defaultLanguage}
-                    onValueChange={setDefaultLanguage}
+                    onValueChange={(v) => {
+                      setDefaultLanguage(v);
+                      markAsChanged("defaultLanguage", v);
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -766,7 +1595,10 @@ export default function MySettings({
                     </span>
                     <Toggle
                       checked={autoDetectLang}
-                      onChange={setAutoDetectLang}
+                      onChange={(v) => {
+                        setAutoDetectLang(v);
+                        markAsChanged("autoDetectLang", v);
+                      }}
                     />
                   </div>
                 </div>
@@ -780,9 +1612,11 @@ export default function MySettings({
                     <label key={lang} className="flex items-center space-x-2">
                       <Checkbox
                         checked={availableLangs[lang]}
-                        onCheckedChange={(v) =>
-                          setAvailableLangs((s) => ({ ...s, [lang]: !!v }))
-                        }
+                        onCheckedChange={(v) => {
+                          const newLangs = { ...availableLangs, [lang]: !!v };
+                          setAvailableLangs(newLangs);
+                          markAsChanged("availableLangs", newLangs);
+                        }}
                       />
                       <span className="text-sm">{lang}</span>
                     </label>
@@ -807,7 +1641,10 @@ export default function MySettings({
                   </div>
                   <Toggle
                     checked={cachingEnabled}
-                    onChange={setCachingEnabled}
+                    onChange={(v) => {
+                      setCachingEnabled(v);
+                      markAsChanged("cachingEnabled", v);
+                    }}
                   />
                 </div>
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
@@ -821,7 +1658,10 @@ export default function MySettings({
                   </div>
                   <Toggle
                     checked={imageOptimization}
-                    onChange={setImageOptimization}
+                    onChange={(v) => {
+                      setImageOptimization(v);
+                      markAsChanged("imageOptimization", v);
+                    }}
                   />
                 </div>
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
@@ -833,7 +1673,13 @@ export default function MySettings({
                       Minify CSS and JavaScript files
                     </div>
                   </div>
-                  <Toggle checked={cdnEnabled} onChange={setCdnEnabled} />
+                  <Toggle
+                    checked={cdnEnabled}
+                    onChange={(v) => {
+                      setCdnEnabled(v);
+                      markAsChanged("cdnEnabled", v);
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -852,7 +1698,13 @@ export default function MySettings({
                       Add an extra layer of account protection
                     </div>
                   </div>
-                  <Toggle checked={twoFactor} onChange={setTwoFactor} />
+                  <Toggle
+                    checked={twoFactor}
+                    onChange={(v) => {
+                      setTwoFactor(v);
+                      markAsChanged("twoFactor", v);
+                    }}
+                  />
                 </div>
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
@@ -863,7 +1715,13 @@ export default function MySettings({
                       Force HTTPS for all endpoints
                     </div>
                   </div>
-                  <Toggle checked={sslEnforce} onChange={setSslEnforce} />
+                  <Toggle
+                    checked={sslEnforce}
+                    onChange={(v) => {
+                      setSslEnforce(v);
+                      markAsChanged("sslEnforce", v);
+                    }}
+                  />
                 </div>
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
@@ -874,7 +1732,13 @@ export default function MySettings({
                       Prevent excessive API requests
                     </div>
                   </div>
-                  <Toggle checked={apiRateLimit} onChange={setApiRateLimit} />
+                  <Toggle
+                    checked={apiRateLimit}
+                    onChange={(v) => {
+                      setApiRateLimit(v);
+                      markAsChanged("apiRateLimit", v);
+                    }}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
@@ -1074,7 +1938,17 @@ export default function MySettings({
                 <Button
                   variant="outline"
                   className="w-full justify-start border-gray-300"
+                  onClick={handleImportSettings}
+                  disabled={isLoading || isSaving}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Import Settings
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start border-gray-300"
                   onClick={handleExportSettings}
+                  disabled={isLoading || isSaving}
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Export Settings
@@ -1091,7 +1965,16 @@ export default function MySettings({
                 </h4>
                 <div className="flex items-center space-x-2">
                   <span className="text-sm text-gray-500">Enable All</span>
-                  <Toggle checked={enableAll} onChange={setEnableAll} />
+                  <Toggle
+                    checked={enableAll}
+                    onChange={(v) => {
+                      setEnableAll(v);
+                      setSystemPrefs((prev) =>
+                        prev.map((p) => ({ ...p, enabled: v }))
+                      );
+                      markAsChanged("enableAll", v);
+                    }}
+                  />
                 </div>
               </div>
               <div className="relative mb-4">
@@ -1140,13 +2023,13 @@ export default function MySettings({
                       </div>
                       <Toggle
                         checked={p.enabled}
-                        onChange={(v) =>
-                          setSystemPrefs((prev) =>
-                            prev.map((i) =>
-                              i.id === p.id ? { ...i, enabled: v } : i
-                            )
-                          )
-                        }
+                        onChange={(v) => {
+                          const updated = systemPrefs.map((i) =>
+                            i.id === p.id ? { ...i, enabled: v } : i
+                          );
+                          setSystemPrefs(updated);
+                          markAsChanged("systemPrefs", updated);
+                        }}
                       />
                     </div>
                   );
@@ -1176,9 +2059,11 @@ export default function MySettings({
                       </div>
                       <Toggle
                         checked={emailMarketing.newsletter}
-                        onChange={(v) =>
-                          setEmailMarketing((s) => ({ ...s, newsletter: v }))
-                        }
+                        onChange={(v) => {
+                          const updated = { ...emailMarketing, newsletter: v };
+                          setEmailMarketing(updated);
+                          markAsChanged("emailMarketing", updated);
+                        }}
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -1192,12 +2077,14 @@ export default function MySettings({
                       </div>
                       <Toggle
                         checked={emailMarketing.productUpdates}
-                        onChange={(v) =>
-                          setEmailMarketing((s) => ({
-                            ...s,
+                        onChange={(v) => {
+                          const updated = {
+                            ...emailMarketing,
                             productUpdates: v,
-                          }))
-                        }
+                          };
+                          setEmailMarketing(updated);
+                          markAsChanged("emailMarketing", updated);
+                        }}
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -1211,9 +2098,14 @@ export default function MySettings({
                       </div>
                       <Toggle
                         checked={emailMarketing.specialOffers}
-                        onChange={(v) =>
-                          setEmailMarketing((s) => ({ ...s, specialOffers: v }))
-                        }
+                        onChange={(v) => {
+                          const updated = {
+                            ...emailMarketing,
+                            specialOffers: v,
+                          };
+                          setEmailMarketing(updated);
+                          markAsChanged("emailMarketing", updated);
+                        }}
                       />
                     </div>
                   </div>
@@ -1234,12 +2126,14 @@ export default function MySettings({
                       </div>
                       <Toggle
                         checked={emailEducation.courseRecommendations}
-                        onChange={(v) =>
-                          setEmailEducation((s) => ({
-                            ...s,
+                        onChange={(v) => {
+                          const updated = {
+                            ...emailEducation,
                             courseRecommendations: v,
-                          }))
-                        }
+                          };
+                          setEmailEducation(updated);
+                          markAsChanged("emailEducation", updated);
+                        }}
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -1251,9 +2145,14 @@ export default function MySettings({
                       </div>
                       <Toggle
                         checked={emailEducation.learningTips}
-                        onChange={(v) =>
-                          setEmailEducation((s) => ({ ...s, learningTips: v }))
-                        }
+                        onChange={(v) => {
+                          const updated = {
+                            ...emailEducation,
+                            learningTips: v,
+                          };
+                          setEmailEducation(updated);
+                          markAsChanged("emailEducation", updated);
+                        }}
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -1265,9 +2164,14 @@ export default function MySettings({
                       </div>
                       <Toggle
                         checked={emailEducation.industryNews}
-                        onChange={(v) =>
-                          setEmailEducation((s) => ({ ...s, industryNews: v }))
-                        }
+                        onChange={(v) => {
+                          const updated = {
+                            ...emailEducation,
+                            industryNews: v,
+                          };
+                          setEmailEducation(updated);
+                          markAsChanged("emailEducation", updated);
+                        }}
                       />
                     </div>
                   </div>
@@ -1292,7 +2196,13 @@ export default function MySettings({
                       <label className="text-xs text-gray-500 mb-1">
                         Start Time
                       </label>
-                      <Select value={quietStart} onValueChange={setQuietStart}>
+                      <Select
+                        value={quietStart}
+                        onValueChange={(v) => {
+                          setQuietStart(v);
+                          markAsChanged("quietStart", v);
+                        }}
+                      >
                         <SelectTrigger className="w-full">
                           <SelectValue />
                         </SelectTrigger>
@@ -1307,7 +2217,13 @@ export default function MySettings({
                       <label className="text-xs text-gray-500 mb-1">
                         End Time
                       </label>
-                      <Select value={quietEnd} onValueChange={setQuietEnd}>
+                      <Select
+                        value={quietEnd}
+                        onValueChange={(v) => {
+                          setQuietEnd(v);
+                          markAsChanged("quietEnd", v);
+                        }}
+                      >
                         <SelectTrigger className="w-full">
                           <SelectValue />
                         </SelectTrigger>
@@ -1329,9 +2245,11 @@ export default function MySettings({
                       <label key={d} className="inline-flex items-center">
                         <Checkbox
                           checked={days[d]}
-                          onCheckedChange={(v) =>
-                            setDays((s) => ({ ...s, [d]: !!v }))
-                          }
+                          onCheckedChange={(v) => {
+                            const updated = { ...days, [d]: !!v };
+                            setDays(updated);
+                            markAsChanged("days", updated);
+                          }}
                         />
                         <span className="ml-2 text-sm">{d}</span>
                       </label>
@@ -1361,7 +2279,13 @@ export default function MySettings({
                     <span className="text-sm text-gray-500">
                       Enabled for all devices
                     </span>
-                    <Toggle checked={pushEnabled} onChange={setPushEnabled} />
+                    <Toggle
+                      checked={pushEnabled}
+                      onChange={(v) => {
+                        setPushEnabled(v);
+                        markAsChanged("pushEnabled", v);
+                      }}
+                    />
                   </div>
                 </div>
                 <div
@@ -1385,7 +2309,13 @@ export default function MySettings({
                     <span className="text-sm text-gray-500">
                       Standard rates may apply
                     </span>
-                    <Toggle checked={smsEnabled} onChange={setSmsEnabled} />
+                    <Toggle
+                      checked={smsEnabled}
+                      onChange={(v) => {
+                        setSmsEnabled(v);
+                        markAsChanged("smsEnabled", v);
+                      }}
+                    />
                   </div>
                 </div>
               </div>
@@ -1409,7 +2339,10 @@ export default function MySettings({
                   <input
                     type="text"
                     value={logoUrl}
-                    onChange={(e) => setLogoUrl(e.target.value)}
+                    onChange={(e) => {
+                      setLogoUrl(e.target.value);
+                      markAsChanged("logoUrl", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -1420,7 +2353,10 @@ export default function MySettings({
                   <input
                     type="text"
                     value={faviconUrl}
-                    onChange={(e) => setFaviconUrl(e.target.value)}
+                    onChange={(e) => {
+                      setFaviconUrl(e.target.value);
+                      markAsChanged("faviconUrl", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -1440,13 +2376,19 @@ export default function MySettings({
                     <input
                       type="color"
                       value={brandPrimary}
-                      onChange={(e) => setBrandPrimary(e.target.value)}
+                      onChange={(e) => {
+                        setBrandPrimary(e.target.value);
+                        markAsChanged("brandPrimary", e.target.value);
+                      }}
                       className="w-12 h-10 rounded-lg"
                     />
                     <input
                       type="text"
                       value={brandPrimary}
-                      onChange={(e) => setBrandPrimary(e.target.value)}
+                      onChange={(e) => {
+                        setBrandPrimary(e.target.value);
+                        markAsChanged("brandPrimary", e.target.value);
+                      }}
                       className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                   </div>
@@ -1478,13 +2420,19 @@ export default function MySettings({
                     <input
                       type="color"
                       value={brandAccent}
-                      onChange={(e) => setBrandAccent(e.target.value)}
+                      onChange={(e) => {
+                        setBrandAccent(e.target.value);
+                        markAsChanged("brandAccent", e.target.value);
+                      }}
                       className="w-12 h-10 rounded-lg"
                     />
                     <input
                       type="text"
                       value={brandAccent}
-                      onChange={(e) => setBrandAccent(e.target.value)}
+                      onChange={(e) => {
+                        setBrandAccent(e.target.value);
+                        markAsChanged("brandAccent", e.target.value);
+                      }}
                       className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                   </div>
@@ -1602,7 +2550,10 @@ export default function MySettings({
                     </div>
                     <Toggle
                       checked={stripeEnabled}
-                      onChange={setStripeEnabled}
+                      onChange={(v) => {
+                        setStripeEnabled(v);
+                        markAsChanged("stripeEnabled", v);
+                      }}
                     />
                   </div>
                   <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
@@ -1663,7 +2614,10 @@ export default function MySettings({
                     </div>
                     <Toggle
                       checked={paypalEnabled}
-                      onChange={setPaypalEnabled}
+                      onChange={(v) => {
+                        setPaypalEnabled(v);
+                        markAsChanged("paypalEnabled", v);
+                      }}
                     />
                   </div>
                   <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
@@ -1709,7 +2663,10 @@ export default function MySettings({
                   <input
                     type="text"
                     value={invoicePrefix}
-                    onChange={(e) => setInvoicePrefix(e.target.value)}
+                    onChange={(e) => {
+                      setInvoicePrefix(e.target.value);
+                      markAsChanged("invoicePrefix", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -1717,7 +2674,13 @@ export default function MySettings({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Tax Rate
                   </label>
-                  <Select value={taxRate} onValueChange={setTaxRate}>
+                  <Select
+                    value={taxRate}
+                    onValueChange={(v) => {
+                      setTaxRate(v);
+                      markAsChanged("taxRate", v);
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select tax" />
                     </SelectTrigger>
@@ -1735,7 +2698,10 @@ export default function MySettings({
                   </label>
                   <Select
                     value={paymentCurrency}
-                    onValueChange={setPaymentCurrency}
+                    onValueChange={(v) => {
+                      setPaymentCurrency(v);
+                      markAsChanged("paymentCurrency", v);
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select currency" />
@@ -1851,7 +2817,10 @@ export default function MySettings({
                   <input
                     type="text"
                     value={seoTitle}
-                    onChange={(e) => setSeoTitle(e.target.value)}
+                    onChange={(e) => {
+                      setSeoTitle(e.target.value);
+                      markAsChanged("seoTitle", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -1862,7 +2831,10 @@ export default function MySettings({
                   <textarea
                     rows={3}
                     value={seoDescription}
-                    onChange={(e) => setSeoDescription(e.target.value)}
+                    onChange={(e) => {
+                      setSeoDescription(e.target.value);
+                      markAsChanged("seoDescription", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -1873,7 +2845,10 @@ export default function MySettings({
                   <input
                     type="text"
                     value={seoKeywords}
-                    onChange={(e) => setSeoKeywords(e.target.value)}
+                    onChange={(e) => {
+                      setSeoKeywords(e.target.value);
+                      markAsChanged("seoKeywords", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -1889,7 +2864,13 @@ export default function MySettings({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Robots
                   </label>
-                  <Select value={robotsIndex} onValueChange={setRobotsIndex}>
+                  <Select
+                    value={robotsIndex}
+                    onValueChange={(v) => {
+                      setRobotsIndex(v);
+                      markAsChanged("robotsIndex", v);
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="robots" />
                     </SelectTrigger>
@@ -1912,7 +2893,10 @@ export default function MySettings({
                     </div>
                     <Toggle
                       checked={sitemapEnabled}
-                      onChange={setSitemapEnabled}
+                      onChange={(v) => {
+                        setSitemapEnabled(v);
+                        markAsChanged("sitemapEnabled", v);
+                      }}
                     />
                   </div>
                 </div>
@@ -1923,7 +2907,10 @@ export default function MySettings({
                   <input
                     type="text"
                     value={canonicalUrl}
-                    onChange={(e) => setCanonicalUrl(e.target.value)}
+                    onChange={(e) => {
+                      setCanonicalUrl(e.target.value);
+                      markAsChanged("canonicalUrl", e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -1975,7 +2962,10 @@ export default function MySettings({
                 </div>
                 <Toggle
                   checked={encryptionEnabled}
-                  onChange={setEncryptionEnabled}
+                  onChange={(v) => {
+                    setEncryptionEnabled(v);
+                    markAsChanged("encryptionEnabled", v);
+                  }}
                 />
               </div>
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1985,7 +2975,10 @@ export default function MySettings({
                   </label>
                   <Select
                     value={backupFrequency}
-                    onValueChange={setBackupFrequency}
+                    onValueChange={(v) => {
+                      setBackupFrequency(v);
+                      markAsChanged("backupFrequency", v);
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select frequency" />
@@ -2004,7 +2997,10 @@ export default function MySettings({
                   </label>
                   <Select
                     value={retentionPeriod}
-                    onValueChange={setRetentionPeriod}
+                    onValueChange={(v) => {
+                      setRetentionPeriod(v);
+                      markAsChanged("retentionPeriod", v);
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select retention" />
@@ -2297,7 +3293,10 @@ export default function MySettings({
                 type="text"
                 placeholder="pk_test_..."
                 value={stripePublishableKey}
-                onChange={(e) => setStripePublishableKey(e.target.value)}
+                onChange={(e) => {
+                  setStripePublishableKey(e.target.value);
+                  markAsChanged("stripePublishableKey", e.target.value);
+                }}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
               <p className="text-xs text-gray-500">
@@ -2314,7 +3313,10 @@ export default function MySettings({
                   type={showStripeSecret ? "text" : "password"}
                   placeholder="sk_test_..."
                   value={stripeSecretKey}
-                  onChange={(e) => setStripeSecretKey(e.target.value)}
+                  onChange={(e) => {
+                    setStripeSecretKey(e.target.value);
+                    markAsChanged("stripeSecretKey", e.target.value);
+                  }}
                   className="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <button
@@ -2343,7 +3345,10 @@ export default function MySettings({
                   type={showStripeSecret ? "text" : "password"}
                   placeholder="whsec_..."
                   value={stripeWebhookSecret}
-                  onChange={(e) => setStripeWebhookSecret(e.target.value)}
+                  onChange={(e) => {
+                    setStripeWebhookSecret(e.target.value);
+                    markAsChanged("stripeWebhookSecret", e.target.value);
+                  }}
                   className="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <button
@@ -2437,9 +3442,10 @@ export default function MySettings({
               </label>
               <Select
                 value={paypalMode}
-                onValueChange={(value: "sandbox" | "live") =>
-                  setPaypalMode(value)
-                }
+                onValueChange={(value: "sandbox" | "live") => {
+                  setPaypalMode(value);
+                  markAsChanged("paypalMode", value);
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -2462,7 +3468,10 @@ export default function MySettings({
                 type="text"
                 placeholder="AYSq3RDGsmBLJE-otTkBtM-jBc..."
                 value={paypalClientId}
-                onChange={(e) => setPaypalClientId(e.target.value)}
+                onChange={(e) => {
+                  setPaypalClientId(e.target.value);
+                  markAsChanged("paypalClientId", e.target.value);
+                }}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
               <p className="text-xs text-gray-500">
@@ -2479,7 +3488,10 @@ export default function MySettings({
                   type={showPaypalSecret ? "text" : "password"}
                   placeholder="EGnHDxD_qRPdaLdZz8iCr8N7..."
                   value={paypalClientSecret}
-                  onChange={(e) => setPaypalClientSecret(e.target.value)}
+                  onChange={(e) => {
+                    setPaypalClientSecret(e.target.value);
+                    markAsChanged("paypalClientSecret", e.target.value);
+                  }}
                   className="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <button
@@ -2531,6 +3543,41 @@ export default function MySettings({
             >
               <Save className="w-4 h-4 mr-2" />
               Save Configuration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Reset Settings?</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes. Resetting will discard all your changes
+              and reload settings from the server. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setResetConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmReset}
+              variant="destructive"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                "Reset Settings"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

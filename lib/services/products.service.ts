@@ -113,6 +113,98 @@ export const productsService = {
             throw error;
         }
     },
+
+    // Get product statistics
+    async getProductStats(): Promise<{
+        totalProducts: number;
+        publishedProducts: number;
+        totalAircraft: number;
+        totalSold: number;
+        totalRevenue: number;
+        averagePrice: number;
+    }> {
+        try {
+            const response = await axios.get<ApiResponse<{
+                totalProducts: number;
+                publishedProducts: number;
+                totalAircraft: number;
+                totalSold: number;
+                totalRevenue: number;
+                averagePrice: number;
+            }>>('/products/stats');
+            return response.data.data;
+        } catch (error) {
+            console.error("Failed to fetch product stats:", error);
+            throw error;
+        }
+    },
+
+    // Bulk delete products
+    async bulkDeleteProducts(ids: string[]): Promise<void> {
+        try {
+            await Promise.all(ids.map(id => axios.delete(`/products/${id}`)));
+        } catch (error) {
+            console.error("Failed to bulk delete products:", error);
+            throw error;
+        }
+    },
+
+    // Bulk update product status
+    async bulkUpdateStatus(ids: string[], status: string): Promise<void> {
+        try {
+            await Promise.all(ids.map(id => axios.patch(`/products/${id}`, { status })));
+        } catch (error) {
+            console.error("Failed to bulk update status:", error);
+            throw error;
+        }
+    },
+
+    // Export products to CSV (client-side)
+    async exportProducts(params?: GetProductsParams): Promise<void> {
+        try {
+            // Fetch all products for export
+            const response = await this.getAllProducts({
+                ...params,
+                limit: 10000, // Get all products
+            });
+
+            // Convert to CSV
+            const headers = ['ID', 'Title', 'Type', 'Status', 'Price', 'Currency', 'Rating', 'Reviews', 'Views', 'Inquiries', 'Sold Count', 'Created At'];
+            const rows = response.products.map(p => [
+                p._id,
+                p.title,
+                p.type,
+                p.status,
+                p.price,
+                p.currency || 'USD',
+                p.rating || 0,
+                p.reviewCount || 0,
+                p.viewCount || 0,
+                p.inquiryCount || 0,
+                p.soldCount || 0,
+                new Date(p.createdAt).toLocaleDateString(),
+            ]);
+
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+            ].join('\n');
+
+            // Create blob and download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `products-${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Failed to export products:", error);
+            throw error;
+        }
+    },
 };
 
 export default productsService;

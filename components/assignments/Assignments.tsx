@@ -1,12 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
-import {
-  assignmentsService,
-  type Assignment,
-} from "@/services/assignments.service";
+import { useAssignments } from "@/hooks/useAssignments";
+import { coursesService } from "@/services/courses.service";
+import { Assignment } from "@/services/assignments.service";
 import {
   FileText,
   Calendar,
@@ -26,6 +25,13 @@ import {
   BookOpen,
   Target,
   TrendingUp,
+  Power,
+  PowerOff,
+  CheckSquare,
+  Copy,
+  RefreshCw,
+  MoreVertical,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +44,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -88,15 +96,41 @@ interface AssignmentItem {
 
 export default function Assignments() {
   const { push } = useToast();
-  const queryClient = useQueryClient();
+  const {
+    assignments: assignmentsList,
+    loading: assignmentsLoading,
+    createAssignment: createAssignmentHook,
+    updateAssignment: updateAssignmentHook,
+    deleteAssignment: deleteAssignmentHook,
+    toggleAssignmentStatus,
+    duplicateAssignment: duplicateAssignmentHook,
+    bulkDeleteAssignments,
+    bulkToggleStatus,
+    exportAssignments,
+    refreshAssignments,
+    getAssignmentStats,
+    getAssignmentSubmissions,
+    submissions,
+    submissionsLoading,
+  } = useAssignments();
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [sortBy, setSortBy] = React.useState("due-date");
-  const [selectedCourse, setSelectedCourse] = React.useState("all");
+  const [selectedCourse, setSelectedCourse] = React.useState<string>("");
   const [previewAssignment, setPreviewAssignment] =
     React.useState<AssignmentItem | null>(null);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editAssignment, setEditAssignment] =
+    React.useState<AssignmentItem | null>(null);
+  const [submissionsOpen, setSubmissionsOpen] = React.useState(false);
+  const [selectedAssignmentId, setSelectedAssignmentId] = React.useState<
+    string | null
+  >(null);
+  const [actionLoading, setActionLoading] = React.useState(false);
+  const [isExporting, setIsExporting] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
   const [formData, setFormData] = React.useState({
     title: "",
     description: "",
@@ -107,34 +141,37 @@ export default function Assignments() {
   const [attachments, setAttachments] = React.useState<File[]>([]);
 
   // Fetch courses for selection
-  const { data: coursesData } = useQuery({
+  const { data: coursesData, isLoading: coursesLoading } = useQuery({
     queryKey: ["courses"],
-    queryFn: () => {
-      // Assuming you have a courses service
-      return fetch("/api/courses")
-        .then((res) => res.json())
-        .catch(() => ({ courses: [] }));
-    },
+    queryFn: () => coursesService.getAllCourses({ page: 1, limit: 100 }),
     staleTime: 60000,
   });
 
-  const courses = (coursesData as any)?.courses || [];
+  const courses = React.useMemo(() => {
+    const apiData = (coursesData as any)?.data || coursesData;
+    const coursesList = apiData?.courses || [];
+    return coursesList.map((c: any) => ({
+      _id: c._id || c.id,
+      title: c.title,
+    }));
+  }, [coursesData]);
 
-  // Fetch assignments (using a default courseId or "all" logic)
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["assignments", selectedCourse],
-    queryFn: () => {
-      // If you have multiple courses, adjust this logic
-      const courseId =
-        selectedCourse === "all" ? "674845c8b4dc5d024c38e9c6" : selectedCourse;
-      return assignmentsService.getCourseAssignments(courseId);
-    },
-    staleTime: 30000,
-  });
+  // Auto-select first course if available
+  React.useEffect(() => {
+    if (!selectedCourse && courses.length > 0) {
+      setSelectedCourse(courses[0]._id);
+    }
+  }, [courses, selectedCourse]);
+
+  // Fetch assignments when course changes
+  React.useEffect(() => {
+    if (selectedCourse) {
+      refreshAssignments(selectedCourse);
+    }
+  }, [selectedCourse, refreshAssignments]);
 
   const assignments: AssignmentItem[] = React.useMemo(() => {
-    const assignmentData = data?.assignments || [];
-    return assignmentData.map((a: Assignment) => {
+    return assignmentsList.map((a: Assignment) => {
       const dueDate = new Date(a.dueDate);
       const daysUntilDue = differenceInDays(dueDate, new Date());
       let status: "upcoming" | "due-soon" | "overdue" = "upcoming";
@@ -150,25 +187,67 @@ export default function Assignments() {
         title: a.title,
         description: a.description,
         courseId: typeof a.course === "object" ? a.course._id : a.course,
-        courseTitle: typeof a.course === "object" ? a.course.title : undefined,
+        courseTitle:
+          typeof a.course === "object" ? (a.course as any).title : undefined,
         instructorName:
           typeof a.instructor === "object"
-            ? `${a.instructor.firstName || ""} ${
-                a.instructor.lastName || ""
+            ? `${(a.instructor as any).firstName || ""} ${
+                (a.instructor as any).lastName || ""
               }`.trim()
             : undefined,
         dueDate: a.dueDate,
         maxPoints: a.maxPoints || 100,
         attachments: a.attachments || [],
         status,
-        submissionsCount: Math.floor(Math.random() * 30) + 5,
-        completionRate: Math.floor(Math.random() * 30) + 70,
+        submissionsCount: 0, // Will be fetched from stats
+        completionRate: 0, // Will be fetched from stats
       };
     });
-  }, [data]);
+  }, [assignmentsList]);
+
+  const [assignmentStatsMap, setAssignmentStatsMap] = React.useState<
+    Record<string, any>
+  >({});
+
+  // Fetch stats for each assignment
+  React.useEffect(() => {
+    const fetchStats = async () => {
+      const statsPromises = assignments.map(async (assignment) => {
+        try {
+          const stats = await getAssignmentStats(assignment.id);
+          return { id: assignment.id, stats };
+        } catch (err) {
+          return { id: assignment.id, stats: null };
+        }
+      });
+      const results = await Promise.all(statsPromises);
+      const statsMap: Record<string, any> = {};
+      results.forEach(({ id, stats }) => {
+        if (stats) statsMap[id] = stats;
+      });
+      setAssignmentStatsMap(statsMap);
+    };
+
+    if (assignments.length > 0) {
+      fetchStats();
+    }
+  }, [assignments, getAssignmentStats]);
+
+  const assignmentsWithStats = React.useMemo(() => {
+    return assignments.map((assignment) => {
+      const stats = assignmentStatsMap[assignment.id];
+      return {
+        ...assignment,
+        submissionsCount: stats?.totalSubmissions || 0,
+        completionRate: stats?.averageGrade
+          ? Math.round((stats.averageGrade / assignment.maxPoints) * 100)
+          : 0,
+      };
+    });
+  }, [assignments, assignmentStatsMap]);
 
   const filtered = React.useMemo(() => {
-    return assignments
+    return assignmentsWithStats
       .filter((a) => {
         if (search) {
           const searchLower = search.toLowerCase();
@@ -200,22 +279,30 @@ export default function Assignments() {
             return 0;
         }
       });
-  }, [assignments, search, statusFilter, sortBy]);
+  }, [assignmentsWithStats, search, statusFilter, sortBy]);
 
   const stats = React.useMemo(() => {
-    const total = assignments.length;
-    const upcoming = assignments.filter((a) => a.status === "upcoming").length;
-    const dueSoon = assignments.filter((a) => a.status === "due-soon").length;
-    const overdue = assignments.filter((a) => a.status === "overdue").length;
-    const totalSubmissions = assignments.reduce(
+    const total = assignmentsWithStats.length;
+    const upcoming = assignmentsWithStats.filter(
+      (a) => a.status === "upcoming"
+    ).length;
+    const dueSoon = assignmentsWithStats.filter(
+      (a) => a.status === "due-soon"
+    ).length;
+    const overdue = assignmentsWithStats.filter(
+      (a) => a.status === "overdue"
+    ).length;
+    const totalSubmissions = assignmentsWithStats.reduce(
       (sum, a) => sum + (a.submissionsCount || 0),
       0
     );
     const avgCompletion =
-      assignments.length > 0
+      assignmentsWithStats.length > 0
         ? Math.round(
-            assignments.reduce((sum, a) => sum + (a.completionRate || 0), 0) /
-              assignments.length
+            assignmentsWithStats.reduce(
+              (sum, a) => sum + (a.completionRate || 0),
+              0
+            ) / assignmentsWithStats.length
           )
         : 0;
 
@@ -227,20 +314,30 @@ export default function Assignments() {
       totalSubmissions,
       avgCompletion,
     };
-  }, [assignments]);
+  }, [assignmentsWithStats]);
 
-  React.useEffect(() => {
-    if (error) {
-      push({ type: "error", message: "Failed to load assignments" });
+  const handleCreateAssignment = async () => {
+    if (!formData.title || !formData.courseId || !formData.dueDate) {
+      push({ type: "error", message: "Please fill in all required fields" });
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error]);
 
-  const createMutation = useMutation({
-    mutationFn: (payload: any) =>
-      assignmentsService.createAssignment(payload.courseId, payload),
-    onSuccess: () => {
-      push({ type: "success", message: "Assignment created successfully" });
+    setActionLoading(true);
+    try {
+      // Upload attachments if any
+      let attachmentUrls: string[] = [];
+      if (attachments.length > 0) {
+        // TODO: Implement file upload service
+        // For now, we'll skip attachments
+      }
+
+      await createAssignmentHook(formData.courseId, {
+        title: formData.title,
+        description: formData.description,
+        dueDate: new Date(formData.dueDate).toISOString(),
+        maxPoints: formData.maxPoints,
+        attachments: attachmentUrls,
+      });
       setCreateOpen(false);
       setFormData({
         title: "",
@@ -249,32 +346,155 @@ export default function Assignments() {
         dueDate: "",
         maxPoints: 100,
       });
-      queryClient.invalidateQueries({ queryKey: ["assignments"] });
-    },
-    onError: () => {
-      push({ type: "error", message: "Failed to create assignment" });
-    },
-  });
+      setAttachments([]);
+    } catch (err) {
+      console.error("Failed to create assignment:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => assignmentsService.deleteAssignment(id),
-    onSuccess: () => {
-      push({ type: "success", message: "Assignment deleted successfully" });
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ["assignments"] });
-    },
-    onError: () => {
-      push({ type: "error", message: "Failed to delete assignment" });
-    },
-  });
-
-  const handleCreateAssignment = () => {
-    if (!formData.title || !formData.courseId || !formData.dueDate) {
+  const handleEditAssignment = async () => {
+    if (!editAssignment || !formData.title || !formData.dueDate) {
       push({ type: "error", message: "Please fill in all required fields" });
       return;
     }
 
-    createMutation.mutate(formData);
+    setActionLoading(true);
+    try {
+      let attachmentUrls: string[] = [];
+      if (attachments.length > 0) {
+        // TODO: Implement file upload service
+      }
+
+      await updateAssignmentHook(editAssignment.id, {
+        title: formData.title,
+        description: formData.description,
+        dueDate: new Date(formData.dueDate).toISOString(),
+        maxPoints: formData.maxPoints,
+        attachments: attachmentUrls,
+      });
+      setEditAssignment(null);
+      setFormData({
+        title: "",
+        description: "",
+        courseId: "",
+        dueDate: "",
+        maxPoints: 100,
+      });
+      setAttachments([]);
+    } catch (err) {
+      console.error("Failed to update assignment:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setActionLoading(true);
+    try {
+      await deleteAssignmentHook(deleteId);
+      setDeleteId(null);
+    } catch (err) {
+      console.error("Failed to delete assignment:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (id: string) => {
+    setActionLoading(true);
+    try {
+      await toggleAssignmentStatus(id);
+    } catch (err) {
+      console.error("Failed to toggle assignment status:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDuplicate = async (id: string) => {
+    setActionLoading(true);
+    try {
+      await duplicateAssignmentHook(id);
+    } catch (err) {
+      console.error("Failed to duplicate assignment:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleViewSubmissions = async (id: string) => {
+    setSelectedAssignmentId(id);
+    setSubmissionsOpen(true);
+    await getAssignmentSubmissions(id);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkDeleteAssignments(selectedIds);
+      setSelectedIds([]);
+      setBulkDeleteOpen(false);
+    } catch (err) {
+      console.error("Failed to bulk delete assignments:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkToggleStatus = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkToggleStatus(selectedIds);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error("Failed to bulk toggle status:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleExport = async (format: "csv" | "xlsx" | "pdf") => {
+    setIsExporting(true);
+    try {
+      await exportAssignments(format, {
+        courseId: selectedCourse || undefined,
+      });
+    } catch (err) {
+      console.error("Failed to export assignments:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filtered.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filtered.map((a) => a.id));
+    }
+  };
+
+  const openEditDialog = (assignment: AssignmentItem) => {
+    setEditAssignment(assignment);
+    setFormData({
+      title: assignment.title,
+      description: assignment.description,
+      courseId: assignment.courseId,
+      dueDate: assignment.dueDate,
+      maxPoints: assignment.maxPoints,
+    });
+    setAttachments([]);
   };
 
   const getStatusBadge = (status: string) => {
@@ -326,13 +546,59 @@ export default function Assignments() {
                 </div>
               </div>
             </div>
-            <Button
-              onClick={() => setCreateOpen(true)}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Assignment
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={isExporting || assignments.length === 0}
+                  >
+                    {isExporting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleExport("csv")}>
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                    Export as Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Refresh Button */}
+              <Button
+                variant="outline"
+                onClick={() =>
+                  selectedCourse && refreshAssignments(selectedCourse)
+                }
+                disabled={assignmentsLoading}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${
+                    assignmentsLoading ? "animate-spin" : ""
+                  }`}
+                />
+              </Button>
+
+              {/* Create Button */}
+              <Button
+                onClick={() => setCreateOpen(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Assignment
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -423,6 +689,27 @@ export default function Assignments() {
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 mb-6">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="flex flex-wrap gap-3">
+              <Select
+                value={selectedCourse}
+                onValueChange={setSelectedCourse}
+                disabled={coursesLoading}
+              >
+                <SelectTrigger className="bg-slate-50 border-slate-200 rounded-lg px-4 py-2 text-sm w-48 hover:bg-slate-100 transition-colors">
+                  <SelectValue
+                    placeholder={
+                      coursesLoading ? "Loading..." : "Select Course"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {courses.map((course: any) => (
+                    <SelectItem key={course._id} value={course._id}>
+                      {course.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="bg-slate-50 border-slate-200 rounded-lg px-4 py-2 text-sm w-40 hover:bg-slate-100 transition-colors">
                   <SelectValue placeholder="All Status" />
@@ -448,7 +735,7 @@ export default function Assignments() {
               </Select>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 lg:flex-initial lg:w-64">
                 <input
                   type="text"
@@ -459,25 +746,62 @@ export default function Assignments() {
                 />
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-slate-600 hover:text-primary hover:bg-primary/10"
-                onClick={() =>
-                  push({
-                    type: "info",
-                    message: "Export functionality coming soon",
-                  })
-                }
-              >
-                <Download className="w-5 h-5" />
-              </Button>
+              {selectedIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="px-3 py-1">
+                    <CheckSquare className="w-3 h-3 mr-1" />
+                    {selectedIds.length} selected
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkToggleStatus}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Power className="w-4 h-4 mr-2" />
+                    )}
+                    Toggle Status
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkDeleteOpen(true)}
+                    disabled={actionLoading}
+                    className="text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedIds([])}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              )}
+              {selectedIds.length === 0 && filtered.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={
+                      selectedIds.length === filtered.length &&
+                      filtered.length > 0
+                    }
+                    onCheckedChange={toggleSelectAll}
+                  />
+                  <span className="text-sm text-slate-600">Select All</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Assignment Cards */}
-        {isLoading ? (
+        {assignmentsLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
               <div
@@ -526,56 +850,70 @@ export default function Assignments() {
                       )}
                     </div>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-slate-400 hover:text-primary hover:bg-primary/10 shrink-0"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem
-                        onSelect={() => setPreviewAssignment(assignment)}
-                      >
-                        <Eye className="w-4 h-4 mr-2 text-primary" />
-                        <span>View Details</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() =>
-                          push({
-                            type: "info",
-                            message: "View submissions coming soon",
-                          })
-                        }
-                      >
-                        <Upload className="w-4 h-4 mr-2 text-green-600" />
-                        <span>View Submissions</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onSelect={() =>
-                          push({
-                            type: "info",
-                            message: "Edit functionality coming soon",
-                          })
-                        }
-                      >
-                        <Edit3 className="w-4 h-4 mr-2 text-slate-600" />
-                        <span>Edit Assignment</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-red-600 focus:text-red-600"
-                        onSelect={() => setDeleteId(assignment.id)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        <span>Delete</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="flex items-center gap-1">
+                    <Checkbox
+                      checked={selectedIds.includes(assignment.id)}
+                      onCheckedChange={() => toggleSelection(assignment.id)}
+                      className="mr-1"
+                    />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-slate-400 hover:text-primary hover:bg-primary/10 shrink-0"
+                          disabled={actionLoading}
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem
+                          onSelect={() => setPreviewAssignment(assignment)}
+                        >
+                          <Eye className="w-4 h-4 mr-2 text-primary" />
+                          <span>View Details</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => handleViewSubmissions(assignment.id)}
+                        >
+                          <Upload className="w-4 h-4 mr-2 text-green-600" />
+                          <span>View Submissions</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onSelect={() => openEditDialog(assignment)}
+                          disabled={actionLoading}
+                        >
+                          <Edit3 className="w-4 h-4 mr-2 text-slate-600" />
+                          <span>Edit Assignment</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => handleDuplicate(assignment.id)}
+                          disabled={actionLoading}
+                        >
+                          <Copy className="w-4 h-4 mr-2 text-blue-600" />
+                          <span>Duplicate</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => handleToggleStatus(assignment.id)}
+                          disabled={actionLoading}
+                        >
+                          <Power className="w-4 h-4 mr-2 text-purple-600" />
+                          <span>Toggle Status</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-red-600 focus:text-red-600"
+                          onSelect={() => setDeleteId(assignment.id)}
+                          disabled={actionLoading}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          <span>Delete</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
 
                 {/* Description */}
@@ -654,12 +992,7 @@ export default function Assignments() {
                     variant="outline"
                     size="sm"
                     className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50"
-                    onClick={() =>
-                      push({
-                        type: "info",
-                        message: "Submissions view coming soon",
-                      })
-                    }
+                    onClick={() => handleViewSubmissions(assignment.id)}
                   >
                     <Upload className="w-3.5 h-3.5 mr-1.5" />
                     Submissions
@@ -908,19 +1241,29 @@ export default function Assignments() {
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
               <Button
                 variant="outline"
-                onClick={() => setCreateOpen(false)}
-                disabled={createMutation.isPending}
+                onClick={() => {
+                  setCreateOpen(false);
+                  setFormData({
+                    title: "",
+                    description: "",
+                    courseId: "",
+                    dueDate: "",
+                    maxPoints: 100,
+                  });
+                  setAttachments([]);
+                }}
+                disabled={actionLoading}
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleCreateAssignment}
-                disabled={createMutation.isPending}
+                disabled={actionLoading}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
               >
-                {createMutation.isPending ? (
+                {actionLoading ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Creating...
                   </>
                 ) : (
@@ -1022,16 +1365,344 @@ export default function Assignments() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={actionLoading}>
+                Cancel
+              </AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => deleteId && deleteMutation.mutate(deleteId)}
+                onClick={handleDelete}
                 className="bg-red-600 hover:bg-red-700"
+                disabled={actionLoading}
               >
-                Delete Assignment
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete Assignment"
+                )}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Bulk Delete Confirmation */}
+        <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-xl font-bold text-slate-900">
+                Delete Assignments?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-600">
+                This action cannot be undone. This will permanently delete{" "}
+                {selectedIds.length} assignment
+                {selectedIds.length > 1 ? "s" : ""} and all student submissions.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={actionLoading}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleBulkDelete}
+                className="bg-red-600 hover:bg-red-700"
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  `Delete ${selectedIds.length} Assignment${
+                    selectedIds.length > 1 ? "s" : ""
+                  }`
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Edit Assignment Dialog */}
+        <Dialog
+          open={!!editAssignment}
+          onOpenChange={(open) => !open && setEditAssignment(null)}
+        >
+          <DialogContent className="max-w-[95vw] md:max-w-3xl lg:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold text-slate-900">
+                Edit Assignment
+              </DialogTitle>
+              <DialogDescription className="text-slate-600">
+                Update assignment details
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="edit-title"
+                  className="text-sm font-medium text-slate-700"
+                >
+                  Assignment Title *
+                </Label>
+                <Input
+                  id="edit-title"
+                  placeholder="e.g., Flight Planning Exercise - Cross Country"
+                  value={formData.title}
+                  onChange={(e) =>
+                    setFormData({ ...formData, title: e.target.value })
+                  }
+                  className="focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="edit-description"
+                  className="text-sm font-medium text-slate-700"
+                >
+                  Description *
+                </Label>
+                <Textarea
+                  id="edit-description"
+                  placeholder="Detailed instructions and requirements for the assignment"
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  rows={4}
+                  className="focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="edit-maxPoints"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    Max Points
+                  </Label>
+                  <Input
+                    id="edit-maxPoints"
+                    type="number"
+                    min="1"
+                    value={formData.maxPoints}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        maxPoints: parseInt(e.target.value) || 100,
+                      })
+                    }
+                    className="focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">
+                    Due Date *
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !formData.dueDate && "text-muted-foreground"
+                        )}
+                      >
+                        <Calendar className="mr-2 h-4 w-4" />
+                        {formData.dueDate ? (
+                          format(new Date(formData.dueDate), "PPP 'at' p")
+                        ) : (
+                          <span>Pick a due date and time</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={
+                          formData.dueDate
+                            ? new Date(formData.dueDate)
+                            : undefined
+                        }
+                        onSelect={(date) => {
+                          if (date) {
+                            const dateWithTime = new Date(date);
+                            dateWithTime.setHours(23, 59, 59);
+                            setFormData({
+                              ...formData,
+                              dueDate: dateWithTime.toISOString(),
+                            });
+                          }
+                        }}
+                        initialFocus
+                      />
+                      <div className="p-3 border-t">
+                        <Label className="text-xs text-slate-600 mb-2 block">
+                          Time (optional)
+                        </Label>
+                        <Input
+                          type="time"
+                          value={
+                            formData.dueDate
+                              ? format(new Date(formData.dueDate), "HH:mm")
+                              : ""
+                          }
+                          onChange={(e) => {
+                            if (formData.dueDate && e.target.value) {
+                              const [hours, minutes] =
+                                e.target.value.split(":");
+                              const date = new Date(formData.dueDate);
+                              date.setHours(parseInt(hours), parseInt(minutes));
+                              setFormData({
+                                ...formData,
+                                dueDate: date.toISOString(),
+                              });
+                            }
+                          }}
+                          className="h-8"
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditAssignment(null);
+                  setFormData({
+                    title: "",
+                    description: "",
+                    courseId: "",
+                    dueDate: "",
+                    maxPoints: 100,
+                  });
+                  setAttachments([]);
+                }}
+                disabled={actionLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleEditAssignment}
+                disabled={actionLoading}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Edit3 className="w-4 h-4 mr-2" />
+                    Update Assignment
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Submissions Dialog */}
+        <Dialog open={submissionsOpen} onOpenChange={setSubmissionsOpen}>
+          <DialogContent className="max-w-[95vw] md:max-w-4xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold text-slate-900">
+                Assignment Submissions
+              </DialogTitle>
+              <DialogDescription className="text-slate-600">
+                View and grade student submissions
+              </DialogDescription>
+            </DialogHeader>
+            {submissionsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : submissions.length === 0 ? (
+              <div className="text-center py-12">
+                <Upload className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                <p className="text-slate-600">No submissions yet</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {submissions.map((submission: any) => (
+                  <div
+                    key={submission._id}
+                    className="bg-slate-50 rounded-lg p-4 border border-slate-200"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">
+                          {typeof submission.student === "object"
+                            ? `${submission.student.firstName || ""} ${
+                                submission.student.lastName || ""
+                              }`.trim()
+                            : "Student"}
+                        </p>
+                        <p className="text-sm text-slate-500">
+                          Submitted:{" "}
+                          {format(
+                            new Date(submission.submittedAt),
+                            "PPP 'at' p"
+                          )}
+                        </p>
+                      </div>
+                      {submission.grade !== undefined && (
+                        <Badge
+                          variant="outline"
+                          className="bg-green-50 text-green-700"
+                        >
+                          Grade: {submission.grade}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mb-3">
+                      <p className="text-sm text-slate-700 whitespace-pre-line">
+                        {submission.content}
+                      </p>
+                    </div>
+                    {submission.feedback && (
+                      <div className="bg-blue-50 rounded p-3 mb-3">
+                        <p className="text-sm font-medium text-blue-900 mb-1">
+                          Feedback:
+                        </p>
+                        <p className="text-sm text-blue-700">
+                          {submission.feedback}
+                        </p>
+                      </div>
+                    )}
+                    {submission.attachments &&
+                      submission.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {submission.attachments.map(
+                            (url: string, idx: number) => (
+                              <a
+                                key={idx}
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-primary hover:underline"
+                              >
+                                <FileText className="w-4 h-4 inline mr-1" />
+                                Attachment {idx + 1}
+                              </a>
+                            )
+                          )}
+                        </div>
+                      )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </main>
   );

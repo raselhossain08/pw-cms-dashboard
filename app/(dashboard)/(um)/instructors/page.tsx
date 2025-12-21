@@ -1,10 +1,20 @@
+import { Metadata } from "next";
 import AppLayout from "@/components/layout/AppLayout";
 import Instructors from "@/components/instructors/Instructors";
+import RequireAuth from "@/components/RequireAuth";
+
+export const metadata: Metadata = {
+  title: "Instructors Management | Dashboard",
+  description:
+    "Manage instructor accounts, monitor performance, and track engagement",
+};
 
 export default function InstructorsPage() {
   return (
-    <AppLayout>
-      <Instructors />
-    </AppLayout>
+    <RequireAuth roles={["admin", "super_admin", "instructor"]}>
+      <AppLayout>
+        <Instructors />
+      </AppLayout>
+    </RequireAuth>
   );
 }

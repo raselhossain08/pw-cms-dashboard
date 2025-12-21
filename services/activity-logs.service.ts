@@ -79,4 +79,35 @@ export const activityLogsService = {
         });
         return res.data;
     },
+
+    // ==================== LOG ACTIONS ====================
+    async getLogById(type: 'activity' | 'error' | 'ai' | 'chat' | 'system', id: string) {
+        const res = await axios.get(`${BASE_URL}/${type}/${id}`);
+        return res.data;
+    },
+
+    async markErrorAsResolved(id: string, solution?: string) {
+        const res = await axios.post(`${BASE_URL}/errors/${id}/resolve`, { solution });
+        return res.data;
+    },
+
+    async markErrorAsUnresolved(id: string) {
+        const res = await axios.post(`${BASE_URL}/errors/${id}/unresolve`);
+        return res.data;
+    },
+
+    async bulkMarkErrorsAsResolved(ids: string[], solution?: string) {
+        const res = await axios.post(`${BASE_URL}/errors/bulk-resolve`, { ids, solution });
+        return res.data;
+    },
+
+    async deleteLog(type: 'activity' | 'error' | 'ai' | 'chat' | 'system', id: string) {
+        const res = await axios.delete(`${BASE_URL}/${type}/${id}`);
+        return res.data;
+    },
+
+    async bulkDeleteLogs(type: 'activity' | 'error' | 'ai' | 'chat' | 'system', ids: string[]) {
+        const res = await axios.post(`${BASE_URL}/${type}/bulk-delete`, { ids });
+        return res.data;
+    },
 };

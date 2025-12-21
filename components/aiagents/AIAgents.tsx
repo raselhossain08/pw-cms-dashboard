@@ -22,6 +22,13 @@ import {
   Loader2,
   CheckCircle2,
   Database,
+  Eye,
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  MoreVertical,
+  Logs,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,13 +67,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { useAIAgents } from "@/hooks/useAIAgents";
+import { useAIAgentsStore } from "@/store/aiAgentsStore";
+import { aiBotService } from "@/services/ai-bot.service";
+import { aiAgentsService } from "@/services/ai-agents.service";
 import type {
   Agent,
   AgentStatus,
   CreateAgentDto,
   UpdateAgentDto,
+  ConversationRow,
 } from "@/services/ai-agents.service";
+import { useToast } from "@/context/ToastContext";
 
 const getIconStyles = (index: number) => {
   const styles = [
@@ -96,6 +109,18 @@ export default function AIAgents() {
     duplicateAgent,
   } = useAIAgents();
 
+  const {
+    selectedAgents,
+    selectedConversation,
+    setSelectedAgents,
+    toggleAgentSelection,
+    selectAllAgents,
+    clearSelection,
+    setSelectedConversation,
+  } = useAIAgentsStore();
+
+  const { push } = useToast();
+
   const [statusFilter, setStatusFilter] = React.useState<string>("All Status");
   const [sortBy, setSortBy] = React.useState<string>("Sort by: Newest");
   const [search, setSearch] = React.useState("");
@@ -103,6 +128,17 @@ export default function AIAgents() {
   const [editAgentOpen, setEditAgentOpen] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [selectedAgent, setSelectedAgent] = React.useState<Agent | null>(null);
+  const [viewConversationOpen, setViewConversationOpen] = React.useState(false);
+  const [viewLogsOpen, setViewLogsOpen] = React.useState(false);
+  const [conversationHistory, setConversationHistory] = React.useState<any[]>(
+    []
+  );
+  const [loadingHistory, setLoadingHistory] = React.useState(false);
+  const [agentLogs, setAgentLogs] = React.useState<any>(null);
+  const [loadingLogs, setLoadingLogs] = React.useState(false);
+  const [bulkActionOpen, setBulkActionOpen] = React.useState(false);
+  const [conversationsPage, setConversationsPage] = React.useState(1);
+  const conversationsPerPage = 10;
 
   // Form states
   const [formData, setFormData] = React.useState<CreateAgentDto>({
@@ -177,6 +213,142 @@ export default function AIAgents() {
       console.error("Failed to duplicate agent:", error);
     }
   };
+
+  const handleViewConversation = async (conversation: ConversationRow) => {
+    try {
+      setLoadingHistory(true);
+      setSelectedConversation(conversation);
+      // Fetch conversation history - try using conversation _id as sessionId
+      // The backend getHistory endpoint accepts sessionId as query param
+      const { data } = await aiBotService.getHistory(conversation._id);
+
+      // Handle different response formats
+      const dataAny = data as any;
+      if (Array.isArray(dataAny)) {
+        // Find the conversation by ID or use the first one
+        const conv: any =
+          dataAny.find((c: any) => c._id === conversation._id) || dataAny[0];
+        if (conv && conv.messages) {
+          setConversationHistory(conv.messages);
+        } else if (conv && Array.isArray(conv)) {
+          // If messages are at root level
+          setConversationHistory(conv);
+        } else {
+          setConversationHistory([]);
+        }
+      } else if (dataAny && dataAny.messages) {
+        setConversationHistory(dataAny.messages);
+      } else {
+        setConversationHistory([]);
+      }
+      setViewConversationOpen(true);
+    } catch (error: any) {
+      push({
+        message:
+          error?.response?.data?.message ||
+          "Failed to load conversation history",
+        type: "error",
+      });
+      setConversationHistory([]);
+      // Still open the dialog to show basic info
+      setViewConversationOpen(true);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleViewLogs = async (agent: Agent) => {
+    try {
+      setLoadingLogs(true);
+      setSelectedAgent(agent);
+      const { data } = await aiAgentsService.getAgentLogs(agent._id);
+      setAgentLogs(data);
+      setViewLogsOpen(true);
+    } catch (error: any) {
+      push({
+        message: error?.response?.data?.message || "Failed to load agent logs",
+        type: "error",
+      });
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedAgents.length === 0) return;
+    try {
+      await Promise.all(selectedAgents.map((id) => deleteAgent(id)));
+      clearSelection();
+      setBulkActionOpen(false);
+      push({
+        message: `${selectedAgents.length} agent(s) deleted successfully`,
+        type: "success",
+      });
+    } catch (error: any) {
+      push({
+        message: error?.response?.data?.message || "Failed to delete agents",
+        type: "error",
+      });
+    }
+  };
+
+  const handleBulkStatusToggle = async (status: AgentStatus) => {
+    if (selectedAgents.length === 0) return;
+    try {
+      await Promise.all(selectedAgents.map((id) => toggleStatus(id, status)));
+      clearSelection();
+      setBulkActionOpen(false);
+      push({
+        message: `${selectedAgents.length} agent(s) updated successfully`,
+        type: "success",
+      });
+    } catch (error: any) {
+      push({
+        message: error?.response?.data?.message || "Failed to update agents",
+        type: "error",
+      });
+    }
+  };
+
+  const handleExportAgents = () => {
+    const dataStr = JSON.stringify(agents, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ai-agents-${new Date().toISOString()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    push({
+      message: "Agents exported successfully",
+      type: "success",
+    });
+  };
+
+  const handleExportConversations = () => {
+    const dataStr = JSON.stringify(conversations, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `conversations-${new Date().toISOString()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    push({
+      message: "Conversations exported successfully",
+      type: "success",
+    });
+  };
+
+  const paginatedConversations = React.useMemo(() => {
+    const start = (conversationsPage - 1) * conversationsPerPage;
+    const end = start + conversationsPerPage;
+    return conversations.slice(start, end);
+  }, [conversations, conversationsPage]);
+
+  const totalConversationPages = Math.ceil(
+    conversations.length / conversationsPerPage
+  );
 
   const openEditDialog = (agent: Agent) => {
     setSelectedAgent(agent);
@@ -356,10 +528,67 @@ export default function AIAgents() {
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-semibold text-secondary">
-            Your AI Agents
-          </h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-semibold text-secondary">
+              Your AI Agents
+            </h3>
+            {selectedAgents.length > 0 && (
+              <Badge variant="secondary" className="gap-2">
+                {selectedAgents.length} selected
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-4 w-4 p-0"
+                  onClick={clearSelection}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </Badge>
+            )}
+          </div>
           <div className="flex items-center space-x-2">
+            {selectedAgents.length > 0 && (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      Bulk Actions
+                      <MoreVertical className="w-4 h-4 ml-2" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => handleBulkStatusToggle("active")}
+                    >
+                      <Power className="w-4 h-4 mr-2" />
+                      Activate Selected
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleBulkStatusToggle("inactive")}
+                    >
+                      <Power className="w-4 h-4 mr-2" />
+                      Deactivate Selected
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleBulkDelete}
+                      className="text-red-600"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Selected
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportAgents}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </Button>
+              </>
+            )}
             <div className="relative">
               <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -412,13 +641,24 @@ export default function AIAgents() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredAgents.map((a, index) => {
             const iconStyle = getIconStyles(index);
+            const isSelected = selectedAgents.includes(a._id);
             return (
               <div
                 key={a._id}
-                className="rounded-xl p-6 shadow-sm border border-gray-100 bg-card"
+                className={`rounded-xl p-6 shadow-sm border ${
+                  isSelected
+                    ? "border-primary ring-2 ring-primary/20"
+                    : "border-gray-100"
+                } bg-card relative`}
               >
+                <div className="absolute top-4 left-4">
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => toggleAgentSelection(a._id)}
+                  />
+                </div>
                 <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-3 ml-8">
                     <div
                       className={`w-12 h-12 ${iconStyle.bg} rounded-lg flex items-center justify-center`}
                     >
@@ -453,6 +693,10 @@ export default function AIAgents() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleViewLogs(a)}>
+                        <Logs className="w-4 h-4 mr-2" />
+                        View Logs
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => openEditDialog(a)}>
                         <Edit className="w-4 h-4 mr-2" />
                         Edit Agent
@@ -522,9 +766,19 @@ export default function AIAgents() {
       </div>
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-semibold text-secondary mb-4">
-          Recent Conversations
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-secondary">
+            Recent Conversations
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportConversations}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
+        </div>
         {conversations.length === 0 ? (
           <div className="text-center py-12">
             <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -556,7 +810,7 @@ export default function AIAgents() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {conversations.map((row) => (
+                {paginatedConversations.map((row) => (
                   <tr
                     key={row._id}
                     className="hover:bg-gray-50 transition-colors"
@@ -592,7 +846,12 @@ export default function AIAgents() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Button variant="ghost" className="text-primary">
+                      <Button
+                        variant="ghost"
+                        className="text-primary"
+                        onClick={() => handleViewConversation(row)}
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
                         View
                       </Button>
                     </td>
@@ -600,6 +859,48 @@ export default function AIAgents() {
                 ))}
               </tbody>
             </table>
+            {totalConversationPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-gray-600">
+                  Showing {(conversationsPage - 1) * conversationsPerPage + 1}{" "}
+                  to{" "}
+                  {Math.min(
+                    conversationsPage * conversationsPerPage,
+                    conversations.length
+                  )}{" "}
+                  of {conversations.length} conversations
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setConversationsPage((p) => Math.max(1, p - 1))
+                    }
+                    disabled={conversationsPage === 1}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous
+                  </Button>
+                  <div className="text-sm text-gray-600">
+                    Page {conversationsPage} of {totalConversationPages}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setConversationsPage((p) =>
+                        Math.min(totalConversationPages, p + 1)
+                      )
+                    }
+                    disabled={conversationsPage === totalConversationPages}
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -862,6 +1163,208 @@ export default function AIAgents() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* View Conversation Dialog */}
+      <Dialog
+        open={viewConversationOpen}
+        onOpenChange={setViewConversationOpen}
+      >
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <DialogTitle className="text-xl">
+                  Conversation Details
+                </DialogTitle>
+                <DialogDescription>
+                  View complete conversation history
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {selectedConversation && (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-lg p-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Student</p>
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={selectedConversation.studentAvatar}
+                      alt="Student"
+                      className="w-8 h-8 rounded-full"
+                    />
+                    <p className="font-medium">
+                      {selectedConversation.studentName}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Agent</p>
+                  <p className="font-medium">
+                    {selectedConversation.agentName}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Started</p>
+                  <p className="font-medium">{selectedConversation.started}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Duration</p>
+                  <p className="font-medium">{selectedConversation.duration}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Status</p>
+                  {selectedConversation.status === "Completed" ? (
+                    <Badge className="bg-accent/10 text-accent">
+                      Completed
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-yellow-100 text-yellow-600">
+                      In Progress
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold mb-3">Conversation History</h4>
+                {loadingHistory ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : conversationHistory.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No conversation history available
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {conversationHistory.map((msg: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg ${
+                          msg.role === "user"
+                            ? "bg-primary/10 ml-8"
+                            : "bg-gray-100 mr-8"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="font-semibold text-sm">
+                            {msg.role === "user" ? "User" : "AI Agent"}:
+                          </div>
+                          <div className="flex-1 text-sm">{msg.content}</div>
+                        </div>
+                        {msg.timestamp && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {new Date(msg.timestamp).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Agent Logs Dialog */}
+      <Dialog open={viewLogsOpen} onOpenChange={setViewLogsOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                <Logs className="w-5 h-5 text-purple-600" />
+              </div>
+              <div className="flex-1">
+                <DialogTitle className="text-xl">Agent Logs</DialogTitle>
+                <DialogDescription>
+                  View detailed logs and activity for {selectedAgent?.name}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {loadingLogs ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : agentLogs ? (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Agent Name</p>
+                  <p className="font-semibold">
+                    {agentLogs.agent?.name || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">
+                    Total Conversations
+                  </p>
+                  <p className="font-semibold">
+                    {agentLogs.totalConversations || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Status</p>
+                  <Badge
+                    className={
+                      agentLogs.agent?.status === "active"
+                        ? "bg-accent/10 text-accent"
+                        : "bg-gray-100 text-gray-600"
+                    }
+                  >
+                    {agentLogs.agent?.status || "N/A"}
+                  </Badge>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold mb-3">Recent Activity</h4>
+                {agentLogs.logs && agentLogs.logs.length > 0 ? (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {agentLogs.logs.map((log: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">
+                              {log.messages?.length || 0} messages
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {log.createdAt
+                                ? new Date(log.createdAt).toLocaleString()
+                                : "Unknown date"}
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {log.status || "Active"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    No logs available for this agent
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              Failed to load agent logs
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

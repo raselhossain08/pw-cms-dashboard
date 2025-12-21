@@ -38,12 +38,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/context/ToastContext";
-import { integrationsService } from "@/services/integrations.service";
+import { useIntegrations } from "@/hooks/useIntegrations";
 import {
   Integration,
   IntegrationCategory,
   IntegrationStatus,
   IntegrationStats,
+  IntegrationStat,
 } from "@/types/integrations";
 
 const EMPTY_INTEGRATIONS = [
@@ -99,12 +100,20 @@ const EMPTY_INTEGRATIONS = [
 
 export default function Integrations() {
   const { push: showToast } = useToast();
-  const [integrations, setIntegrations] = React.useState<Integration[]>([]);
-  const [stats, setStats] = React.useState<IntegrationStats | null>(null);
+  const {
+    integrations,
+    stats,
+    isLoading,
+    actionLoading,
+    connectIntegration,
+    disconnectIntegration,
+    testConnection,
+    updateConfig,
+    deleteIntegration,
+  } = useIntegrations();
+
   const [search, setSearch] = React.useState("");
   const [activeTab, setActiveTab] = React.useState("All Integrations");
-  const [loading, setLoading] = React.useState(true);
-  const [actionLoading, setActionLoading] = React.useState<string | null>(null);
 
   // Dialog states
   const [addOpen, setAddOpen] = React.useState(false);
@@ -133,95 +142,34 @@ export default function Integrations() {
   const [webhookUrl, setWebhookUrl] = React.useState("");
   const [webhookEvents, setWebhookEvents] = React.useState<string[]>([]);
 
-  // Fetch integrations on mount
-  React.useEffect(() => {
-    fetchIntegrations();
-    fetchStats();
-  }, []);
-
-  const fetchIntegrations = async () => {
-    try {
-      setLoading(true);
-      const data = await integrationsService.getAll();
-      setIntegrations(data);
-    } catch (error: any) {
-      console.error("Failed to load integrations:", error);
-      showToast({
-        type: "info",
-        message: "Using demo data. Connect to backend for live integrations.",
-      });
-      // Use demo data as fallback
-      setIntegrations(EMPTY_INTEGRATIONS as any);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchStats = async () => {
-    try {
-      const data = await integrationsService.getStats();
-      setStats(data);
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
-    }
-  };
-
+  // Handle connect
   const handleConnect = async (id: string) => {
-    setActionLoading(id);
     try {
-      await integrationsService.connect(id);
-      showToast({
-        type: "success",
-        message: "Integration connected successfully",
-      });
-      await fetchIntegrations();
-      await fetchStats();
-    } catch (error: any) {
-      showToast({
-        type: "error",
-        message:
-          error.response?.data?.message || "Failed to connect integration",
-      });
-    } finally {
-      setActionLoading(null);
+      await connectIntegration(id);
+    } catch (error) {
+      // Error handling is done in the hook
     }
   };
 
+  // Handle disconnect
   const handleDisconnect = async (id: string) => {
-    setActionLoading(id);
     try {
-      await integrationsService.disconnect(id);
-      showToast({ type: "success", message: "Integration disconnected" });
-      await fetchIntegrations();
-      await fetchStats();
-    } catch (error: any) {
-      showToast({
-        type: "error",
-        message: error.response?.data?.message || "Failed to disconnect",
-      });
-    } finally {
-      setActionLoading(null);
+      await disconnectIntegration(id);
+    } catch (error) {
+      // Error handling is done in the hook
     }
   };
 
+  // Handle test connection
   const handleTestConnection = async (id: string) => {
-    setActionLoading(id);
     try {
-      const result = await integrationsService.testConnection(id);
-      showToast({
-        type: result.success ? "success" : "error",
-        message: result.message,
-      });
-    } catch (error: any) {
-      showToast({
-        type: "error",
-        message: error.response?.data?.message || "Connection test failed",
-      });
-    } finally {
-      setActionLoading(null);
+      await testConnection(id);
+    } catch (error) {
+      // Error handling is done in the hook
     }
   };
 
+  // Handle configure click
   const handleConfigureClick = (integration: Integration) => {
     setSelectedIntegration(integration);
     setConfigData({
@@ -233,59 +181,36 @@ export default function Integrations() {
     setConfigOpen(true);
   };
 
+  // Handle save config
   const handleSaveConfig = async () => {
     if (!selectedIntegration) return;
 
-    setActionLoading("config-save");
     try {
-      await integrationsService.updateConfig(selectedIntegration.id, {
+      await updateConfig(selectedIntegration.id, {
         config: configData,
         status: "connected" as IntegrationStatus,
       });
-      showToast({
-        type: "success",
-        message: "Configuration saved successfully",
-      });
       setConfigOpen(false);
-      await fetchIntegrations();
-      await fetchStats();
-    } catch (error: any) {
-      showToast({
-        type: "error",
-        message:
-          error.response?.data?.message || "Failed to save configuration",
-      });
-    } finally {
-      setActionLoading(null);
+    } catch (error) {
+      // Error handling is done in the hook
     }
   };
 
+  // Handle delete click
   const handleDeleteClick = (integration: Integration) => {
     setSelectedIntegration(integration);
     setDeleteOpen(true);
   };
 
+  // Handle confirm delete
   const handleConfirmDelete = async () => {
     if (!selectedIntegration) return;
 
-    setActionLoading("delete");
     try {
-      await integrationsService.delete(selectedIntegration.id);
-      showToast({
-        type: "success",
-        message: "Integration removed successfully",
-      });
+      await deleteIntegration(selectedIntegration.id);
       setDeleteOpen(false);
-      await fetchIntegrations();
-      await fetchStats();
-    } catch (error: any) {
-      showToast({
-        type: "error",
-        message:
-          error.response?.data?.message || "Failed to delete integration",
-      });
-    } finally {
-      setActionLoading(null);
+    } catch (error) {
+      // Error handling is done in the hook
     }
   };
 
@@ -351,7 +276,12 @@ export default function Integrations() {
     return Code2;
   };
 
-  const filtered = integrations.filter((it) => {
+  // Use demo data as fallback if no integrations loaded
+  const displayIntegrations =
+    integrations.length > 0 ? integrations : (EMPTY_INTEGRATIONS as any);
+  const loading = isLoading;
+
+  const filtered = displayIntegrations.filter((it: Integration) => {
     const q = search.trim().toLowerCase();
     const matchesSearch =
       !q ||
@@ -364,16 +294,8 @@ export default function Integrations() {
   });
 
   return (
-    <main className="p-6">
+    <main>
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-secondary mb-2">
-            Integrations
-          </h2>
-          <p className="text-gray-600">
-            Connect your platform with third-party services and tools
-          </p>
-        </div>
         <div className="flex items-center space-x-3">
           <div className="relative">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -517,7 +439,9 @@ export default function Integrations() {
         ] as const
       ).map((section) => {
         const Icon = iconForCategory(section);
-        const items = filtered.filter((i) => i.category === section);
+        const items = filtered.filter(
+          (i: Integration) => i.category === section
+        );
         if (!items.length && activeTab !== "All Integrations") return null;
         return (
           <div key={section} className="mb-12">
@@ -549,10 +473,10 @@ export default function Integrations() {
                       </div>
                     </div>
                   ))
-                : integrations
-                    .filter((i) => i.category === section)
-                    .filter((i) => filtered.includes(i))
-                    .map((i) => (
+                : displayIntegrations
+                    .filter((i: Integration) => i.category === section)
+                    .filter((i: Integration) => filtered.includes(i))
+                    .map((i: Integration) => (
                       <div
                         key={i.id}
                         className="integration-card bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-200"
@@ -599,16 +523,18 @@ export default function Integrations() {
                         {i.stats && i.stats.length > 0 && (
                           <div className="bg-gray-50 rounded-lg p-3 mb-4">
                             <div className="grid grid-cols-2 gap-2">
-                              {i.stats.slice(0, 4).map((s, idx) => (
-                                <div key={idx} className="text-sm">
-                                  <span className="text-gray-600 text-xs">
-                                    {s.label}:
-                                  </span>
-                                  <span className="font-medium ml-1">
-                                    {s.value}
-                                  </span>
-                                </div>
-                              ))}
+                              {i.stats
+                                .slice(0, 4)
+                                .map((s: IntegrationStat, idx: number) => (
+                                  <div key={idx} className="text-sm">
+                                    <span className="text-gray-600 text-xs">
+                                      {s.label}:
+                                    </span>
+                                    <span className="font-medium ml-1">
+                                      {s.value}
+                                    </span>
+                                  </div>
+                                ))}
                             </div>
                           </div>
                         )}
@@ -631,9 +557,12 @@ export default function Integrations() {
                                 variant="outline"
                                 onClick={() => handleTestConnection(i.id)}
                                 disabled={actionLoading === i.id}
-                                loading={actionLoading === i.id}
                               >
-                                <RefreshCw className="w-3 h-3 mr-1" />
+                                <RefreshCw
+                                  className={`w-3 h-3 mr-1 ${
+                                    actionLoading === i.id ? "animate-spin" : ""
+                                  }`}
+                                />
                                 Test
                               </Button>
                               <Button
@@ -641,9 +570,12 @@ export default function Integrations() {
                                 variant="destructive"
                                 onClick={() => handleDisconnect(i.id)}
                                 disabled={actionLoading === i.id}
-                                loading={actionLoading === i.id}
                               >
-                                <XCircle className="w-3 h-3" />
+                                {actionLoading === i.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <XCircle className="w-3 h-3" />
+                                )}
                               </Button>
                             </>
                           ) : (
@@ -653,7 +585,6 @@ export default function Integrations() {
                                 className="flex-1"
                                 onClick={() => handleConfigureClick(i)}
                                 disabled={actionLoading === i.id}
-                                loading={actionLoading === i.id}
                               >
                                 {i.status === "pending"
                                   ? "Setup Now"
@@ -882,16 +813,22 @@ export default function Integrations() {
             <Button
               variant="outline"
               onClick={() => setConfigOpen(false)}
-              disabled={actionLoading === "config-save"}
+              disabled={actionLoading === `config-${selectedIntegration?.id}`}
             >
               Cancel
             </Button>
             <Button
               onClick={handleSaveConfig}
-              loading={actionLoading === "config-save"}
-              disabled={!configData.apiKey || actionLoading === "config-save"}
+              disabled={
+                !configData.apiKey ||
+                actionLoading === `config-${selectedIntegration?.id}`
+              }
             >
-              <Save className="w-4 h-4 mr-1" />
+              {actionLoading === `config-${selectedIntegration?.id}` ? (
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-1" />
+              )}
               Save Configuration
             </Button>
           </DialogFooter>
@@ -916,17 +853,20 @@ export default function Integrations() {
             <Button
               variant="outline"
               onClick={() => setDeleteOpen(false)}
-              disabled={actionLoading === "delete"}
+              disabled={actionLoading === selectedIntegration?.id}
             >
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={handleConfirmDelete}
-              loading={actionLoading === "delete"}
-              disabled={actionLoading === "delete"}
+              disabled={actionLoading === selectedIntegration?.id}
             >
-              <Trash2 className="w-4 h-4 mr-1" />
+              {actionLoading === selectedIntegration?.id ? (
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-1" />
+              )}
               Delete Integration
             </Button>
           </DialogFooter>

@@ -1,8 +1,4 @@
-import axios from "axios";
-import { cookieService } from "../cookie.service";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3333";
+import { cookieService } from "@/lib/cookie.service";
 
 export interface HeaderSection {
   title: string;
@@ -61,60 +57,133 @@ export interface PrivacyPolicyResponse {
 }
 
 export class PrivacyPolicyService {
+  private static readonly API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+
   private static getAuthHeader() {
     const token = cookieService.get("token");
     return {
-      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }),
     };
   }
 
   static async getActivePrivacyPolicy(): Promise<PrivacyPolicyResponse> {
     try {
-      const response = await axios.get<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy/active`,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/active`,
         {
           headers: this.getAuthHeader(),
+          cache: "no-store",
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
-        message: error.response?.data?.message || "Failed to fetch active privacy policy",
+        message: error.message || "Failed to fetch active privacy policy",
       };
     }
   }
 
   static async getAllPrivacyPolicies(): Promise<PrivacyPolicyResponse> {
     try {
-      const response = await axios.get<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy`,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy`,
         {
           headers: this.getAuthHeader(),
+          cache: "no-store",
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
-        message: error.response?.data?.message || "Failed to fetch privacy policies",
+        message: error.message || "Failed to fetch privacy policies",
       };
     }
   }
 
   static async getDefaultPrivacyPolicy(): Promise<PrivacyPolicyResponse> {
     try {
-      const response = await axios.get<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy/default`,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/default`,
         {
           headers: this.getAuthHeader(),
+          cache: "no-store",
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
-        message: error.response?.data?.message || "Failed to fetch default privacy policy",
+        message: error.message || "Failed to fetch default privacy policy",
       };
     }
   }
@@ -123,17 +192,40 @@ export class PrivacyPolicyService {
     id: string
   ): Promise<PrivacyPolicyResponse> {
     try {
-      const response = await axios.get<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy/${id}`,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/${id}`,
         {
           headers: this.getAuthHeader(),
+          cache: "no-store",
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
-        message: error.response?.data?.message || "Failed to fetch privacy policy",
+        message: error.message || "Failed to fetch privacy policy",
       };
     }
   }
@@ -142,18 +234,41 @@ export class PrivacyPolicyService {
     data: Partial<PrivacyPolicy>
   ): Promise<PrivacyPolicyResponse> {
     try {
-      const response = await axios.post<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy`,
-        data,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy`,
         {
+          method: "POST",
           headers: this.getAuthHeader(),
+          body: JSON.stringify(data),
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to create: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
-        message: error.response?.data?.message || "Failed to create privacy policy",
+        message: error.message || "Failed to create privacy policy",
       };
     }
   }
@@ -163,18 +278,41 @@ export class PrivacyPolicyService {
     data: Partial<PrivacyPolicy>
   ): Promise<PrivacyPolicyResponse> {
     try {
-      const response = await axios.put<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy/${id}`,
-        data,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/${id}`,
         {
+          method: "PUT",
           headers: this.getAuthHeader(),
+          body: JSON.stringify(data),
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to update: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
-        message: error.response?.data?.message || "Failed to update privacy policy",
+        message: error.message || "Failed to update privacy policy",
       };
     }
   }
@@ -185,40 +323,194 @@ export class PrivacyPolicyService {
   ): Promise<PrivacyPolicyResponse> {
     try {
       const token = cookieService.get("token");
-      const response = await axios.put<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy/${id}/upload`,
-        formData,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/${id}/upload`,
         {
+          method: "PUT",
           headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
+            ...(token && { Authorization: `Bearer ${token}` }),
           },
+          body: formData,
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to upload: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
         message:
-          error.response?.data?.message || "Failed to update privacy policy with upload",
+          error.message || "Failed to update privacy policy with upload",
       };
     }
   }
 
   static async deletePrivacyPolicy(id: string): Promise<PrivacyPolicyResponse> {
     try {
-      const response = await axios.delete<PrivacyPolicyResponse>(
-        `${API_BASE_URL}/cms/privacy-policy/${id}`,
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/${id}`,
         {
+          method: "DELETE",
           headers: this.getAuthHeader(),
         }
       );
-      return response.data;
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to delete: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
     } catch (error: any) {
       return {
         success: false,
-        message: error.response?.data?.message || "Failed to delete privacy policy",
+        message: error.message || "Failed to delete privacy policy",
       };
+    }
+  }
+
+  static async toggleActiveStatus(id: string): Promise<PrivacyPolicyResponse> {
+    try {
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/${id}/toggle-active`,
+        {
+          method: "POST",
+          headers: this.getAuthHeader(),
+        }
+      );
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to toggle: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.message || "Failed to toggle privacy policy status",
+      };
+    }
+  }
+
+  static async duplicatePrivacyPolicy(id: string): Promise<PrivacyPolicyResponse> {
+    try {
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/privacy-policy/${id}/duplicate`,
+        {
+          method: "POST",
+          headers: this.getAuthHeader(),
+        }
+      );
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to duplicate: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.message || "Failed to duplicate privacy policy",
+      };
+    }
+  }
+
+  static async exportPrivacyPolicy(format: "json" | "pdf", id?: string): Promise<void> {
+    try {
+      const url = id
+        ? `${this.API_BASE_URL}/cms/privacy-policy/${id}/export?format=${format}`
+        : `${this.API_BASE_URL}/cms/privacy-policy/export?format=${format}`;
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this.getAuthHeader(),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to export privacy policy");
+      }
+
+      const blob = await response.blob();
+      const url_blob = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url_blob;
+      link.download = `privacy-policy-export_${new Date().toISOString().split("T")[0]}.${format === "pdf" ? "pdf" : "json"}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url_blob);
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to export privacy policy");
     }
   }
 }

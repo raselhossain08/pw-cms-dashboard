@@ -90,6 +90,10 @@ export default function Enrollments() {
   const [page, setPage] = React.useState(1);
   const [limit] = React.useState(10);
   const [viewMode, setViewMode] = React.useState<"grid" | "table">("grid");
+  const totalPages = React.useMemo(
+    () => Math.ceil(total / limit),
+    [total, limit]
+  );
 
   // Dialog states
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -546,28 +550,35 @@ export default function Enrollments() {
           <div className="flex flex-wrap gap-2">
             <Select value={courseFilter} onValueChange={setCourseFilter}>
               <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-48">
-                <SelectValue />
+                <SelectValue placeholder="All Courses" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All Courses">All Courses</SelectItem>
-                <SelectItem value="Web Development">Web Development</SelectItem>
-                <SelectItem value="Data Science">Data Science</SelectItem>
-                <SelectItem value="Digital Marketing">
-                  Digital Marketing
-                </SelectItem>
-                <SelectItem value="UI/UX Design">UI/UX Design</SelectItem>
+                <SelectItem value="all">All Courses</SelectItem>
+                {coursesLoading ? (
+                  <SelectItem value="loading" disabled>
+                    Loading...
+                  </SelectItem>
+                ) : (
+                  courses.map((course: any) => (
+                    <SelectItem key={course._id} value={course._id}>
+                      {course.title}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-40">
-                <SelectValue />
+                <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All Status">All Status</SelectItem>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Pending">Pending</SelectItem>
-                <SelectItem value="Completed">Completed</SelectItem>
-                <SelectItem value="Dropped">Dropped</SelectItem>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="dropped">Dropped</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+                <SelectItem value="expired">Expired</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -575,31 +586,55 @@ export default function Enrollments() {
               onValueChange={setInstructorFilter}
             >
               <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-48">
-                <SelectValue />
+                <SelectValue placeholder="All Instructors" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All Instructors">All Instructors</SelectItem>
-                <SelectItem value="Dr. James Wilson">
-                  Dr. James Wilson
-                </SelectItem>
-                <SelectItem value="Dr. Maria Rodriguez">
-                  Dr. Maria Rodriguez
-                </SelectItem>
-                <SelectItem value="Prof. David Kim">Prof. David Kim</SelectItem>
+                <SelectItem value="all">All Instructors</SelectItem>
+                {instructors.map((instructor: any) => (
+                  <SelectItem key={instructor._id} value={instructor._id}>
+                    {instructor.name ||
+                      `${instructor.firstName || ""} ${
+                        instructor.lastName || ""
+                      }`.trim() ||
+                      instructor.email}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <Select value={sortBy} onValueChange={setSortBy}>
+            <Select
+              value={sortBy}
+              onValueChange={(value) => {
+                if (value === "createdAt-desc") {
+                  setSortBy("createdAt");
+                  setSortOrder("desc");
+                } else if (value === "createdAt-asc") {
+                  setSortBy("createdAt");
+                  setSortOrder("asc");
+                } else if (value === "progress-desc") {
+                  setSortBy("progress");
+                  setSortOrder("desc");
+                } else if (value === "progress-asc") {
+                  setSortBy("progress");
+                  setSortOrder("asc");
+                }
+              }}
+            >
               <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-56">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Date (Newest)">
+                <SelectItem value="createdAt-desc">
                   Sort by: Date (Newest)
                 </SelectItem>
-                <SelectItem value="Date (Oldest)">
+                <SelectItem value="createdAt-asc">
                   Sort by: Date (Oldest)
                 </SelectItem>
-                <SelectItem value="Progress">Sort by: Progress</SelectItem>
+                <SelectItem value="progress-desc">
+                  Sort by: Progress (High)
+                </SelectItem>
+                <SelectItem value="progress-asc">
+                  Sort by: Progress (Low)
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -615,287 +650,481 @@ export default function Enrollments() {
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
-            <Button variant="ghost" size="icon" className="text-gray-600">
+            <Button
+              variant={viewMode === "grid" ? "default" : "ghost"}
+              size="icon"
+              className="text-gray-600"
+              onClick={() => setViewMode("grid")}
+            >
               <Grid2x2 className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="text-gray-600">
+            <Button
+              variant={viewMode === "table" ? "default" : "ghost"}
+              size="icon"
+              className="text-gray-600"
+              onClick={() => setViewMode("table")}
+            >
               <List className="w-5 h-5" />
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
-        <h3 className="text-lg font-semibold text-secondary mb-4">
-          Course Enrollment Distribution
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-primary mb-2">1,247</div>
-            <div className="text-sm text-gray-600">Web Development</div>
-            <div className="text-xs text-gray-500 mt-1">32% of enrollments</div>
-          </div>
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-blue-600 mb-2">892</div>
-            <div className="text-sm text-gray-600">Data Science</div>
-            <div className="text-xs text-gray-500 mt-1">23% of enrollments</div>
-          </div>
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-purple-600 mb-2">956</div>
-            <div className="text-sm text-gray-600">UI/UX Design</div>
-            <div className="text-xs text-gray-500 mt-1">25% of enrollments</div>
-          </div>
-          <div className="text-center p-4 border border-gray-200 rounded-lg">
-            <div className="text-xl font-bold text-green-600 mb-2">752</div>
-            <div className="text-sm text-gray-600">Digital Marketing</div>
-            <div className="text-xs text-gray-500 mt-1">20% of enrollments</div>
+      {distributionLoading ? (
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+          <div className="animate-pulse space-y-4">
+            <div className="h-6 bg-gray-200 rounded w-1/4"></div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      ) : distribution.length > 0 ? (
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+          <h3 className="text-lg font-semibold text-secondary mb-4">
+            Course Enrollment Distribution
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {distribution.slice(0, 4).map((item, index) => {
+              const colors = [
+                "text-primary",
+                "text-blue-600",
+                "text-purple-600",
+                "text-green-600",
+              ];
+              return (
+                <div
+                  key={item.courseId || index}
+                  className="text-center p-4 border border-gray-200 rounded-lg"
+                >
+                  <div
+                    className={`text-xl font-bold ${
+                      colors[index % colors.length]
+                    } mb-2`}
+                  >
+                    {item.enrollmentCount.toLocaleString()}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {item.courseName || "Unknown Course"}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {item.percentage}% of enrollments
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
-      {/* Grid Cards - Always Visible */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        {enrollments.map((it: Enrollment) => (
-          <div
-            key={it._id}
-            className="bg-card rounded-xl p-6 shadow-sm border border-gray-100"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center space-x-3">
-                <img
-                  src={it.student?.avatar || "/avatar-placeholder.png"}
-                  alt={getStudentName(it)}
-                  className="w-12 h-12 rounded-full"
-                />
-                <div>
-                  <h3 className="font-semibold text-secondary">
-                    {getStudentName(it)}
-                  </h3>
-                  <p className="text-sm text-gray-500">{getCourseName(it)}</p>
+      {/* Grid Cards - Conditional Rendering */}
+      {viewMode === "grid" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          {loading ? (
+            [...Array(6)].map((_, i) => (
+              <div
+                key={i}
+                className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 animate-pulse"
+              >
+                <div className="h-20 bg-gray-200 rounded mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+              </div>
+            ))
+          ) : enrollments.length === 0 ? (
+            <div className="col-span-full text-center py-12">
+              <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">No enrollments found</p>
+            </div>
+          ) : (
+            enrollments.map((it: Enrollment) => (
+              <div
+                key={it._id}
+                className="bg-card rounded-xl p-6 shadow-sm border border-gray-100"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center space-x-3">
+                    <img
+                      src={it.student?.avatar || "/avatar-placeholder.png"}
+                      alt={getStudentName(it)}
+                      className="w-12 h-12 rounded-full"
+                    />
+                    <div>
+                      <h3 className="font-semibold text-secondary">
+                        {getStudentName(it)}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {getCourseName(it)}
+                      </p>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-gray-400"
+                      >
+                        <EllipsisVertical className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleView(it)}>
+                        <Eye className="w-4 h-4 mr-2" /> View Enrollment
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(it)}>
+                        <Edit className="w-4 h-4 mr-2" /> Edit
+                      </DropdownMenuItem>
+                      {it.status === "pending" && (
+                        <DropdownMenuItem onClick={() => handleApprove(it)}>
+                          <CheckCircle className="w-4 h-4 mr-2" /> Approve
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => {
+                          setSelectedEnrollment(it);
+                          setCancelOpen(true);
+                        }}
+                      >
+                        <Ban className="w-4 h-4 mr-2" /> Cancel
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="mb-4">
+                  <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
+                    <span>{it.course?.description || "No description"}</span>
+                    {getStatusBadge(it.status)}
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <span>Enrolled:</span>
+                    <span className="font-medium">
+                      {formatDate(it.createdAt)}
+                    </span>
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>Progress</span>
+                    <span className="font-medium">{it.progress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-accent h-2 rounded-full"
+                      style={{ width: `${it.progress}%` }}
+                    ></div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-sm text-gray-600">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-medium px-2 py-1 rounded-full bg-primary/10 text-primary">
+                      {getInstructorName(it)}
+                    </span>
+                    <span>
+                      {Object.keys(it.completedLessons || {}).length} lessons
+                    </span>
+                  </div>
+                  <div className="text-primary font-medium">
+                    {it.student?.email}
+                  </div>
                 </div>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="text-gray-400">
-                    <EllipsisVertical className="w-5 h-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem>View Enrollment</DropdownMenuItem>
-                  <DropdownMenuItem>Edit</DropdownMenuItem>
-                  <DropdownMenuItem>Message</DropdownMenuItem>
-                  <DropdownMenuItem>View Analytics</DropdownMenuItem>
-                  <DropdownMenuItem className="text-red-600">
-                    Cancel
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            <div className="mb-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
-                <span>{it.course?.description || "No description"}</span>
-                {getStatusBadge(it.status)}
-              </div>
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <span>Enrolled:</span>
-                <span className="font-medium">{formatDate(it.createdAt)}</span>
-              </div>
-            </div>
-            <div className="mb-4">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Progress</span>
-                <span className="font-medium">{it.progress}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-accent h-2 rounded-full"
-                  style={{ width: `${it.progress}%` }}
-                ></div>
-              </div>
-            </div>
-            <div className="flex justify-between items-center text-sm text-gray-600">
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-primary/10 text-primary">
-                  {getInstructorName(it)}
-                </span>
-                <span>
-                  {Object.keys(it.completedLessons || {}).length} lessons
-                </span>
-              </div>
-              <div className="text-primary font-medium">
-                {it.student?.email}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* All Enrollments Table - Always Visible */}
-      <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-secondary">
-            All Enrollments
-          </h3>
-          <p className="text-gray-600 text-sm">
-            Complete list of enrollments with detailed information
-          </p>
+            ))
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Course
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Instructor
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Progress
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Enrollment Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {enrollments.map((it: Enrollment) => (
-                <tr key={it._id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <img
-                        className="h-8 w-8 rounded-full"
-                        src={it.student?.avatar || "/avatar-placeholder.png"}
-                        alt=""
-                      />
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">
-                          {getStudentName(it)}
+      )}
+
+      {/* All Enrollments Table - Conditional Rendering */}
+      {viewMode === "table" && (
+        <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-secondary">
+              All Enrollments
+            </h3>
+            <p className="text-gray-600 text-sm">
+              Complete list of enrollments with detailed information
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Student
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Course
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Instructor
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Progress
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Enrollment Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  [...Array(5)].map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-6 py-4">
+                        <div className="h-8 bg-gray-200 rounded"></div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="h-6 bg-gray-200 rounded w-16"></div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="h-4 bg-gray-200 rounded w-20"></div>
+                      </td>
+                    </tr>
+                  ))
+                ) : enrollments.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center">
+                      <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600">No enrollments found</p>
+                    </td>
+                  </tr>
+                ) : (
+                  enrollments.map((it: Enrollment) => (
+                    <tr key={it._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <img
+                            className="h-8 w-8 rounded-full"
+                            src={
+                              it.student?.avatar || "/avatar-placeholder.png"
+                            }
+                            alt=""
+                          />
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">
+                              {getStudentName(it)}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {it.student?.email}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {getCourseName(it)}
                         </div>
                         <div className="text-sm text-gray-500">
-                          {it.student?.email}
+                          {it.course?.description || "No description"}
                         </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {getCourseName(it)}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {it.course?.description || "No description"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {getInstructorName(it)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                        <div
-                          className="bg-yellow-500 h-2 rounded-full"
-                          style={{ width: `${it.progress}%` }}
-                        ></div>
-                      </div>
-                      <span className="text-sm text-gray-900">
-                        {it.progress}%
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatDate(it.createdAt)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {getStatusBadge(it.status)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    {it.status === "pending" && (
-                      <button
-                        onClick={() => handleApprove(it)}
-                        className="text-primary hover:text-primary/80 mr-3"
-                      >
-                        Approve
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleView(it)}
-                      className="text-gray-600 hover:text-primary"
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            Showing <span className="font-medium">1-{enrollments.length}</span>{" "}
-            of <span className="font-medium">{total}</span> enrollments
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {getInstructorName(it)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
+                            <div
+                              className="bg-yellow-500 h-2 rounded-full"
+                              style={{ width: `${it.progress}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm text-gray-900">
+                            {it.progress}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatDate(it.createdAt)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {getStatusBadge(it.status)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {it.status === "pending" && (
+                          <button
+                            onClick={() => handleApprove(it)}
+                            className="text-primary hover:text-primary/80 mr-3"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleView(it)}
+                          className="text-gray-600 hover:text-primary"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => handleEdit(it)}
+                          className="text-gray-600 hover:text-primary ml-3"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedEnrollment(it);
+                            setDeleteOpen(true);
+                          }}
+                          className="text-red-600 hover:text-red-700 ml-3"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm" className="border-gray-300">
-              Previous
-            </Button>
-            <Button size="sm">1</Button>
-            <Button variant="outline" size="sm" className="border-gray-300">
-              2
-            </Button>
-            <Button variant="outline" size="sm" className="border-gray-300">
-              3
-            </Button>
-            <Button variant="outline" size="sm" className="border-gray-300">
-              Next
-            </Button>
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              Showing{" "}
+              <span className="font-medium">
+                {(page - 1) * limit + 1}-{Math.min(page * limit, total)}
+              </span>{" "}
+              of <span className="font-medium">{total}</span> enrollments
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-gray-300"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+              >
+                Previous
+              </Button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (page <= 3) {
+                  pageNum = i + 1;
+                } else if (page >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = page - 2 + i;
+                }
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={page === pageNum ? "default" : "outline"}
+                    size="sm"
+                    className={page === pageNum ? "" : "border-gray-300"}
+                    onClick={() => setPage(pageNum)}
+                    disabled={loading}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-gray-300"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages || loading}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Enrollment Analytics Section */}
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
-        <h3 className="text-lg font-semibold text-secondary mb-4">
-          Enrollment Analytics
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600 mb-2">68%</div>
-            <div className="text-sm text-gray-600">Active Enrollments</div>
-            <div className="text-xs text-gray-500 mt-1">2,954 students</div>
-          </div>
-          <div className="text-center p-4 bg-green-50 rounded-lg">
-            <div className="text-2xl font-bold text-green-600 mb-2">24%</div>
-            <div className="text-sm text-gray-600">Completed Courses</div>
-            <div className="text-xs text-gray-500 mt-1">923 students</div>
-          </div>
-          <div className="text-center p-4 bg-yellow-50 rounded-lg">
-            <div className="text-2xl font-bold text-yellow-600 mb-2">6%</div>
-            <div className="text-sm text-gray-600">Pending Approval</div>
-            <div className="text-xs text-gray-500 mt-1">231 students</div>
-          </div>
-          <div className="text-center p-4 bg-red-50 rounded-lg">
-            <div className="text-2xl font-bold text-red-600 mb-2">2%</div>
-            <div className="text-sm text-gray-600">Dropped Out</div>
-            <div className="text-xs text-gray-500 mt-1">77 students</div>
+      {stats && (
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+          <h3 className="text-lg font-semibold text-secondary mb-4">
+            Enrollment Analytics
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600 mb-2">
+                {stats.totalEnrollments > 0
+                  ? Math.round(
+                      (stats.activeEnrollments / stats.totalEnrollments) * 100
+                    )
+                  : 0}
+                %
+              </div>
+              <div className="text-sm text-gray-600">Active Enrollments</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {stats.activeEnrollments.toLocaleString()} students
+              </div>
+            </div>
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div className="text-2xl font-bold text-green-600 mb-2">
+                {stats.completionRate}%
+              </div>
+              <div className="text-sm text-gray-600">Completed Courses</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {stats.completedEnrollments.toLocaleString()} students
+              </div>
+            </div>
+            <div className="text-center p-4 bg-yellow-50 rounded-lg">
+              <div className="text-2xl font-bold text-yellow-600 mb-2">
+                {stats.totalEnrollments > 0
+                  ? Math.round(
+                      (stats.pendingEnrollments / stats.totalEnrollments) * 100
+                    )
+                  : 0}
+                %
+              </div>
+              <div className="text-sm text-gray-600">Pending Approval</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {stats.pendingEnrollments.toLocaleString()} students
+              </div>
+            </div>
+            <div className="text-center p-4 bg-red-50 rounded-lg">
+              <div className="text-2xl font-bold text-red-600 mb-2">
+                {stats.totalEnrollments > 0
+                  ? Math.round(
+                      (stats.droppedEnrollments / stats.totalEnrollments) * 100
+                    )
+                  : 0}
+                %
+              </div>
+              <div className="text-sm text-gray-600">Dropped Out</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {stats.droppedEnrollments.toLocaleString()} students
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-secondary mb-4">
           Quick Actions
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <button className="flex items-center space-x-3 p-4 bg-primary/5 hover:bg-primary/10 rounded-lg">
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center space-x-3 p-4 bg-primary/5 hover:bg-primary/10 rounded-lg transition-colors"
+          >
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
               <UserPlus className="text-white w-5 h-5" />
             </div>
@@ -904,16 +1133,10 @@ export default function Enrollments() {
               <p className="text-sm text-gray-600">Add student to course</p>
             </div>
           </button>
-          <button className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg">
-            <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-              <Users className="text-white w-5 h-5" />
-            </div>
-            <div className="text-left">
-              <p className="font-medium text-secondary">Bulk Enrollments</p>
-              <p className="text-sm text-gray-600">Multiple students</p>
-            </div>
-          </button>
-          <button className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg">
+          <button
+            onClick={() => handleExport("csv")}
+            className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+          >
             <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
               <Download className="text-white w-5 h-5" />
             </div>
@@ -922,13 +1145,37 @@ export default function Enrollments() {
               <p className="text-sm text-gray-600">Enrollment reports</p>
             </div>
           </button>
-          <button className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg">
+          <button
+            onClick={() => {
+              fetchStats();
+              fetchDistribution();
+            }}
+            className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors"
+          >
             <div className="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center">
               <BarChart2 className="text-white w-5 h-5" />
             </div>
             <div className="text-left">
-              <p className="font-medium text-secondary">View Analytics</p>
-              <p className="text-sm text-gray-600">Enrollment insights</p>
+              <p className="font-medium text-secondary">Refresh Analytics</p>
+              <p className="text-sm text-gray-600">Update statistics</p>
+            </div>
+          </button>
+          <button
+            onClick={() => {
+              setSearch("");
+              setCourseFilter("all");
+              setStatusFilter("all");
+              setInstructorFilter("all");
+              setPage(1);
+            }}
+            className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg transition-colors"
+          >
+            <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
+              <X className="text-white w-5 h-5" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-secondary">Clear Filters</p>
+              <p className="text-sm text-gray-600">Reset all filters</p>
             </div>
           </button>
         </div>
@@ -938,148 +1185,512 @@ export default function Enrollments() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create New Enrollment</DialogTitle>
-            <DialogDescription></DialogDescription>
+            <DialogDescription>
+              Add a new student enrollment to a course
+            </DialogDescription>
           </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setCreateOpen(false);
-            }}
-            className="space-y-6"
-          >
+          <form onSubmit={handleCreate} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Student
+                  Student *
                 </label>
                 <select
+                  value={createForm.studentId}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, studentId: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   required
+                  disabled={studentsLoading || formLoading}
                 >
                   <option value="">Select student</option>
-                  <option value="1">Sarah Johnson</option>
-                  <option value="2">Michael Chen</option>
-                  <option value="3">Emily Davis</option>
+                  {students.map((student: any) => (
+                    <option key={student._id} value={student._id}>
+                      {student.name ||
+                        `${student.firstName || ""} ${
+                          student.lastName || ""
+                        }`.trim() ||
+                        student.email}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Course
+                  Course *
                 </label>
                 <select
+                  value={createForm.courseId}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, courseId: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                   required
+                  disabled={coursesLoading || formLoading}
                 >
-                  <option value="web">Web Development</option>
-                  <option value="data">Data Science</option>
-                  <option value="marketing">Digital Marketing</option>
-                  <option value="design">UI/UX Design</option>
+                  <option value="">Select course</option>
+                  {courses.map((course: any) => (
+                    <option key={course._id} value={course._id}>
+                      {course.title}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Instructor
-                </label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  required
-                >
-                  <option value="james">Dr. James Wilson</option>
-                  <option value="maria">Dr. Maria Rodriguez</option>
-                  <option value="david">Prof. David Kim</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Enrollment Date
-                </label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  required
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                value={createForm.status}
+                onChange={(e) =>
+                  setCreateForm({
+                    ...createForm,
+                    status: e.target.value as "active" | "pending",
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                disabled={formLoading}
+              >
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+              </select>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20">
-                  <option value="active">Active</option>
-                  <option value="pending">Pending</option>
-                  <option value="completed">Completed</option>
-                  <option value="dropped">Dropped</option>
-                </select>
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setCreateOpen(false);
+                  setCreateForm({
+                    studentId: "",
+                    courseId: "",
+                    status: "active",
+                  });
+                }}
+                disabled={formLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  formLoading || !createForm.studentId || !createForm.courseId
+                }
+              >
+                {formLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Enrollment"
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Enrollment Dialog */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Enrollment Details</DialogTitle>
+            <DialogDescription>
+              View detailed information about this enrollment
+            </DialogDescription>
+          </DialogHeader>
+          {formLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : selectedEnrollment ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Student
+                  </label>
+                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <img
+                      src={
+                        selectedEnrollment.student?.avatar ||
+                        "/avatar-placeholder.png"
+                      }
+                      alt={getStudentName(selectedEnrollment)}
+                      className="w-10 h-10 rounded-full"
+                    />
+                    <div>
+                      <p className="font-medium">
+                        {getStudentName(selectedEnrollment)}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {selectedEnrollment.student?.email}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Course
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="font-medium">
+                      {getCourseName(selectedEnrollment)}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {selectedEnrollment.course?.description ||
+                        "No description"}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    {getStatusBadge(selectedEnrollment.status)}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Progress
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium">
+                        {selectedEnrollment.progress}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-accent h-2 rounded-full"
+                        style={{ width: `${selectedEnrollment.progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Enrollment Date
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p>{formatDate(selectedEnrollment.createdAt)}</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Last Accessed
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p>{formatDate(selectedEnrollment.lastAccessedAt)}</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Completed Lessons
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p>
+                      {
+                        Object.keys(selectedEnrollment.completedLessons || {})
+                          .length
+                      }{" "}
+                      lessons
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Total Time Spent
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p>
+                      {Math.round(
+                        (selectedEnrollment.totalTimeSpent || 0) / 60
+                      )}{" "}
+                      minutes
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Modules Count
-                </label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="0"
-                />
-              </div>
+              {selectedEnrollment.notes &&
+                selectedEnrollment.notes.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Notes
+                    </label>
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <ul className="list-disc list-inside space-y-1">
+                        {selectedEnrollment.notes.map((note, index) => (
+                          <li key={index} className="text-sm text-gray-600">
+                            {note}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setViewOpen(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                setViewOpen(false);
+                if (selectedEnrollment) handleEdit(selectedEnrollment);
+              }}
+            >
+              Edit Enrollment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Enrollment Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Enrollment</DialogTitle>
+            <DialogDescription>
+              Update enrollment status and notes
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdate} className="space-y-6">
+            {selectedEnrollment && (
+              <>
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Student</p>
+                  <p className="font-medium">
+                    {getStudentName(selectedEnrollment)}
+                  </p>
+                </div>
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Course</p>
+                  <p className="font-medium">
+                    {getCourseName(selectedEnrollment)}
+                  </p>
+                </div>
+              </>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status *
+              </label>
+              <select
+                value={editForm.status}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, status: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                required
+                disabled={formLoading}
+              >
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="completed">Completed</option>
+                <option value="dropped">Dropped</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="expired">Expired</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Notes
               </label>
               <textarea
+                value={editForm.notes}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, notes: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                rows={3}
-                placeholder="Any additional notes about this enrollment"
-              ></textarea>
+                rows={4}
+                placeholder="Enter notes (one per line)"
+                disabled={formLoading}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Each line will be treated as a separate note
+              </p>
             </div>
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">
-                Enrollment Settings
-              </label>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                  defaultChecked
-                />
-                <label className="ml-2 block text-sm text-gray-700">
-                  Send welcome email
-                </label>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                  defaultChecked
-                />
-                <label className="ml-2 block text-sm text-gray-700">
-                  Grant immediate access
-                </label>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                />
-                <label className="ml-2 block text-sm text-gray-700">
-                  Require profile completion
-                </label>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setCreateOpen(false)}
+                onClick={() => {
+                  setEditOpen(false);
+                  setSelectedEnrollment(null);
+                  setEditForm({ status: "", notes: "" });
+                }}
+                disabled={formLoading}
               >
                 Cancel
               </Button>
-              <Button type="submit">Create Enrollment</Button>
-            </div>
+              <Button type="submit" disabled={formLoading || !editForm.status}>
+                {formLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  "Update Enrollment"
+                )}
+              </Button>
+            </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Enrollment Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Enrollment</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this enrollment? This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedEnrollment && (
+            <div className="p-4 bg-red-50 rounded-lg">
+              <p className="text-sm font-medium text-gray-900">
+                Student: {getStudentName(selectedEnrollment)}
+              </p>
+              <p className="text-sm text-gray-600">
+                Course: {getCourseName(selectedEnrollment)}
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDeleteOpen(false);
+                setSelectedEnrollment(null);
+              }}
+              disabled={formLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={formLoading}
+            >
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Enrollment"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Dialog */}
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Multiple Enrollments</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedIds.length}{" "}
+              enrollment(s)? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setBulkDeleteOpen(false);
+                setSelectedIds([]);
+              }}
+              disabled={formLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBulkDelete}
+              disabled={formLoading}
+            >
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                `Delete ${selectedIds.length} Enrollment(s)`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Enrollment Dialog */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Enrollment</DialogTitle>
+            <DialogDescription>
+              Cancel this enrollment. You can provide an optional reason.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedEnrollment && (
+            <div className="p-4 bg-yellow-50 rounded-lg mb-4">
+              <p className="text-sm font-medium text-gray-900">
+                Student: {getStudentName(selectedEnrollment)}
+              </p>
+              <p className="text-sm text-gray-600">
+                Course: {getCourseName(selectedEnrollment)}
+              </p>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reason (Optional)
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+              rows={3}
+              placeholder="Enter cancellation reason..."
+              disabled={formLoading}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCancelOpen(false);
+                setSelectedEnrollment(null);
+                setCancelReason("");
+              }}
+              disabled={formLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelEnrollment}
+              disabled={formLoading}
+            >
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Cancelling...
+                </>
+              ) : (
+                "Cancel Enrollment"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </main>

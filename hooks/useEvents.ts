@@ -1,89 +1,154 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { eventsService } from '@/services/events.service'
 import type { Events, UpdateEventsDto } from '@/lib/types/events'
 import { useToast } from '@/context/ToastContext'
 
-export function useEvents() {
+interface UseEventsResult {
+    events: Events | null
+    loading: boolean
+    saving: boolean
+    uploadProgress: number
+    error: string | null
+    fetchEvents: () => Promise<void>
+    updateEvents: (data: UpdateEventsDto) => Promise<Events | null>
+    updateEventsWithMedia: (formData: FormData) => Promise<Events | null>
+    toggleActive: () => Promise<Events | null>
+    duplicateEvent: (slug: string) => Promise<Events | null>
+    exportEvents: (format: "json" | "pdf") => Promise<void>
+    refreshEvents: () => Promise<void>
+}
+
+export function useEvents(): UseEventsResult {
     const [events, setEvents] = useState<Events | null>(null)
     const [loading, setLoading] = useState(true)
+    const [saving, setSaving] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
+    const [error, setError] = useState<string | null>(null)
     const { push } = useToast()
 
-    const showToast = (message: string, type: 'success' | 'error' | 'info') => {
-        push({ message, type })
-    }
-
-    const fetchEvents = async () => {
+    const fetchEvents = useCallback(async () => {
         try {
             setLoading(true)
+            setError(null)
             const data = await eventsService.getEvents()
             setEvents(data)
-        } catch (error) {
-            console.error('Failed to fetch events:', error)
-            showToast('Failed to fetch events data.', 'error')
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || 'Failed to fetch events data.'
+            setError(errorMessage)
+            push({ message: errorMessage, type: 'error' })
         } finally {
             setLoading(false)
         }
-    }
+    }, [push])
 
     useEffect(() => {
         fetchEvents()
-    }, [])
+    }, [fetchEvents])
 
-    const updateEvents = async (data: UpdateEventsDto) => {
+    const updateEvents = useCallback(async (data: UpdateEventsDto): Promise<Events | null> => {
+        setSaving(true)
         try {
             const updated = await eventsService.updateEvents(data)
             setEvents(updated)
-            showToast('Events updated successfully', 'success')
+            push({ message: 'Events updated successfully', type: 'success' })
             return updated
-        } catch (error) {
-            showToast('Failed to update events', 'error')
-            throw error
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || 'Failed to update events'
+            push({ message: errorMessage, type: 'error' })
+            return null
+        } finally {
+            setSaving(false)
         }
-    }
+    }, [push])
 
-    const updateEventsWithMedia = async (formData: FormData) => {
+    const updateEventsWithMedia = useCallback(async (formData: FormData): Promise<Events | null> => {
+        setSaving(true)
+        setUploadProgress(0)
         try {
-            setUploadProgress(0)
             const response = await eventsService.updateEventsWithMedia(
                 formData,
                 (progress) => setUploadProgress(progress)
             )
             setEvents(response.data)
-            showToast('Events updated successfully with media', 'success')
-            return response
-        } catch (error) {
-            showToast('Failed to update events with media', 'error')
-            throw error
-        } finally {
+            push({ message: 'Events updated successfully with media', type: 'success' })
             setUploadProgress(0)
+            return response.data
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || 'Failed to update events with media'
+            push({ message: errorMessage, type: 'error' })
+            setUploadProgress(0)
+            return null
+        } finally {
+            setSaving(false)
         }
-    }
+    }, [push])
 
-    const toggleActive = async () => {
+    const toggleActive = useCallback(async (): Promise<Events | null> => {
+        setSaving(true)
         try {
             const updated = await eventsService.toggleActive()
             setEvents(updated)
-            showToast(
-                `Events section ${updated.isActive ? 'activated' : 'deactivated'}`,
-                'success'
-            )
+            push({
+                message: `Events section ${updated.isActive ? 'activated' : 'deactivated'}`,
+                type: 'success'
+            })
             return updated
-        } catch (error) {
-            showToast('Failed to toggle active status', 'error')
-            throw error
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || 'Failed to toggle active status'
+            push({ message: errorMessage, type: 'error' })
+            return null
+        } finally {
+            setSaving(false)
         }
-    }
+    }, [push])
+
+    const duplicateEvent = useCallback(async (slug: string): Promise<Events | null> => {
+        setSaving(true)
+        try {
+            const duplicated = await eventsService.duplicateEvent(slug)
+            setEvents(duplicated)
+            push({ message: 'Event duplicated successfully!', type: 'success' })
+            return duplicated
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || 'Failed to duplicate event'
+            push({ message: errorMessage, type: 'error' })
+            return null
+        } finally {
+            setSaving(false)
+        }
+    }, [push])
+
+    const exportEvents = useCallback(async (format: "json" | "pdf"): Promise<void> => {
+        setSaving(true)
+        try {
+            await eventsService.exportEvents(format)
+            push({ message: `Events exported successfully as ${format.toUpperCase()}!`, type: 'success' })
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || 'Failed to export events'
+            push({ message: errorMessage, type: 'error' })
+        } finally {
+            setSaving(false)
+        }
+    }, [push])
+
+    const refreshEvents = useCallback(async () => {
+        await fetchEvents()
+    }, [fetchEvents])
 
     return {
         events,
         loading,
+        saving,
         uploadProgress,
+        error,
         fetchEvents,
         updateEvents,
         updateEventsWithMedia,
         toggleActive,
+        duplicateEvent,
+        exportEvents,
+        refreshEvents,
     }
 }

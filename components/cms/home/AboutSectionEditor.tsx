@@ -29,8 +29,13 @@ import {
   Eye,
   EyeOff,
   Search,
+  Download,
+  Copy,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { useAboutSection } from "@/hooks/useAboutSection";
+import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import type {
   AboutSection,
   UpdateAboutSectionDto,
@@ -39,21 +44,41 @@ import type {
   CTA,
   SeoMeta,
 } from "@/lib/types/about-section";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function AboutSectionEditor() {
   const {
     aboutSection,
     loading,
+    saving,
     uploadProgress,
     fetchAboutSection,
     updateAboutSection,
     updateAboutSectionWithMedia,
     toggleActive,
+    duplicateAboutSection,
+    exportAboutSection,
+    refreshAboutSection,
   } = useAboutSection();
 
   const [activeTab, setActiveTab] = useState("content");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const [formData, setFormData] = useState<
     UpdateAboutSectionDto & { imageFile?: File }
@@ -190,9 +215,25 @@ export function AboutSectionEditor() {
 
       await updateAboutSectionWithMedia(submitFormData);
       setImageFile(null);
-      fetchAboutSection();
+      await refreshAboutSection();
     } catch (error) {
       console.error("Failed to update about section:", error);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    await duplicateAboutSection();
+    await refreshAboutSection();
+  };
+
+  const handleExport = async (format: "json" | "pdf") => {
+    setIsExporting(true);
+    try {
+      await exportAboutSection(format);
+    } catch (err) {
+      console.error("Failed to export:", err);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -268,7 +309,75 @@ export function AboutSectionEditor() {
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full space-y-6">
+      {/* Header Actions */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-2">
+          <Badge variant={aboutSection?.isActive ? "default" : "secondary"}>
+            {aboutSection?.isActive ? (
+              <>
+                <Eye className="w-3 h-3 mr-1" /> Active
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3 mr-1" /> Inactive
+              </>
+            )}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            onClick={() => setPreviewOpen(true)}
+            disabled={saving || loading}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isExporting || saving || loading}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("json")}>
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            onClick={handleDuplicate}
+            disabled={saving || loading}
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Duplicate
+          </Button>
+          <Button
+            variant="outline"
+            onClick={refreshAboutSection}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
@@ -304,7 +413,7 @@ export function AboutSectionEditor() {
         {/* Content Tab */}
         <TabsContent value="content" className="space-y-6">
           <Card className="border-0 shadow-lg pt-0">
-            <CardHeader className="bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-t-lg py-4">
+            <CardHeader className="bg-linear-to-r from-rose-500 to-pink-600 text-white rounded-t-lg py-4">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
@@ -422,7 +531,7 @@ export function AboutSectionEditor() {
                   <Label htmlFor="title">Title</Label>
                   <Input
                     id="title"
-                    value={formData.title}
+                    value={formData.title || ""}
                     onChange={(e) =>
                       setFormData({ ...formData, title: e.target.value })
                     }
@@ -435,7 +544,7 @@ export function AboutSectionEditor() {
                   <Label htmlFor="subtitle">Subtitle</Label>
                   <Input
                     id="subtitle"
-                    value={formData.subtitle}
+                    value={formData.subtitle || ""}
                     onChange={(e) =>
                       setFormData({ ...formData, subtitle: e.target.value })
                     }
@@ -446,13 +555,11 @@ export function AboutSectionEditor() {
                 {/* Description */}
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
+                  <RichTextEditor
+                    content={formData.description || ""}
+                    onChange={(content) =>
+                      setFormData({ ...formData, description: content })
                     }
-                    rows={6}
                     placeholder="From my very first exploratory flight..."
                   />
                 </div>
@@ -463,7 +570,7 @@ export function AboutSectionEditor() {
                     <Label htmlFor="ctaLabel">CTA Label</Label>
                     <Input
                       id="ctaLabel"
-                      value={formData.cta?.label}
+                      value={formData.cta?.label || ""}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
@@ -480,7 +587,7 @@ export function AboutSectionEditor() {
                     <Label htmlFor="ctaLink">CTA Link</Label>
                     <Input
                       id="ctaLink"
-                      value={formData.cta?.link}
+                      value={formData.cta?.link || ""}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
@@ -494,17 +601,13 @@ export function AboutSectionEditor() {
 
                 {/* Submit Button */}
                 <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={fetchAboutSection}
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Refresh
-                  </Button>
-                  <Button type="submit">
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
+                  <Button type="submit" disabled={saving || loading}>
+                    {saving ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    {saving ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
               </form>
@@ -515,7 +618,7 @@ export function AboutSectionEditor() {
         {/* Highlights & Stats Tab */}
         <TabsContent value="highlights" className="space-y-6">
           <Card className="border-0 shadow-lg pt-0">
-            <CardHeader className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white rounded-t-lg py-4">
+            <CardHeader className="bg-linear-to-r from-yellow-500 to-orange-600 text-white rounded-t-lg py-4">
               <CardTitle className="flex items-center gap-2">
                 <Award className="w-5 h-5" />
                 Highlights
@@ -542,7 +645,7 @@ export function AboutSectionEditor() {
                     <div className="space-y-2">
                       <Label>Icon</Label>
                       <Input
-                        value={highlight.icon}
+                        value={highlight.icon || ""}
                         onChange={(e) =>
                           updateHighlight(index, "icon", e.target.value)
                         }
@@ -552,7 +655,7 @@ export function AboutSectionEditor() {
                     <div className="space-y-2">
                       <Label>Label</Label>
                       <Input
-                        value={highlight.label}
+                        value={highlight.label || ""}
                         onChange={(e) =>
                           updateHighlight(index, "label", e.target.value)
                         }
@@ -562,7 +665,7 @@ export function AboutSectionEditor() {
                     <div className="space-y-2">
                       <Label>Text</Label>
                       <Input
-                        value={highlight.text}
+                        value={highlight.text || ""}
                         onChange={(e) =>
                           updateHighlight(index, "text", e.target.value)
                         }
@@ -585,7 +688,7 @@ export function AboutSectionEditor() {
           </Card>
 
           <Card className="border-0 shadow-lg pt-0">
-            <CardHeader className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-t-lg py-4">
+            <CardHeader className="bg-linear-to-r from-teal-500 to-emerald-600 text-white rounded-t-lg py-4">
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="w-5 h-5" />
                 Statistics
@@ -613,7 +716,7 @@ export function AboutSectionEditor() {
                       <Label>Value</Label>
                       <Input
                         type="number"
-                        value={stat.value}
+                        value={stat.value ?? ""}
                         onChange={(e) =>
                           updateStat(
                             index,
@@ -627,7 +730,7 @@ export function AboutSectionEditor() {
                     <div className="space-y-2">
                       <Label>Suffix</Label>
                       <Input
-                        value={stat.suffix}
+                        value={stat.suffix || ""}
                         onChange={(e) =>
                           updateStat(index, "suffix", e.target.value)
                         }
@@ -637,7 +740,7 @@ export function AboutSectionEditor() {
                     <div className="space-y-2">
                       <Label>Label</Label>
                       <Input
-                        value={stat.label}
+                        value={stat.label || ""}
                         onChange={(e) =>
                           updateStat(index, "label", e.target.value)
                         }
@@ -658,9 +761,17 @@ export function AboutSectionEditor() {
               </Button>
 
               {/* Save Button */}
-              <Button onClick={handleSubmit} className="w-full">
-                <Save className="w-4 h-4 mr-2" />
-                Save All Changes
+              <Button
+                onClick={handleSubmit}
+                className="w-full"
+                disabled={saving || loading}
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {saving ? "Saving..." : "Save All Changes"}
               </Button>
             </CardContent>
           </Card>
@@ -669,7 +780,7 @@ export function AboutSectionEditor() {
         {/* SEO Tab */}
         <TabsContent value="seo" className="space-y-6">
           <Card className="border-0 shadow-lg pt-0">
-            <CardHeader className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white rounded-t-lg py-4">
+            <CardHeader className="bg-linear-to-r from-purple-600 to-indigo-700 text-white rounded-t-lg py-4">
               <CardTitle className="flex items-center gap-2">
                 <Search className="w-5 h-5" />
                 SEO Settings
@@ -788,15 +899,137 @@ export function AboutSectionEditor() {
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={handleSubmit}>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save SEO Settings
+                <Button onClick={handleSubmit} disabled={saving || loading}>
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  {saving ? "Saving..." : "Save SEO Settings"}
                 </Button>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Upload Progress Indicator */}
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading image...</span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>About Section Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your About Section will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {aboutSection && (
+            <div className="space-y-6 mt-4">
+              {/* Image */}
+              {aboutSection.image && (
+                <div className="relative w-full h-64 rounded-lg overflow-hidden">
+                  <img
+                    src={aboutSection.image}
+                    alt={aboutSection.title || "About Section"}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              {/* Title & Subtitle */}
+              <div>
+                <h1 className="text-3xl font-bold">{aboutSection.title}</h1>
+                <p className="text-xl text-muted-foreground mt-2">
+                  {aboutSection.subtitle}
+                </p>
+              </div>
+
+              {/* Description */}
+              {aboutSection.description && (
+                <div
+                  className="prose max-w-none"
+                  dangerouslySetInnerHTML={{ __html: aboutSection.description }}
+                />
+              )}
+
+              {/* Highlights */}
+              {aboutSection.highlights &&
+                aboutSection.highlights.length > 0 && (
+                  <div className="space-y-4">
+                    <h2 className="text-2xl font-semibold">Highlights</h2>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {aboutSection.highlights.map((highlight, idx) => (
+                        <div key={idx} className="p-4 border rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-2xl">{highlight.icon}</span>
+                            <h3 className="font-semibold">{highlight.label}</h3>
+                          </div>
+                          <p className="text-muted-foreground">
+                            {highlight.text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Stats */}
+              {aboutSection.stats && aboutSection.stats.length > 0 && (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-semibold">Statistics</h2>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    {aboutSection.stats.map((stat, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 border rounded-lg text-center"
+                      >
+                        <div className="text-3xl font-bold">
+                          {stat.value}
+                          {stat.suffix}
+                        </div>
+                        <div className="text-muted-foreground mt-2">
+                          {stat.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* CTA */}
+              {aboutSection.cta && aboutSection.cta.label && (
+                <div className="pt-4">
+                  <a
+                    href={aboutSection.cta.link}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+                  >
+                    {aboutSection.cta.label}
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

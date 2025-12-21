@@ -161,6 +161,60 @@ export const headerNavigationApi = {
         return response.data.data;
     },
 
+    // Toggle active status (admin)
+    toggleActive: async (id: string): Promise<HeaderNavigation> => {
+        const response = await api.post<ApiResponse<HeaderNavigation>>(
+            `${CMS_BASE_URL}/header-navigation/${id}/toggle-active`
+        );
+        return response.data.data;
+    },
+
+    // Duplicate header navigation (admin)
+    duplicate: async (id: string): Promise<HeaderNavigation> => {
+        const response = await api.post<ApiResponse<HeaderNavigation>>(
+            `${CMS_BASE_URL}/header-navigation/${id}/duplicate`
+        );
+        return response.data.data;
+    },
+
+    // Export header navigation (admin)
+    export: async (id: string, format: "json" | "pdf" = "json"): Promise<void> => {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+
+        // Get token from cookies
+        let token = ''
+        try {
+            const { cookieService } = await import('@/lib/cookie.service')
+            token = cookieService.get('token') || ''
+        } catch {
+            // Fallback to localStorage if cookie service not available
+            if (typeof window !== 'undefined') {
+                token = localStorage.getItem('token') || ''
+            }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/cms/header-navigation/${id}/export?format=${format}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        })
+
+        if (!res.ok) {
+            throw new Error('Failed to export header navigation')
+        }
+
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `header-navigation_${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : 'json'}`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+    },
+
     // Upload SEO OG image (admin)
     uploadSeoImage: async (
         id: string,
@@ -277,6 +331,60 @@ export const topBarApi = {
             }
         );
         return response.data.data;
+    },
+
+    // Toggle active status (admin)
+    toggleActive: async (id: string): Promise<TopBar> => {
+        const response = await api.post<ApiResponse<TopBar>>(
+            `${CMS_BASE_URL}/top-bar/${id}/toggle-active`
+        );
+        return response.data.data;
+    },
+
+    // Duplicate top bar (admin)
+    duplicate: async (id: string): Promise<TopBar> => {
+        const response = await api.post<ApiResponse<TopBar>>(
+            `${CMS_BASE_URL}/top-bar/${id}/duplicate`
+        );
+        return response.data.data;
+    },
+
+    // Export top bar (admin)
+    export: async (id: string, format: "json" | "pdf" = "json"): Promise<void> => {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+
+        // Get token from cookies
+        let token = ''
+        try {
+            const { cookieService } = await import('@/lib/cookie.service')
+            token = cookieService.get('token') || ''
+        } catch {
+            // Fallback to localStorage if cookie service not available
+            if (typeof window !== 'undefined') {
+                token = localStorage.getItem('token') || ''
+            }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/cms/top-bar/${id}/export?format=${format}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        })
+
+        if (!res.ok) {
+            throw new Error('Failed to export top bar')
+        }
+
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `top-bar_${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : 'json'}`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
     },
 
     // Upload language flag (admin)
@@ -401,5 +509,59 @@ export const footerApi = {
             }
         );
         return response.data?.data?.data || response.data?.data || response.data;
+    },
+
+    // Toggle active status (admin)
+    toggleActive: async (id: string): Promise<Footer> => {
+        const response = await api.post<any>(
+            `${CMS_BASE_URL}/footer/${id}/toggle-active`
+        );
+        return response.data?.data?.data || response.data?.data || response.data;
+    },
+
+    // Duplicate footer (admin)
+    duplicate: async (id: string): Promise<Footer> => {
+        const response = await api.post<any>(
+            `${CMS_BASE_URL}/footer/${id}/duplicate`
+        );
+        return response.data?.data?.data || response.data?.data || response.data;
+    },
+
+    // Export footer (admin)
+    export: async (id: string, format: "json" | "pdf" = "json"): Promise<void> => {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+
+        // Get token from cookies
+        let token = ''
+        try {
+            const { cookieService } = await import('@/lib/cookie.service')
+            token = cookieService.get('token') || ''
+        } catch {
+            // Fallback to localStorage if cookie service not available
+            if (typeof window !== 'undefined') {
+                token = localStorage.getItem('token') || ''
+            }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/cms/footer/${id}/export?format=${format}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        })
+
+        if (!res.ok) {
+            throw new Error('Failed to export footer')
+        }
+
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `footer_${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : 'json'}`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
     },
 };

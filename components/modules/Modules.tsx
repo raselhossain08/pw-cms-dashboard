@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
+import { useModules, type ModuleStats } from "@/hooks/useModules";
 import {
   modulesService,
   type ModuleDto,
@@ -42,6 +43,8 @@ import {
   Star,
   ExternalLink,
   Users,
+  Power,
+  PowerOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -107,8 +110,22 @@ type ModuleItem = {
 export default function Modules() {
   const { push } = useToast();
   const queryClient = useQueryClient();
+  const {
+    modules: modulesFromHook,
+    loading: modulesLoading,
+    stats: moduleStats,
+    statsLoading,
+    toggleModuleStatus,
+    duplicateModule: duplicateModuleHook,
+    bulkDeleteModules,
+    bulkToggleStatus,
+    getModuleStats,
+    refreshModules,
+  } = useModules();
   const [page, setPage] = React.useState(1);
   const [limit] = React.useState(50);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [actionLoading, setActionLoading] = React.useState(false);
 
   // Fetch courses as the primary entity
   const {
@@ -612,19 +629,97 @@ export default function Modules() {
                 <Filter className="w-4 h-4 mr-2" />
                 Filters
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-slate-600 hover:text-primary hover:bg-primary/10"
-                onClick={() => {
-                  push({
-                    type: "info",
-                    message: "Export functionality coming soon",
-                  });
-                }}
-              >
-                <Download className="w-5 h-5" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-slate-600 hover:text-primary hover:bg-primary/10"
+                  >
+                    <Download className="w-5 h-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      try {
+                        const blob = await modulesService.exportModules("csv");
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `modules.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        push({
+                          type: "success",
+                          message: "Modules exported as CSV",
+                        });
+                      } catch (error: any) {
+                        push({
+                          type: "error",
+                          message: error?.message || "Failed to export modules",
+                        });
+                      }
+                    }}
+                  >
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      try {
+                        const blob = await modulesService.exportModules("xlsx");
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `modules.xlsx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        push({
+                          type: "success",
+                          message: "Modules exported as Excel",
+                        });
+                      } catch (error: any) {
+                        push({
+                          type: "error",
+                          message: error?.message || "Failed to export modules",
+                        });
+                      }
+                    }}
+                  >
+                    Export as Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      try {
+                        const blob = await modulesService.exportModules("pdf");
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `modules.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        push({
+                          type: "success",
+                          message: "Modules exported as PDF",
+                        });
+                      } catch (error: any) {
+                        push({
+                          type: "error",
+                          message: error?.message || "Failed to export modules",
+                        });
+                      }
+                    }}
+                  >
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
@@ -894,32 +989,62 @@ export default function Modules() {
                         <Eye className="w-4 h-4 mr-2 text-slate-600" />
                         <span>Preview</span>
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setAnalyticsModule(m)}>
+                      <DropdownMenuItem
+                        onSelect={async () => {
+                          setAnalyticsModule(m);
+                          await getModuleStats(m.id);
+                        }}
+                      >
                         <ChartLine className="w-4 h-4 mr-2 text-purple-600" />
                         <span>View Analytics</span>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onSelect={async () => {
+                          setActionLoading(true);
                           try {
-                            await modulesService.duplicateModule(m.id);
-                            push({
-                              type: "success",
-                              message: "Course duplicated successfully",
-                            });
+                            await duplicateModuleHook(m.id);
                             queryClient.invalidateQueries({
                               queryKey: ["modules"],
                             });
-                          } catch {
-                            push({
-                              type: "error",
-                              message: "Failed to duplicate course",
-                            });
+                            await refetchCourses();
+                          } catch (error) {
+                            console.error("Failed to duplicate module:", error);
+                          } finally {
+                            setActionLoading(false);
                           }
                         }}
                       >
                         <Copy className="w-4 h-4 mr-2 text-slate-600" />
                         <span>Duplicate</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={async () => {
+                          setActionLoading(true);
+                          try {
+                            await toggleModuleStatus(m.id);
+                            queryClient.invalidateQueries({
+                              queryKey: ["modules"],
+                            });
+                            await refetchCourses();
+                          } catch (error) {
+                            console.error("Failed to toggle status:", error);
+                          } finally {
+                            setActionLoading(false);
+                          }
+                        }}
+                      >
+                        {m.status === "published" ? (
+                          <>
+                            <PowerOff className="w-4 h-4 mr-2 text-amber-600" />
+                            <span>Unpublish</span>
+                          </>
+                        ) : (
+                          <>
+                            <Power className="w-4 h-4 mr-2 text-green-600" />
+                            <span>Publish</span>
+                          </>
+                        )}
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => setShareModule(m)}>
                         <Share2 className="w-4 h-4 mr-2 text-slate-600" />
@@ -1761,12 +1886,16 @@ export default function Modules() {
       {/* Analytics Dialog */}
       <Dialog
         open={!!analyticsModule}
-        onOpenChange={(v) => !v && setAnalyticsModule(null)}
+        onOpenChange={(v) => {
+          if (!v) {
+            setAnalyticsModule(null);
+          }
+        }}
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-slate-900">
-              Course Analytics
+              Module Analytics
             </DialogTitle>
             <DialogDescription className="text-slate-600">
               Performance metrics and insights
@@ -1774,44 +1903,67 @@ export default function Modules() {
           </DialogHeader>
           {analyticsModule && (
             <div className="space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-primary/10 rounded-lg p-5 text-center">
-                  <p className="text-sm text-primary font-medium mb-2">
-                    Completion Rate
-                  </p>
-                  <p className="text-3xl font-bold text-blue-700">
-                    {analyticsModule.completion}%
-                  </p>
+              {statsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
                 </div>
-                <div className="bg-amber-50 rounded-lg p-5 text-center">
-                  <p className="text-sm text-amber-600 font-medium mb-2">
-                    Total Lessons
-                  </p>
-                  <p className="text-3xl font-bold text-amber-700">
-                    {analyticsModule.lessons}
-                  </p>
-                </div>
-                <div className="bg-purple-50 rounded-lg p-5 text-center">
-                  <p className="text-sm text-purple-600 font-medium mb-2">
-                    Duration
-                  </p>
-                  <p className="text-3xl font-bold text-purple-700">
-                    {analyticsModule.durationHours}h
-                  </p>
-                </div>
-              </div>
+              ) : moduleStats ? (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-primary/10 rounded-lg p-5 text-center">
+                      <p className="text-sm text-primary font-medium mb-2">
+                        Total Lessons
+                      </p>
+                      <p className="text-3xl font-bold text-blue-700">
+                        {moduleStats.totalLessons}
+                      </p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-5 text-center">
+                      <p className="text-sm text-green-600 font-medium mb-2">
+                        Published
+                      </p>
+                      <p className="text-3xl font-bold text-green-700">
+                        {moduleStats.publishedLessons}
+                      </p>
+                    </div>
+                    <div className="bg-amber-50 rounded-lg p-5 text-center">
+                      <p className="text-sm text-amber-600 font-medium mb-2">
+                        Completion
+                      </p>
+                      <p className="text-3xl font-bold text-amber-700">
+                        {moduleStats.averageCompletion}%
+                      </p>
+                    </div>
+                    <div className="bg-purple-50 rounded-lg p-5 text-center">
+                      <p className="text-sm text-purple-600 font-medium mb-2">
+                        Students
+                      </p>
+                      <p className="text-3xl font-bold text-purple-700">
+                        {moduleStats.totalStudents}
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="bg-slate-50 rounded-lg p-5">
-                <h4 className="font-semibold text-slate-900 mb-3">
-                  Course Progress
-                </h4>
-                <div className="w-full bg-slate-200 rounded-full h-4 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-4 rounded-full transition-all duration-500"
-                    style={{ width: `${analyticsModule.completion}%` }}
-                  />
+                  <div className="bg-slate-50 rounded-lg p-5">
+                    <h4 className="font-semibold text-slate-900 mb-3">
+                      Module Progress
+                    </h4>
+                    <div className="w-full bg-slate-200 rounded-full h-4 overflow-hidden">
+                      <div
+                        className="bg-blue-600 h-4 rounded-full transition-all duration-500"
+                        style={{ width: `${moduleStats.averageCompletion}%` }}
+                      />
+                    </div>
+                    <p className="text-sm text-slate-600 mt-2">
+                      {moduleStats.averageCompletion}% of lessons published
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12 text-slate-500">
+                  No statistics available yet
                 </div>
-              </div>
+              )}
             </div>
           )}
         </DialogContent>

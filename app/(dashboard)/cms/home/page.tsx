@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { CompleteSEOManager } from "@/components/cms/home/CompleteSEOManager";
+import { HomeSEOManager } from "@/components/cms/home/HomeSEOManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ export default function CMSHomePage() {
 
           {/* SEO Tab */}
           <TabsContent value="seo">
-            <CompleteSEOManager />
+            <HomeSEOManager />
           </TabsContent>
 
           {/* Banner Tab */}

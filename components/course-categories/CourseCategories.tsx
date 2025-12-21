@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
-import { courseCategoriesService } from "@/services/course-categories.service";
+import { useCourseCategories } from "@/hooks/useCourseCategories";
 import { uploadService } from "@/services/upload.service";
 import Image from "next/image";
 import {
@@ -20,6 +19,13 @@ import {
   ImageIcon,
   X,
   Loader2,
+  Power,
+  PowerOff,
+  CheckSquare,
+  Copy,
+  Download,
+  RefreshCw,
+  MoreVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,8 +45,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 
 interface CategoryItem {
   _id?: string;
@@ -53,7 +68,22 @@ interface CategoryItem {
 
 export default function CourseCategories() {
   const { push } = useToast();
-  const queryClient = useQueryClient();
+  const {
+    categories: categoriesList,
+    loading: categoriesLoading,
+    stats: backendStats,
+    statsLoading,
+    createCategory: createCategoryHook,
+    updateCategory: updateCategoryHook,
+    deleteCategory: deleteCategoryHook,
+    toggleCategoryStatus,
+    duplicateCategory: duplicateCategoryHook,
+    bulkDeleteCategories,
+    bulkToggleStatus,
+    exportCategories,
+    refreshCategories,
+    getCategoryStats,
+  } = useCourseCategories();
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editCategory, setEditCategory] = React.useState<CategoryItem | null>(
     null
@@ -66,27 +96,22 @@ export default function CourseCategories() {
   const [imagePreview, setImagePreview] = React.useState<string>("");
   const [uploadProgress, setUploadProgress] = React.useState<number>(0);
   const [isUploading, setIsUploading] = React.useState(false);
+  const [actionLoading, setActionLoading] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [isExporting, setIsExporting] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["course-categories"],
-    queryFn: () => courseCategoriesService.getAllCategories(),
-    staleTime: 60000,
-  });
-
   const categories: CategoryItem[] = React.useMemo(() => {
-    // Handle API response structure: data.data.categories
-    const categoryList = data?.data?.categories ?? [];
-
-    return categoryList.map((cat: any) => ({
+    return categoriesList.map((cat: any) => ({
       _id: cat._id,
       name: cat.name,
       slug: cat.slug,
       count: cat.courseCount || 0,
       image: cat.image,
-      isActive: cat.isActive,
+      isActive: cat.isActive !== false,
     }));
-  }, [data]);
+  }, [categoriesList]);
 
   const filtered = React.useMemo(() => {
     if (!search) return categories;
@@ -97,10 +122,9 @@ export default function CourseCategories() {
   }, [categories, search]);
 
   React.useEffect(() => {
-    if (error) {
-      push({ type: "error", message: "Failed to load categories" });
-    }
-  }, [error, push]);
+    getCategoryStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only fetch stats once on mount
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -144,16 +168,17 @@ export default function CourseCategories() {
         payload.image = imageUrl;
       }
 
-      await courseCategoriesService.createCategory(payload);
-      push({ type: "success", message: "Category created successfully" });
+      setActionLoading(true);
+      await createCategoryHook(payload);
       setCreateOpen(false);
       setImageFile(null);
       setImagePreview("");
       setUploadProgress(0);
-      queryClient.invalidateQueries({ queryKey: ["course-categories"] });
-    } catch {
-      push({ type: "error", message: "Failed to create category" });
+    } catch (err) {
+      console.error("Failed to create category:", err);
       setIsUploading(false);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -234,16 +259,17 @@ export default function CourseCategories() {
         payload.image = imageUrl;
       }
 
-      await courseCategoriesService.updateCategory(editCategory.slug, payload);
-      push({ type: "success", message: "Category updated successfully" });
+      setActionLoading(true);
+      await updateCategoryHook(editCategory.slug, payload);
       setEditCategory(null);
       setImageFile(null);
       setImagePreview("");
       setUploadProgress(0);
-      queryClient.invalidateQueries({ queryKey: ["course-categories"] });
-    } catch {
-      push({ type: "error", message: "Failed to update category" });
+    } catch (err) {
+      console.error("Failed to update category:", err);
       setIsUploading(false);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -255,19 +281,93 @@ export default function CourseCategories() {
 
   const handleDelete = async () => {
     if (!deleteCategory) return;
-
+    setActionLoading(true);
     try {
-      await courseCategoriesService.deleteCategory(deleteCategory);
-      push({ type: "success", message: "Category deleted successfully" });
+      await deleteCategoryHook(deleteCategory);
       setDeleteCategory(null);
-      queryClient.invalidateQueries({ queryKey: ["course-categories"] });
-    } catch {
-      push({ type: "error", message: "Failed to delete category" });
+    } catch (err) {
+      console.error("Failed to delete category:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (slug: string) => {
+    setActionLoading(true);
+    try {
+      await toggleCategoryStatus(slug);
+    } catch (err) {
+      console.error("Failed to toggle category status:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDuplicate = async (slug: string) => {
+    setActionLoading(true);
+    try {
+      await duplicateCategoryHook(slug);
+    } catch (err) {
+      console.error("Failed to duplicate category:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkDeleteCategories(selectedIds);
+      setSelectedIds([]);
+      setBulkDeleteOpen(false);
+    } catch (err) {
+      console.error("Failed to bulk delete categories:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkToggleStatus = async () => {
+    if (selectedIds.length === 0) return;
+    setActionLoading(true);
+    try {
+      await bulkToggleStatus(selectedIds);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error("Failed to bulk toggle status:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleExport = async (format: "csv" | "xlsx" | "pdf") => {
+    setIsExporting(true);
+    try {
+      await exportCategories(format);
+    } catch (err) {
+      console.error("Failed to export categories:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const toggleSelection = (slug: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filtered.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filtered.map((c) => c.slug));
     }
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50">
+    <main className="min-h-screen bg-linear-to-br from-slate-50 via-blue-50 to-slate-50">
       <div className="p-6 max-w-[1800px] mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -278,7 +378,7 @@ export default function CourseCategories() {
                   <FolderTree className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                  <h1 className="text-3xl font-bold bg-linear-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                     Course Categories
                   </h1>
                   <p className="text-slate-600 text-sm">
@@ -287,13 +387,57 @@ export default function CourseCategories() {
                 </div>
               </div>
             </div>
-            <Button
-              onClick={() => setCreateOpen(true)}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Category
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={isExporting || categories.length === 0}
+                  >
+                    {isExporting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleExport("csv")}>
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                    Export as Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Refresh Button */}
+              <Button
+                variant="outline"
+                onClick={() => refreshCategories()}
+                disabled={categoriesLoading}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${
+                    categoriesLoading ? "animate-spin" : ""
+                  }`}
+                />
+              </Button>
+
+              {/* Create Button */}
+              <Button
+                onClick={() => setCreateOpen(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Category
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -306,11 +450,13 @@ export default function CourseCategories() {
                   Total Categories
                 </p>
                 <p className="text-3xl font-bold text-slate-900">
-                  {categories.length}
+                  {backendStats?.totalCategories ?? categories.length}
                 </p>
                 <p className="text-primary text-sm mt-2 flex items-center">
                   <TrendingUp className="w-3 h-3 mr-1" />
-                  Active categories
+                  {backendStats?.activeCategories ??
+                    categories.filter((c) => c.isActive).length}{" "}
+                  active
                 </p>
               </div>
               <div className="w-14 h-14 bg-primary/10 rounded-xl flex items-center justify-center">
@@ -326,7 +472,8 @@ export default function CourseCategories() {
                   Total Courses
                 </p>
                 <p className="text-3xl font-bold text-slate-900">
-                  {categories.reduce((sum, cat) => sum + (cat.count || 0), 0)}
+                  {backendStats?.totalCourses ??
+                    categories.reduce((sum, cat) => sum + (cat.count || 0), 0)}
                 </p>
                 <p className="text-amber-600 text-sm mt-2 flex items-center">
                   <BookOpen className="w-3 h-3 mr-1" />
@@ -346,14 +493,15 @@ export default function CourseCategories() {
                   Avg per Category
                 </p>
                 <p className="text-3xl font-bold text-slate-900">
-                  {categories.length > 0
-                    ? Math.round(
-                        categories.reduce(
-                          (sum, cat) => sum + (cat.count || 0),
-                          0
-                        ) / categories.length
-                      )
-                    : 0}
+                  {backendStats?.averageCoursesPerCategory ??
+                    (categories.length > 0
+                      ? Math.round(
+                          categories.reduce(
+                            (sum, cat) => sum + (cat.count || 0),
+                            0
+                          ) / categories.length
+                        )
+                      : 0)}
                 </p>
                 <p className="text-purple-600 text-sm mt-2 flex items-center">
                   <Tag className="w-3 h-3 mr-1" />
@@ -367,22 +515,74 @@ export default function CourseCategories() {
           </div>
         </div>
 
-        {/* Search */}
+        {/* Search and Bulk Actions */}
         <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 mb-6">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search categories..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <input
+                type="text"
+                placeholder="Search categories..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            </div>
+            {selectedIds.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline" className="px-3 py-1">
+                  <CheckSquare className="w-3 h-3 mr-1" />
+                  {selectedIds.length} selected
+                </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBulkToggleStatus}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Power className="w-4 h-4 mr-2" />
+                  )}
+                  Toggle Status
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkDeleteOpen(true)}
+                  disabled={actionLoading}
+                  className="text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedIds([])}
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+            {selectedIds.length === 0 && filtered.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={
+                    selectedIds.length === filtered.length &&
+                    filtered.length > 0
+                  }
+                  onCheckedChange={toggleSelectAll}
+                />
+                <span className="text-sm text-slate-600">Select All</span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Categories Grid */}
-        {isLoading ? (
+        {categoriesLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {[...Array(8)].map((_, i) => (
               <div
@@ -419,11 +619,20 @@ export default function CourseCategories() {
             {filtered.map((category) => (
               <div
                 key={category.slug}
-                className="group bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-xl hover:border-primary/30 transition-all duration-300 hover:-translate-y-1"
+                className={`group bg-white rounded-xl p-6 shadow-sm border transition-all duration-300 hover:shadow-xl hover:border-primary/30 hover:-translate-y-1 ${
+                  selectedIds.includes(category.slug)
+                    ? "border-primary bg-primary/5"
+                    : "border-slate-200"
+                }`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors overflow-hidden">
+                    <Checkbox
+                      checked={selectedIds.includes(category.slug)}
+                      onCheckedChange={() => toggleSelection(category.slug)}
+                      className="mt-1"
+                    />
+                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors overflow-hidden">
                       {category.image ? (
                         <Image
                           src={category.image}
@@ -445,24 +654,60 @@ export default function CourseCategories() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-slate-400 hover:text-primary hover:bg-primary/10 flex-shrink-0"
-                      onClick={() => openEditDialog(category)}
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-slate-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
-                      onClick={() => setDeleteCategory(category.slug)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-slate-400 hover:text-slate-600 shrink-0"
+                        disabled={actionLoading}
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => openEditDialog(category)}
+                        disabled={actionLoading}
+                      >
+                        <Edit3 className="w-4 h-4 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleDuplicate(category.slug)}
+                        disabled={actionLoading}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => handleToggleStatus(category.slug)}
+                        disabled={actionLoading}
+                      >
+                        {category.isActive ? (
+                          <>
+                            <PowerOff className="w-4 h-4 mr-2" />
+                            Deactivate
+                          </>
+                        ) : (
+                          <>
+                            <Power className="w-4 h-4 mr-2" />
+                            Activate
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => setDeleteCategory(category.slug)}
+                        disabled={actionLoading}
+                        className="text-red-600 focus:text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 <div className="pt-4 border-t border-slate-100">
@@ -474,8 +719,19 @@ export default function CourseCategories() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                      <span className="text-xs text-slate-500">Active</span>
+                      {category.isActive ? (
+                        <>
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          <span className="text-xs text-slate-500">Active</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full" />
+                          <span className="text-xs text-slate-500">
+                            Inactive
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -596,19 +852,19 @@ export default function CourseCategories() {
                     setCreateOpen(false);
                     clearImage();
                   }}
-                  disabled={isUploading}
+                  disabled={isUploading || actionLoading}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                  disabled={isUploading}
+                  disabled={isUploading || actionLoading}
                 >
-                  {isUploading ? (
+                  {isUploading || actionLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Uploading...
+                      {isUploading ? "Uploading..." : "Creating..."}
                     </>
                   ) : (
                     <>
@@ -736,19 +992,19 @@ export default function CourseCategories() {
                     setEditCategory(null);
                     clearImage();
                   }}
-                  disabled={isUploading}
+                  disabled={isUploading || actionLoading}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                  disabled={isUploading}
+                  disabled={isUploading || actionLoading}
                 >
-                  {isUploading ? (
+                  {isUploading || actionLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Uploading...
+                      {isUploading ? "Uploading..." : "Updating..."}
                     </>
                   ) : (
                     <>
@@ -778,12 +1034,60 @@ export default function CourseCategories() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={actionLoading}>
+                Cancel
+              </AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleDelete}
                 className="bg-red-600 hover:bg-red-700"
+                disabled={actionLoading}
               >
-                Delete Category
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete Category"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk Delete Confirmation */}
+        <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-xl font-bold text-slate-900">
+                Delete Categories?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-600">
+                This will permanently delete {selectedIds.length} categor
+                {selectedIds.length > 1 ? "ies" : "y"}. Courses in these
+                categories will not be deleted but will need to be
+                re-categorized.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={actionLoading}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleBulkDelete}
+                className="bg-red-600 hover:bg-red-700"
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  `Delete ${selectedIds.length} Categor${
+                    selectedIds.length > 1 ? "ies" : "y"
+                  }`
+                )}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

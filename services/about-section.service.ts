@@ -38,4 +38,46 @@ export const aboutSectionService = {
         const res = await axios.post<{ data: AboutSection }>('/cms/home/about-section/toggle-active')
         return res.data.data || res.data
     },
+
+    async duplicateAboutSection() {
+        const res = await axios.post<{ data: AboutSection }>('/cms/home/about-section/duplicate')
+        return res.data.data || res.data
+    },
+
+    async exportAboutSection(format: "json" | "pdf") {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+
+        // Get token from cookies
+        let token = ''
+        try {
+            const { cookieService } = await import('@/lib/cookie.service')
+            token = cookieService.get('token') || ''
+        } catch {
+            // Fallback to localStorage if cookie service not available
+            if (typeof window !== 'undefined') {
+                token = localStorage.getItem('token') || ''
+            }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/cms/home/about-section/export?format=${format}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        })
+
+        if (!res.ok) {
+            throw new Error('Failed to export about section')
+        }
+
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `about-section-export_${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : 'json'}`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+    },
 }

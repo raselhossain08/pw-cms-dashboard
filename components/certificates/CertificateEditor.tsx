@@ -5,498 +5,906 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Award,
-  Download,
   Type,
-  Image as ImageIcon,
-  Square,
-  Circle,
-  Star,
-  Trash2,
-  Copy,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Bold,
-  Italic,
-  Underline,
-  Layers,
+  Barcode,
   Save,
-  Undo,
-  Redo,
-  ZoomIn,
-  ZoomOut,
-  RotateCw,
-  Lock,
-  Unlock,
+  RotateCcw,
   Eye,
+  Download,
+  Settings2,
   EyeOff,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  Palette,
-  MousePointer2,
-  Sparkles,
+  FileText,
+  CheckCircle,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Slider } from "@/components/ui/slider";
+import { useToast } from "@/context/ToastContext";
+import { certificatesService } from "@/services/certificates.service";
+import JsBarcode from "jsbarcode";
+
+// Cache for performance optimization
+let cachedSvg: string | null = null;
+let cachedFonts: { regular: string | null; bold: string | null } = {
+  regular: null,
+  bold: null,
+};
+
+// Add Google Font styles - Playfair Display (elegant serif font for certificates)
+const fontStyles = `
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap');
+`;
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface TextStyle {
+  fontSize: number;
+  color: string;
+  fontWeight: string;
+}
+
+interface BarcodeStyle {
+  fontSize: number;
+  color: string;
+  width: number;
+  height: number;
+  displayWidth: number;
+  displayHeight: number;
+}
+
+interface CertificateConfig {
+  namePosition: Position;
+  barcodePosition: Position;
+  nameStyle: TextStyle;
+  barcodeStyle: BarcodeStyle;
+}
 
 interface CertificateEditorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-type ElementType = "text" | "image" | "shape" | "background";
-type ShapeType = "rectangle" | "circle" | "star" | "line";
-type CertificateTemplate = "classic" | "modern" | "elegant" | "minimal";
-
-interface CanvasElement {
-  id: string;
-  type: ElementType;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  content?: string;
-  fontSize?: number;
-  fontFamily?: string;
-  fontWeight?: string;
-  fontStyle?: string;
-  textDecoration?: string;
-  color?: string;
-  backgroundColor?: string;
-  textAlign?: "left" | "center" | "right";
-  opacity?: number;
-  locked?: boolean;
-  visible?: boolean;
-  zIndex?: number;
-  shapeType?: ShapeType;
-  borderRadius?: number;
-  borderWidth?: number;
-  borderColor?: string;
-  imageUrl?: string;
+  studentName?: string;
+  certificateId?: string;
 }
 
 export default function CertificateEditor({
   open,
   onOpenChange,
+  studentName,
+  certificateId,
 }: CertificateEditorProps) {
-  const [elements, setElements] = React.useState<CanvasElement[]>([
-    {
-      id: "title-1",
-      type: "text",
-      x: 150,
-      y: 80,
-      width: 500,
-      height: 60,
-      rotation: 0,
-      content: "CERTIFICATE OF COMPLETION",
-      fontSize: 36,
-      fontFamily: "serif",
-      fontWeight: "bold",
-      color: "#1e40af",
-      textAlign: "center",
-      opacity: 1,
-      locked: false,
-      visible: true,
-      zIndex: 1,
-    },
-    {
-      id: "name-1",
-      type: "text",
-      x: 200,
-      y: 200,
-      width: 400,
-      height: 50,
-      rotation: 0,
-      content: "John Doe",
-      fontSize: 42,
-      fontFamily: "serif",
-      fontWeight: "bold",
-      color: "#1f2937",
-      textAlign: "center",
-      opacity: 1,
-      locked: false,
-      visible: true,
-      zIndex: 2,
-    },
-  ]);
-
-  const [selectedElement, setSelectedElement] = React.useState<string | null>(
+  const { push } = useToast();
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const barcodeCanvasRef = React.useRef<HTMLCanvasElement>(null);
+  const [dragging, setDragging] = React.useState<"name" | "barcode" | null>(
     null
   );
-  const [isDragging, setIsDragging] = React.useState(false);
-  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
-  const [canvasSize] = React.useState({ width: 800, height: 600 });
-  const [zoom, setZoom] = React.useState(100);
-  const [history, setHistory] = React.useState<CanvasElement[][]>([]);
-  const [historyIndex, setHistoryIndex] = React.useState(-1);
-  const [leftPanelTab, setLeftPanelTab] = React.useState("elements");
-  const canvasRef = React.useRef<HTMLDivElement>(null);
-  const [certificateData, setCertificateData] = React.useState({
-    title: "CERTIFICATE OF COMPLETION",
-    subtitle: "This certifies that",
-    recipientName: "John Doe",
-    bodyText: "has successfully completed",
-    courseName: "Aviation Safety Fundamentals",
-    completionText: "with distinction and outstanding performance",
-    date: new Date().toLocaleDateString(),
-    signatureName: "Instructor Name",
-    signatureTitle: "Head of Training",
+  const [previewMode, setPreviewMode] = React.useState(false);
+  const [barcodeImage, setBarcodeImage] = React.useState<string>("");
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [lastSavedAt, setLastSavedAt] = React.useState<Date | null>(null);
+
+  // Position state (percentage-based for responsiveness)
+  const [namePosition, setNamePosition] = React.useState<Position>({
+    x: 50,
+    y: 45,
+  });
+  const [barcodePosition, setBarcodePosition] = React.useState<Position>({
+    x: 15,
+    y: 75,
   });
 
-  const colorSchemes = {
-    gold: {
-      border: "border-yellow-400",
-      bg: "bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-100",
-      accent: "text-yellow-700",
-      seal: "bg-yellow-500",
-    },
-    blue: {
-      border: "border-blue-400",
-      bg: "bg-gradient-to-br from-blue-50 via-sky-50 to-blue-100",
-      accent: "text-blue-700",
-      seal: "bg-blue-500",
-    },
-    purple: {
-      border: "border-purple-400",
-      bg: "bg-gradient-to-br from-purple-50 via-indigo-50 to-purple-100",
-      accent: "text-purple-700",
-      seal: "bg-purple-500",
-    },
-    green: {
-      border: "border-emerald-400",
-      bg: "bg-gradient-to-br from-emerald-50 via-green-50 to-emerald-100",
-      accent: "text-emerald-700",
-      seal: "bg-emerald-500",
-    },
-  } as const;
+  // Style state
+  const [nameStyle, setNameStyle] = React.useState<TextStyle>({
+    fontSize: 32,
+    color: "#dc2626",
+    fontWeight: "600",
+  });
 
-  type ColorSchemeKey = keyof typeof colorSchemes;
-  const [template, setTemplate] = React.useState<CertificateTemplate>("classic");
-  const [colorScheme, setColorScheme] = React.useState<ColorSchemeKey>("gold");
+  const [barcodeStyle, setBarcodeStyle] = React.useState({
+    fontSize: 14,
+    color: "#000000",
+    width: 2,
+    height: 50,
+    displayWidth: 200,
+    displayHeight: 80,
+  });
 
-  const handleInputChange = (field: string, value: string) => {
-    setCertificateData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+  // Preview values - use props or defaults
+  const [previewName, setPreviewName] = React.useState(
+    studentName || "Student Name"
+  );
+  const [previewBarcode, setPreviewBarcode] = React.useState(
+    certificateId || "CERT-2024-001"
+  );
+
+  // Update preview values when props change
+  React.useEffect(() => {
+    if (studentName) setPreviewName(studentName);
+    if (certificateId) setPreviewBarcode(certificateId);
+  }, [studentName, certificateId]);
+
+  // Handle mouse down on draggable elements
+  const handleMouseDown = (
+    e: React.MouseEvent,
+    element: "name" | "barcode"
+  ) => {
+    e.preventDefault();
+    setDragging(element);
   };
 
-  const renderCertificatePreview = () => {
-    const scheme = colorSchemes[colorScheme];
+  // Handle mouse move for dragging
+  const handleMouseMove = React.useCallback(
+    (e: MouseEvent) => {
+      if (!dragging || !containerRef.current) return;
 
-    return (
-      <div className="relative w-full aspect-[1.414/1] overflow-hidden">
-        <div
-          className={`w-full h-full ${scheme.bg} border-8 ${scheme.border} rounded-lg shadow-2xl p-8 sm:p-12 flex flex-col justify-between`}
-        >
-          {/* Decorative Corner Elements */}
-          <div className={`absolute top-4 left-4 w-16 h-16 border-t-4 border-l-4 ${scheme.border} rounded-tl-lg`}></div>
-          <div className={`absolute top-4 right-4 w-16 h-16 border-t-4 border-r-4 ${scheme.border} rounded-tr-lg`}></div>
-          <div className={`absolute bottom-4 left-4 w-16 h-16 border-b-4 border-l-4 ${scheme.border} rounded-bl-lg`}></div>
-          <div className={`absolute bottom-4 right-4 w-16 h-16 border-b-4 border-r-4 ${scheme.border} rounded-br-lg`}></div>
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-          {/* Header */}
-          <div className="text-center space-y-2">
-            <div className="flex items-center justify-center mb-4">
-              <Award className={`w-12 h-12 sm:w-16 sm:h-16 ${scheme.accent}`} />
-            </div>
-            <h1
-              className={`text-2xl sm:text-4xl font-bold ${scheme.accent} tracking-wider`}
-            >
-              {certificateData.title}
-            </h1>
-            <div
-              className={`w-24 h-1 ${scheme.seal} mx-auto rounded-full`}
-            ></div>
-          </div>
+      // Clamp values between 0 and 100
+      const clampedX = Math.max(0, Math.min(100, x));
+      const clampedY = Math.max(0, Math.min(100, y));
 
-          {/* Body */}
-          <div className="text-center space-y-4 my-8">
-            <p className="text-sm sm:text-base text-gray-600 italic">
-              {certificateData.subtitle}
-            </p>
-            <h2 className="text-3xl sm:text-5xl font-bold text-gray-900">
-              {certificateData.recipientName}
-            </h2>
-            <p className="text-sm sm:text-base text-gray-600">
-              {certificateData.bodyText}
-            </p>
-            <h3 className="text-xl sm:text-3xl font-semibold text-gray-800">
-              {certificateData.courseName}
-            </h3>
-            <p className="text-xs sm:text-sm text-gray-500 italic max-w-md mx-auto">
-              {certificateData.completionText}
-            </p>
-          </div>
+      if (dragging === "name") {
+        setNamePosition({ x: clampedX, y: clampedY });
+      } else if (dragging === "barcode") {
+        setBarcodePosition({ x: clampedX, y: clampedY });
+      }
+    },
+    [dragging]
+  );
 
-          {/* Footer */}
-          <div className="flex justify-between items-end">
-            <div className="text-center">
-              <div className="w-32 sm:w-40 h-0.5 bg-gray-400 mb-2"></div>
-              <p className="text-xs sm:text-sm font-semibold text-gray-700">
-                {certificateData.signatureName}
-              </p>
-              <p className="text-xs text-gray-500">
-                {certificateData.signatureTitle}
-              </p>
-            </div>
+  // Handle mouse up to stop dragging
+  const handleMouseUp = React.useCallback(() => {
+    setDragging(null);
+  }, []);
 
-            <div className="text-center">
-              <div
-                className={`w-16 h-16 sm:w-20 sm:h-20 ${scheme.seal} rounded-full flex items-center justify-center border-4 border-white shadow-lg`}
-              >
-                <Award className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
-              </div>
-            </div>
+  // Add/remove mouse event listeners
+  React.useEffect(() => {
+    if (dragging) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+      return () => {
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+      };
+    }
+  }, [dragging, handleMouseMove, handleMouseUp]);
 
-            <div className="text-center">
-              <div className="w-32 sm:w-40 h-0.5 bg-gray-400 mb-2"></div>
-              <p className="text-xs sm:text-sm font-semibold text-gray-700">
-                Date
-              </p>
-              <p className="text-xs text-gray-500">{certificateData.date}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  // Load saved configuration on mount
+  React.useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const savedConfig =
+          (await certificatesService.getCertificateTemplate()) as CertificateConfig;
+        if (savedConfig) {
+          console.log(
+            "Loaded template configuration from database:",
+            savedConfig
+          );
+          setNamePosition(savedConfig.namePosition || { x: 50, y: 45 });
+          setBarcodePosition(savedConfig.barcodePosition || { x: 15, y: 75 });
+          setNameStyle(
+            savedConfig.nameStyle || {
+              fontSize: 32,
+              color: "#dc2626",
+              fontWeight: "600",
+            }
+          );
+          setBarcodeStyle(
+            savedConfig.barcodeStyle || {
+              fontSize: 14,
+              color: "#000000",
+              width: 2,
+              height: 50,
+              displayWidth: 200,
+              displayHeight: 80,
+            }
+          );
+          setLastSavedAt(new Date());
+        }
+      } catch (error) {
+        console.log("Failed to load from database, using defaults");
+      }
+    };
+    loadConfig();
+  }, []);
+
+  // Generate barcode whenever barcode value changes
+  React.useEffect(() => {
+    if (barcodeCanvasRef.current && previewBarcode) {
+      try {
+        JsBarcode(barcodeCanvasRef.current, previewBarcode, {
+          format: "CODE128",
+          width: barcodeStyle.width,
+          height: barcodeStyle.height,
+          displayValue: true,
+          fontSize: barcodeStyle.fontSize,
+          textMargin: 2,
+          margin: 5,
+        });
+        // Convert canvas to image for display and PDF
+        const imageData = barcodeCanvasRef.current.toDataURL("image/png");
+        setBarcodeImage(imageData);
+      } catch (error) {
+        console.error("Error generating barcode:", error);
+      }
+    }
+  }, [previewBarcode, barcodeStyle]);
+
+  const handleReset = () => {
+    setNamePosition({ x: 50, y: 45 });
+    setBarcodePosition({ x: 15, y: 75 });
+    setNameStyle({
+      fontSize: 32,
+      color: "#dc2626",
+      fontWeight: "600",
+    });
+    setBarcodeStyle({
+      fontSize: 14,
+      color: "#000000",
+      width: 2,
+      height: 50,
+      displayWidth: 200,
+      displayHeight: 80,
+    });
+    push({ type: "success", message: "Positions reset to default" });
+  };
+
+  const handleSave = async () => {
+    const config = {
+      namePosition,
+      barcodePosition,
+      nameStyle,
+      barcodeStyle,
+    };
+
+    setIsSaving(true);
+    try {
+      const response = await certificatesService.saveCertificateTemplate(
+        config
+      );
+      setLastSavedAt(new Date());
+      push({
+        type: "success",
+        message: "✓ Template saved to database successfully!",
+      });
+      console.log("Template saved:", response);
+    } catch (error) {
+      console.error("Failed to save to database:", error);
+      // Fallback to localStorage
+      localStorage.setItem("certificateConfig", JSON.stringify(config));
+      push({
+        type: "error",
+        message: "Database unavailable - saved locally instead",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExport = () => {
+    const config = {
+      namePosition,
+      barcodePosition,
+      nameStyle,
+      barcodeStyle,
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "certificate-template-config.json";
+    a.click();
+    URL.revokeObjectURL(url);
+    push({ type: "success", message: "Configuration exported!" });
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      push({ type: "loading", message: "Generating PDF..." });
+
+      // Dynamic import
+      const { jsPDF } = await import("jspdf");
+
+      // Create PDF in landscape A4 format
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      // Load SVG (use cache if available)
+      if (!cachedSvg) {
+        const svgResponse = await fetch("/certificate-template.svg");
+        cachedSvg = await svgResponse.text();
+      }
+      const svgText = cachedSvg;
+
+      // Create a temporary canvas to convert SVG to image
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Set canvas size to match A4 landscape (optimized for smaller file size)
+      const scale = 1.5; // Balanced quality and file size
+      canvas.width = pageWidth * scale * 3.78; // Convert mm to pixels (1mm = 3.78px at 96 DPI)
+      canvas.height = pageHeight * scale * 3.78;
+
+      // Create SVG blob and image
+      const svgBlob = new Blob([svgText], {
+        type: "image/svg+xml;charset=utf-8",
+      });
+      const svgUrl = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = svgUrl;
+      });
+
+      // Draw SVG to canvas
+      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(svgUrl);
+
+      // Convert canvas to JPEG with compression for smaller file size
+      const imgData = canvas.toDataURL("image/jpeg", 0.85);
+
+      // Add image to PDF
+      pdf.addImage(imgData, "JPEG", 0, 0, pageWidth, pageHeight);
+
+      // Use built-in fonts for reliable text rendering
+      // Google Fonts are used in the preview, but PDF uses built-in fonts
+      pdf.setFont(
+        "helvetica",
+        nameStyle.fontWeight === "600" ? "bold" : "normal"
+      );
+
+      // Calculate text positions (convert percentage to mm)
+      const nameX = (namePosition.x / 100) * pageWidth;
+      const nameY = (namePosition.y / 100) * pageHeight;
+      const barcodeX = (barcodePosition.x / 100) * pageWidth;
+      const barcodeY = (barcodePosition.y / 100) * pageHeight;
+
+      // Set font size and color for name
+      pdf.setFontSize(nameStyle.fontSize * 0.75); // Convert px to pt
+      pdf.setTextColor(nameStyle.color);
+
+      // Add student name (centered on position)
+      pdf.text(previewName, nameX, nameY, { align: "center" });
+
+      // Add barcode image if available
+      if (barcodeImage) {
+        try {
+          // Generate barcode on a temporary canvas for PDF
+          const tempCanvas = document.createElement("canvas");
+          JsBarcode(tempCanvas, previewBarcode, {
+            format: "CODE128",
+            width: barcodeStyle.width,
+            height: barcodeStyle.height,
+            displayValue: true,
+            fontSize: barcodeStyle.fontSize,
+            textMargin: 2,
+            margin: 5,
+          });
+
+          const barcodeImgData = tempCanvas.toDataURL("image/png");
+
+          // Calculate barcode dimensions in mm based on display size
+          // Convert pixels to mm (approximate: 3.78 pixels per mm at 96 DPI)
+          const barcodeWidth = barcodeStyle.displayWidth / 3.78;
+          const barcodeHeight = barcodeStyle.displayHeight / 3.78;
+
+          // Center barcode on position
+          pdf.addImage(
+            barcodeImgData,
+            "PNG",
+            barcodeX - barcodeWidth / 2,
+            barcodeY - barcodeHeight / 2,
+            barcodeWidth,
+            barcodeHeight
+          );
+        } catch (barcodeError) {
+          console.error("Barcode generation error:", barcodeError);
+        }
+      }
+
+      // Save PDF
+      pdf.save("certificate.pdf");
+      push({ type: "success", message: "PDF exported successfully!" });
+    } catch (error) {
+      console.error("PDF export error:", error);
+      push({ type: "error", message: "Failed to export PDF" });
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] sm:max-w-6xl max-h-[90vh] overflow-y-auto">
+      {/* Add custom font styles */}
+      <style dangerouslySetInnerHTML={{ __html: fontStyles }} />
+
+      <DialogContent className="w-[80vw] min-w-[80vw] max-h-[95vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl sm:text-2xl">
-            <Sparkles className="w-6 h-6 text-primary" />
-            Certificate Designer
+          <DialogTitle className="flex items-center gap-2 text-2xl">
+            <Settings2 className="w-6 h-6 text-primary" />
+            Certificate Template Editor
           </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm">
-            Design and customize your certificate template with graphics and
-            styling
+          <DialogDescription>
+            Drag the elements to position them on your certificate template.
+            Preview with sample data before saving.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 py-4">
-          {/* Left Panel - Controls */}
-          <div className="space-y-4 sm:space-y-6 order-2 lg:order-1">
-            {/* Template Selection */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2 text-sm font-semibold">
-                <Palette className="w-4 h-4" />
-                Certificate Template
-              </Label>
-              <Select
-                value={template}
-                onValueChange={(v) => setTemplate(v as CertificateTemplate)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="classic">Classic Elegance</SelectItem>
-                  <SelectItem value="modern">Modern Minimalist</SelectItem>
-                  <SelectItem value="elegant">Elegant Formal</SelectItem>
-                  <SelectItem value="minimal">Simple Clean</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Color Scheme */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2 text-sm font-semibold">
-                <Palette className="w-4 h-4" />
-                Color Scheme
-              </Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  onClick={() => setColorScheme("gold")}
-                  className={`p-3 rounded-lg border-2 transition-all ${
-                    colorScheme === "gold"
-                      ? "border-yellow-500 bg-yellow-50"
-                      : "border-gray-200 hover:border-yellow-300"
-                  }`}
-                >
-                  <div className="w-full h-8 bg-gradient-to-r from-yellow-400 to-amber-500 rounded"></div>
-                  <p className="text-xs mt-1 text-center">Gold</p>
-                </button>
-                <button
-                  onClick={() => setColorScheme("blue")}
-                  className={`p-3 rounded-lg border-2 transition-all ${
-                    colorScheme === "blue"
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200 hover:border-blue-300"
-                  }`}
-                >
-                  <div className="w-full h-8 bg-gradient-to-r from-blue-400 to-sky-500 rounded"></div>
-                  <p className="text-xs mt-1 text-center">Blue</p>
-                </button>
-                <button
-                  onClick={() => setColorScheme("purple")}
-                  className={`p-3 rounded-lg border-2 transition-all ${
-                    colorScheme === "purple"
-                      ? "border-purple-500 bg-purple-50"
-                      : "border-gray-200 hover:border-purple-300"
-                  }`}
-                >
-                  <div className="w-full h-8 bg-gradient-to-r from-purple-400 to-indigo-500 rounded"></div>
-                  <p className="text-xs mt-1 text-center">Purple</p>
-                </button>
-                <button
-                  onClick={() => setColorScheme("green")}
-                  className={`p-3 rounded-lg border-2 transition-all ${
-                    colorScheme === "green"
-                      ? "border-emerald-500 bg-emerald-50"
-                      : "border-gray-200 hover:border-emerald-300"
-                  }`}
-                >
-                  <div className="w-full h-8 bg-gradient-to-r from-emerald-400 to-green-500 rounded"></div>
-                  <p className="text-xs mt-1 text-center">Green</p>
-                </button>
-              </div>
-            </div>
-
-            {/* Text Content */}
-            <div className="space-y-4 border-t pt-4">
-              <Label className="flex items-center gap-2 text-sm font-semibold">
-                <Type className="w-4 h-4" />
-                Certificate Content
-              </Label>
-
-              <div className="space-y-2">
-                <Label className="text-xs">Title</Label>
-                <Input
-                  value={certificateData.title}
-                  onChange={(e) => handleInputChange("title", e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs">Recipient Name</Label>
-                <Input
-                  value={certificateData.recipientName}
-                  onChange={(e) =>
-                    handleInputChange("recipientName", e.target.value)
-                  }
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs">Course Name</Label>
-                <Input
-                  value={certificateData.courseName}
-                  onChange={(e) =>
-                    handleInputChange("courseName", e.target.value)
-                  }
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs">Completion Text</Label>
-                <Textarea
-                  value={certificateData.completionText}
-                  onChange={(e) =>
-                    handleInputChange("completionText", e.target.value)
-                  }
-                  className="text-sm resize-none"
-                  rows={2}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-2">
-                  <Label className="text-xs">Signature Name</Label>
-                  <Input
-                    value={certificateData.signatureName}
-                    onChange={(e) =>
-                      handleInputChange("signatureName", e.target.value)
-                    }
-                    className="text-sm"
-                  />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Certificate Preview */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Certificate Preview</CardTitle>
+                  <Button
+                    variant={previewMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setPreviewMode(!previewMode)}
+                    className="transition-all"
+                  >
+                    {previewMode ? (
+                      <>
+                        <EyeOff className="w-4 h-4 mr-2" />
+                        Exit Preview
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-4 h-4 mr-2" />
+                        Preview Mode
+                      </>
+                    )}
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Signature Title</Label>
-                  <Input
-                    value={certificateData.signatureTitle}
-                    onChange={(e) =>
-                      handleInputChange("signatureTitle", e.target.value)
-                    }
-                    className="text-sm"
+                <CardDescription>
+                  {previewMode
+                    ? "Live preview - this is how the certificate will appear to students"
+                    : "Edit mode - drag the colored boxes to reposition elements"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  ref={containerRef}
+                  className="relative w-full bg-white border-2 border-gray-300 rounded-lg overflow-hidden shadow-lg"
+                  style={{
+                    aspectRatio: "1.414/1", // A4 ratio
+                    cursor: dragging ? "grabbing" : "default",
+                  }}
+                >
+                  {/* Background Certificate Template SVG */}
+                  <div
+                    className="absolute inset-0  bg-center bg-no-repeat bg-contain"
+                    style={{
+                      backgroundImage: "url('/certificate-template.svg')",
+                    }}
                   />
-                </div>
-              </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-2 border-t pt-4">
-              <Button variant="outline" size="sm" className="flex-1">
-                <Undo className="w-4 h-4 mr-1" />
-                Undo
-              </Button>
-              <Button variant="outline" size="sm" className="flex-1">
-                <Redo className="w-4 h-4 mr-1" />
-                Redo
-              </Button>
-              <Button variant="outline" size="sm" className="flex-1">
-                <ImageIcon className="w-4 h-4 mr-1" />
-                Add Logo
-              </Button>
-            </div>
+                  {/* Overlay for better visibility in edit mode */}
+                  {!previewMode && (
+                    <div className="absolute inset-0 bg-black/5 pointer-events-none" />
+                  )}
+
+                  {/* Student Name Element */}
+                  <div
+                    className={`absolute transform -translate-x-1/2 -translate-y-1/2 transition-all ${
+                      !previewMode
+                        ? "border-2 border-red-500 bg-red-50/90 hover:bg-red-100/90 cursor-move shadow-md"
+                        : "cursor-default"
+                    } ${
+                      dragging === "name" ? "shadow-2xl z-50 scale-105" : "z-10"
+                    }`}
+                    style={{
+                      left: `${namePosition.x}%`,
+                      top: `${namePosition.y}%`,
+                      fontSize: `${nameStyle.fontSize}px`,
+                      color: nameStyle.color,
+                      fontWeight: nameStyle.fontWeight as any,
+                      padding: previewMode ? "0" : "8px 16px",
+                      borderRadius: previewMode ? "0" : "4px",
+                    }}
+                    onMouseDown={(e) =>
+                      !previewMode && handleMouseDown(e, "name")
+                    }
+                  >
+                    {!previewMode && (
+                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-red-500 text-white px-2 py-1 rounded text-xs flex items-center gap-1 whitespace-nowrap">
+                        <Type className="w-3 h-3" />
+                        <span>Name</span>
+                      </div>
+                    )}
+                    <div
+                      className="whitespace-nowrap"
+                      style={{ fontFamily: "'Playfair Display', serif" }}
+                    >
+                      {previewName}
+                    </div>
+                  </div>
+
+                  {/* Barcode Element */}
+                  <div
+                    className={`absolute transform -translate-x-1/2 -translate-y-1/2 transition-all ${
+                      !previewMode
+                        ? "border-2 border-blue-500 bg-blue-50/90 hover:bg-blue-100/90 cursor-move shadow-md"
+                        : "cursor-default"
+                    } ${
+                      dragging === "barcode"
+                        ? "shadow-2xl z-50 scale-105"
+                        : "z-10"
+                    }`}
+                    style={{
+                      left: `${barcodePosition.x}%`,
+                      top: `${barcodePosition.y}%`,
+                      fontSize: `${barcodeStyle.fontSize}px`,
+                      color: barcodeStyle.color,
+                      padding: previewMode ? "0" : "8px 16px",
+                      borderRadius: previewMode ? "0" : "4px",
+                    }}
+                    onMouseDown={(e) =>
+                      !previewMode && handleMouseDown(e, "barcode")
+                    }
+                  >
+                    {!previewMode && (
+                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-2 py-1 rounded text-xs flex items-center gap-1 whitespace-nowrap">
+                        <Barcode className="w-3 h-3" />
+                        <span>Barcode</span>
+                      </div>
+                    )}
+                    {barcodeImage ? (
+                      <img
+                        src={barcodeImage}
+                        alt="Barcode"
+                        style={{
+                          width: `${barcodeStyle.displayWidth}px`,
+                          height: `${barcodeStyle.displayHeight}px`,
+                          objectFit: "contain",
+                        }}
+                      />
+                    ) : (
+                      <div className="whitespace-nowrap font-mono text-sm">
+                        {previewBarcode}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Live Position Indicator */}
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg border">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-red-500 rounded"></div>
+                        <span className="font-medium">Name:</span>
+                        <span className="text-muted-foreground">
+                          X: {namePosition.x.toFixed(1)}% | Y:{" "}
+                          {namePosition.y.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                        <span className="font-medium">Barcode:</span>
+                        <span className="text-muted-foreground">
+                          X: {barcodePosition.x.toFixed(1)}% | Y:{" "}
+                          {barcodePosition.y.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    {dragging && (
+                      <span className="text-primary font-medium animate-pulse">
+                        Dragging...
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Instructions */}
+                {!previewMode && (
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-900">
+                      <strong>💡 Tip:</strong> Click and drag the colored boxes
+                      to position elements on your certificate. Use the controls
+                      on the right to adjust styling.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Right Panel - Preview */}
-          <div className="space-y-4 order-1 lg:order-2">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-2 text-sm font-semibold">
-                <Eye className="w-4 h-4" />
-                Live Preview
-              </Label>
-              <Button variant="ghost" size="sm">
-                <Download className="w-4 h-4 mr-1" />
-                Export
-              </Button>
-            </div>
-            <div className="border-2 border-border rounded-lg p-2 sm:p-4 bg-muted/20">
-              {renderCertificatePreview()}
-            </div>
+          {/* Controls Panel */}
+          <div className="space-y-4">
+            {/* Preview Data */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Preview Data</CardTitle>
+                <CardDescription>Test with sample values</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="preview-name">Student Name</Label>
+                  <Input
+                    id="preview-name"
+                    value={previewName}
+                    onChange={(e) => setPreviewName(e.target.value)}
+                    placeholder="Enter name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="preview-barcode">Barcode</Label>
+                  <Input
+                    id="preview-barcode"
+                    value={previewBarcode}
+                    onChange={(e) => setPreviewBarcode(e.target.value)}
+                    placeholder="Enter barcode"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Name Style */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Type className="w-4 h-4" />
+                  Name Style
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name-size">
+                    Font Size: {nameStyle.fontSize}px
+                  </Label>
+                  <Input
+                    id="name-size"
+                    type="range"
+                    min="16"
+                    max="72"
+                    value={nameStyle.fontSize}
+                    onChange={(e) =>
+                      setNameStyle({
+                        ...nameStyle,
+                        fontSize: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="name-color">Color</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="name-color"
+                      type="color"
+                      value={nameStyle.color}
+                      onChange={(e) =>
+                        setNameStyle({ ...nameStyle, color: e.target.value })
+                      }
+                      className="w-16 h-10"
+                    />
+                    <Input
+                      type="text"
+                      value={nameStyle.color}
+                      onChange={(e) =>
+                        setNameStyle({ ...nameStyle, color: e.target.value })
+                      }
+                      placeholder="#000000"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Position</Label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>X: {namePosition.x.toFixed(1)}%</div>
+                    <div>Y: {namePosition.y.toFixed(1)}%</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Barcode Style */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Barcode className="w-4 h-4" />
+                  Barcode Style
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="barcode-size">
+                    Font Size: {barcodeStyle.fontSize}px
+                  </Label>
+                  <Input
+                    id="barcode-size"
+                    type="range"
+                    min="10"
+                    max="32"
+                    value={barcodeStyle.fontSize}
+                    onChange={(e) =>
+                      setBarcodeStyle({
+                        ...barcodeStyle,
+                        fontSize: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="barcode-color">Color</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="barcode-color"
+                      type="color"
+                      value={barcodeStyle.color}
+                      onChange={(e) =>
+                        setBarcodeStyle({
+                          ...barcodeStyle,
+                          color: e.target.value,
+                        })
+                      }
+                      className="w-16 h-10"
+                    />
+                    <Input
+                      type="text"
+                      value={barcodeStyle.color}
+                      onChange={(e) =>
+                        setBarcodeStyle({
+                          ...barcodeStyle,
+                          color: e.target.value,
+                        })
+                      }
+                      placeholder="#000000"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="barcode-width">
+                    Barcode Width: {barcodeStyle.width}
+                  </Label>
+                  <Input
+                    id="barcode-width"
+                    type="range"
+                    min="1"
+                    max="4"
+                    step="0.5"
+                    value={barcodeStyle.width}
+                    onChange={(e) =>
+                      setBarcodeStyle({
+                        ...barcodeStyle,
+                        width: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="barcode-height">
+                    Barcode Height: {barcodeStyle.height}px
+                  </Label>
+                  <Input
+                    id="barcode-height"
+                    type="range"
+                    min="30"
+                    max="100"
+                    value={barcodeStyle.height}
+                    onChange={(e) =>
+                      setBarcodeStyle({
+                        ...barcodeStyle,
+                        height: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Barcode Value</Label>
+                  <Input
+                    value={previewBarcode}
+                    onChange={(e) => setPreviewBarcode(e.target.value)}
+                    placeholder="CERT-2024-001"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="barcode-display-width">
+                    Display Width: {barcodeStyle.displayWidth}px
+                  </Label>
+                  <Input
+                    id="barcode-display-width"
+                    type="range"
+                    min="100"
+                    max="400"
+                    value={barcodeStyle.displayWidth}
+                    onChange={(e) =>
+                      setBarcodeStyle({
+                        ...barcodeStyle,
+                        displayWidth: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="barcode-display-height">
+                    Display Height: {barcodeStyle.displayHeight}px
+                  </Label>
+                  <Input
+                    id="barcode-display-height"
+                    type="range"
+                    min="40"
+                    max="200"
+                    value={barcodeStyle.displayHeight}
+                    onChange={(e) =>
+                      setBarcodeStyle({
+                        ...barcodeStyle,
+                        displayHeight: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Position</Label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>X: {barcodePosition.x.toFixed(1)}%</div>
+                    <div>Y: {barcodePosition.y.toFixed(1)}%</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="w-full sm:w-auto"
-          >
-            Cancel
+        <DialogFooter className="gap-2">
+          <div className="flex-1 flex items-center text-sm text-muted-foreground">
+            {lastSavedAt && (
+              <span className="flex items-center gap-1">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                Saved to database {new Date(lastSavedAt).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          <Button variant="outline" onClick={handleReset}>
+            <RotateCcw className="w-4 h-4 mr-2" />
+            Reset
           </Button>
-          <Button className="bg-primary hover:bg-primary/90 text-white w-full sm:w-auto">
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="w-4 h-4 mr-2" />
+            Export Config
+          </Button>
+          <Button
+            variant="default"
+            onClick={handleExportPDF}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            Export as PDF
+          </Button>
+          <Button onClick={handleSave} disabled={isSaving}>
             <Save className="w-4 h-4 mr-2" />
-            Save Template
+            {isSaving ? "Saving..." : "Save Template"}
           </Button>
         </DialogFooter>
       </DialogContent>
+      {/* Hidden canvas for barcode generation */}
+      <canvas ref={barcodeCanvasRef} style={{ display: "none" }} />
     </Dialog>
   );
 }

@@ -56,12 +56,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  PaginationEllipsis,
+} from "@/components/ui/pagination";
 import { useProductCategories } from "@/hooks/useProductCategories";
 import {
   ProductCategory,
   CreateProductCategoryDto,
 } from "@/services/product-categories.service";
 import { useToast } from "@/context/ToastContext";
+import { uploadsService } from "@/services/uploads.service";
 
 export default function Categories() {
   const { push } = useToast();
@@ -69,11 +80,15 @@ export default function Categories() {
     categories,
     loading,
     total,
+    page,
+    totalPages,
     fetchCategories,
     createCategory,
     updateCategory,
     deleteCategory,
     refreshCategories,
+    bulkUpdateStatus,
+    bulkDelete,
   } = useProductCategories();
 
   const [search, setSearch] = React.useState("");
@@ -81,6 +96,14 @@ export default function Categories() {
   const [statusFilter, setStatusFilter] = React.useState<
     "all" | "active" | "inactive"
   >("all");
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [limit] = React.useState(12);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [bulkStatusOpen, setBulkStatusOpen] = React.useState(false);
+  const [bulkStatus, setBulkStatus] = React.useState<"active" | "inactive">(
+    "active"
+  );
 
   // Dialog states
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -110,6 +133,17 @@ export default function Categories() {
   const [previewUrl, setPreviewUrl] = React.useState<string>("");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Fetch categories when filters change
+  React.useEffect(() => {
+    fetchCategories({
+      page: currentPage,
+      limit,
+      search: search || undefined,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, search, statusFilter, limit]);
+
   // Keyboard shortcuts
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -124,6 +158,40 @@ export default function Categories() {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, []);
+
+  // Handle selection
+  const handleSelectCategory = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === filtered.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filtered.map((c) => c._id));
+    }
+  };
+
+  // Bulk operations
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    const result = await bulkDelete(selectedIds);
+    if (result) {
+      setSelectedIds([]);
+      setBulkDeleteOpen(false);
+    }
+  };
+
+  const handleBulkUpdateStatus = async () => {
+    if (selectedIds.length === 0) return;
+    const result = await bulkUpdateStatus(selectedIds, bulkStatus);
+    if (result) {
+      setSelectedIds([]);
+      setBulkStatusOpen(false);
+    }
+  };
 
   // Filter and sort categories
   const filtered = React.useMemo(() => {
@@ -217,9 +285,6 @@ export default function Categories() {
     setUploadProgress(0);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
       // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => {
@@ -231,19 +296,16 @@ export default function Categories() {
         });
       }, 200);
 
-      // Upload to your backend endpoint
-      const response = await fetch("/api/uploads", {
-        method: "POST",
-        body: formData,
+      // Upload using uploads service
+      const uploadedFile = await uploadsService.uploadFile(selectedFile, {
+        type: "image",
+        description: `Category image: ${formData.name || "Untitled"}`,
+        tags: ["category", "product"],
+        entityType: "product-category",
+        visibility: "public",
       });
 
       clearInterval(progressInterval);
-
-      if (!response.ok) {
-        throw new Error("Upload failed");
-      }
-
-      const data = await response.json();
       setUploadProgress(100);
 
       push({
@@ -251,10 +313,10 @@ export default function Categories() {
         type: "success",
       });
 
-      return data.url || data.data?.url || "";
-    } catch (error) {
+      return uploadedFile.url || uploadedFile.path || "";
+    } catch (error: any) {
       push({
-        message: "Failed to upload image",
+        message: error?.message || "Failed to upload image",
         type: "error",
       });
       return null;
@@ -511,7 +573,10 @@ export default function Categories() {
             <Filter className="text-gray-400 w-5 h-5" />
             <Select
               value={statusFilter}
-              onValueChange={(v: any) => setStatusFilter(v)}
+              onValueChange={(v: any) => {
+                setStatusFilter(v);
+                setCurrentPage(1);
+              }}
             >
               <SelectTrigger className="w-40">
                 <SelectValue />
@@ -546,11 +611,66 @@ export default function Categories() {
             id="category-search"
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search categories... (Ctrl+K)"
             className="pl-10 bg-gray-50 border-gray-200 focus:border-primary focus:ring-primary"
           />
         </div>
+        {/* Bulk Actions Bar */}
+        {selectedIds.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">
+                {selectedIds.length} category
+                {selectedIds.length !== 1 ? "ies" : ""} selected
+              </span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBulkStatus("active");
+                  setBulkStatusOpen(true);
+                }}
+                disabled={loading}
+              >
+                Activate
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBulkStatus("inactive");
+                  setBulkStatusOpen(true);
+                }}
+                disabled={loading}
+              >
+                Deactivate
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkDeleteOpen(true)}
+                disabled={loading}
+                className="text-red-600 hover:text-red-700"
+              >
+                <Trash className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedIds([])}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Loading State */}
@@ -606,95 +726,175 @@ export default function Categories() {
 
       {/* Categories Grid */}
       {!loading && filtered.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-          {filtered.map((category) => (
-            <div
-              key={category._id}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-lg transition-all duration-200 overflow-hidden group"
-            >
-              <div className="relative h-40">
-                {category.image ? (
-                  <Image
-                    src={category.image}
-                    alt={category.name}
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                    <ImageIcon className="w-12 h-12 text-gray-400" />
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+            {filtered.map((category) => (
+              <div
+                key={category._id}
+                className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-lg transition-all duration-200 overflow-hidden group relative"
+              >
+                <div className="relative h-40">
+                  {category.image ? (
+                    <Image
+                      src={category.image}
+                      alt={category.name}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                      <ImageIcon className="w-12 h-12 text-gray-400" />
+                    </div>
+                  )}
+                  {/* Selection Checkbox */}
+                  <div className="absolute top-3 left-3 z-10">
+                    <Checkbox
+                      checked={selectedIds.includes(category._id)}
+                      onCheckedChange={() => handleSelectCategory(category._id)}
+                      className="bg-white/90 backdrop-blur-sm shadow-sm"
+                    />
                   </div>
-                )}
-                <span
-                  className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-medium ${statusBadge(
-                    category.status
-                  )}`}
-                >
-                  {category.status === "active" ? "Active" : "Inactive"}
-                </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      className="absolute top-3 right-3 bg-white/90 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <EllipsisVertical className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleView(category)}>
-                      <Eye className="w-4 h-4 mr-2" /> View Details
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleEdit(category)}>
-                      <Edit className="w-4 h-4 mr-2" /> Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => handleDelete(category)}
-                      className="text-red-600 focus:text-red-600"
-                    >
-                      <Trash className="w-4 h-4 mr-2" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <div className="p-5">
-                <h4 className="font-semibold text-lg text-secondary mb-2 line-clamp-1">
-                  {category.name}
-                </h4>
-                <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                  {category.description}
-                </p>
-                <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-                  <span className="flex items-center">
-                    <Tags className="w-4 h-4 mr-1" />
-                    {category.productCount || 0} products
+                  <span
+                    className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-medium ${statusBadge(
+                      category.status
+                    )}`}
+                  >
+                    {category.status === "active" ? "Active" : "Inactive"}
                   </span>
-                  <span>{category.subcategoryCount || 0} subcategories</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="absolute top-3 right-3 bg-white/90 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <EllipsisVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleView(category)}>
+                        <Eye className="w-4 h-4 mr-2" /> View Details
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(category)}>
+                        <Edit className="w-4 h-4 mr-2" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => handleDelete(category)}
+                        className="text-red-600 focus:text-red-600"
+                      >
+                        <Trash className="w-4 h-4 mr-2" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <div className="flex space-x-2">
-                  <Button
-                    className="flex-1"
-                    size="sm"
-                    onClick={() => handleEdit(category)}
-                  >
-                    <Edit className="w-3 h-3 mr-1" /> Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-gray-300"
-                    onClick={() => handleView(category)}
-                  >
-                    <Eye className="w-3 h-3" />
-                  </Button>
+                <div className="p-5">
+                  <h4 className="font-semibold text-lg text-secondary mb-2 line-clamp-1">
+                    {category.name}
+                  </h4>
+                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                    {category.description}
+                  </p>
+                  <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+                    <span className="flex items-center">
+                      <Tags className="w-4 h-4 mr-1" />
+                      {category.productCount || 0} products
+                    </span>
+                    <span>{category.subcategoryCount || 0} subcategories</span>
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button
+                      className="flex-1"
+                      size="sm"
+                      onClick={() => handleEdit(category)}
+                    >
+                      <Edit className="w-3 h-3 mr-1" /> Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gray-300"
+                      onClick={() => handleView(category)}
+                    >
+                      <Eye className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-8 flex justify-center">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (currentPage > 1) {
+                          setCurrentPage(currentPage - 1);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }
+                      }}
+                      className={
+                        currentPage === 1
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <PaginationItem key={pageNum}>
+                        <PaginationLink
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setCurrentPage(pageNum);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          isActive={currentPage === pageNum}
+                        >
+                          {pageNum}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (currentPage < totalPages) {
+                          setCurrentPage(currentPage + 1);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }
+                      }}
+                      className={
+                        currentPage === totalPages
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {/* Create Category Dialog */}
@@ -1127,6 +1327,79 @@ export default function Categories() {
             >
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Delete Category
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center text-xl">
+              <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
+              Delete Multiple Categories
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              Are you sure you want to delete {selectedIds.length} categor
+              {selectedIds.length === 1 ? "y" : "ies"}? This action cannot be
+              undone and will remove all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={submitting}
+              onClick={() => {
+                setBulkDeleteOpen(false);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={submitting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete {selectedIds.length} Categor
+              {selectedIds.length === 1 ? "y" : "ies"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Status Update Confirmation Dialog */}
+      <AlertDialog open={bulkStatusOpen} onOpenChange={setBulkStatusOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center text-xl">
+              <AlertTriangle className="w-5 h-5 mr-2 text-primary" />
+              Update Status
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              Are you sure you want to{" "}
+              {bulkStatus === "active" ? "activate" : "deactivate"}{" "}
+              {selectedIds.length} categor
+              {selectedIds.length === 1 ? "y" : "ies"}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={submitting}
+              onClick={() => {
+                setBulkStatusOpen(false);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkUpdateStatus}
+              disabled={submitting}
+            >
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {bulkStatus === "active" ? "Activate" : "Deactivate"}{" "}
+              {selectedIds.length} Categor
+              {selectedIds.length === 1 ? "y" : "ies"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

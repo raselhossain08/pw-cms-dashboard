@@ -1,103 +1,9 @@
 import { useState, useCallback } from 'react';
-import axios from 'axios';
 import { useToast } from '@/context/ToastContext';
+import { paymentsService, Transaction, Invoice, Payout, PaymentAnalytics } from '@/services/payments.service';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001/api';
-
-export interface Transaction {
-    _id: string;
-    transactionId: string;
-    user: {
-        _id: string;
-        firstName: string;
-        lastName: string;
-        email: string;
-        avatar?: string;
-    };
-    amount: number;
-    currency: string;
-    type: string;
-    status: 'pending' | 'completed' | 'failed' | 'refunded';
-    description: string;
-    gateway: string;
-    gatewayTransactionId?: string;
-    createdAt: string;
-    processedAt?: string;
-    refundReason?: string;
-    refundedAt?: string;
-    refundAmount?: number;
-}
-
-export interface Invoice {
-    _id: string;
-    invoiceNumber: string;
-    user: {
-        _id: string;
-        firstName: string;
-        lastName: string;
-        email: string;
-        avatar?: string;
-    };
-    amount: number;
-    tax?: number;
-    total: number;
-    status: string;
-    invoiceDate: string;
-    dueDate: string;
-    paidAt?: string;
-    billingInfo: {
-        companyName: string;
-        address: string;
-        city: string;
-        state: string;
-        zipCode: string;
-        country: string;
-        taxId?: string;
-    };
-    items: Array<{
-        description: string;
-        quantity: number;
-        unitPrice: number;
-        total: number;
-    }>;
-    createdAt: string;
-}
-
-export interface Payout {
-    id: string;
-    instructorName: string;
-    email: string;
-    avatar?: string;
-    courseCount: number;
-    totalEarnings: number;
-    nextPayout: string;
-    status: 'scheduled' | 'processing' | 'paid';
-}
-
-export interface PaymentAnalytics {
-    overview: {
-        totalRevenue: number;
-        successfulPayments: number;
-        failedPayments: number;
-        refundedPayments: number;
-        refundedAmount: number;
-        refundRate: string;
-    };
-    methodBreakdown: Array<{
-        method: string;
-        total: number;
-        count: number;
-    }>;
-    statusBreakdown: Array<{
-        status: string;
-        count: number;
-    }>;
-    revenueByDay: Array<{
-        date: string;
-        revenue: number;
-        count: number;
-    }>;
-}
+// Re-export types from service
+export type { Transaction, Invoice, Payout, PaymentAnalytics } from '@/services/payments.service';
 
 export const usePayments = () => {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -114,22 +20,6 @@ export const usePayments = () => {
     });
     const { push } = useToast();
 
-    const getAuthToken = () => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('token');
-        }
-        return null;
-    };
-
-    const getAuthHeaders = () => {
-        const token = getAuthToken();
-        return {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        };
-    };
-
     // Fetch all transactions with filters
     const fetchTransactions = useCallback(
         async (filters: {
@@ -144,25 +34,16 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const params = new URLSearchParams();
-                Object.entries(filters).forEach(([key, value]) => {
-                    if (value) params.append(key, value.toString());
-                });
-
-                const response = await axios.get(
-                    `${API_BASE_URL}/admin/payments/transactions?${params.toString()}`,
-                    getAuthHeaders()
-                );
-
-                setTransactions(response.data.transactions);
+                const response: any = await paymentsService.getAllTransactions(filters);
+                setTransactions(response.transactions);
                 setPagination({
-                    page: response.data.page,
-                    limit: response.data.limit,
-                    total: response.data.total,
-                    totalPages: response.data.totalPages,
+                    page: response.page,
+                    limit: response.limit,
+                    total: response.total,
+                    totalPages: response.totalPages,
                 });
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to fetch transactions';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to fetch transactions';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
             } finally {
@@ -178,19 +59,10 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const params = new URLSearchParams();
-                Object.entries(filters).forEach(([key, value]) => {
-                    if (value) params.append(key, value.toString());
-                });
-
-                const response = await axios.get(
-                    `${API_BASE_URL}/admin/payments/analytics?${params.toString()}`,
-                    getAuthHeaders()
-                );
-
-                setAnalytics(response.data);
+                const response: any = await paymentsService.getAnalytics(filters);
+                setAnalytics(response);
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to fetch analytics';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to fetch analytics';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
             } finally {
@@ -206,25 +78,16 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const params = new URLSearchParams();
-                Object.entries(filters).forEach(([key, value]) => {
-                    if (value) params.append(key, value.toString());
-                });
-
-                const response = await axios.get(
-                    `${API_BASE_URL}/admin/payments/invoices?${params.toString()}`,
-                    getAuthHeaders()
-                );
-
-                setInvoices(response.data.invoices);
+                const response: any = await paymentsService.getAllInvoices(filters);
+                setInvoices(response.invoices);
                 setPagination({
-                    page: response.data.page,
-                    limit: response.data.limit,
-                    total: response.data.total,
-                    totalPages: response.data.totalPages,
+                    page: response.page,
+                    limit: response.limit,
+                    total: response.total,
+                    totalPages: response.totalPages,
                 });
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to fetch invoices';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to fetch invoices';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
             } finally {
@@ -240,13 +103,10 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const response = await axios.get(
-                    `${API_BASE_URL}/admin/payments/transactions/${id}`,
-                    getAuthHeaders()
-                );
-                return response.data;
+                const response = await paymentsService.getTransactionById(id);
+                return response;
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to fetch transaction details';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to fetch transaction details';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
                 return null;
@@ -263,13 +123,10 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const response = await axios.get(
-                    `${API_BASE_URL}/admin/payments/invoices/${id}`,
-                    getAuthHeaders()
-                );
-                return response.data;
+                const response = await paymentsService.getInvoiceById(id);
+                return response;
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to fetch invoice';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to fetch invoice';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
                 return null;
@@ -286,15 +143,11 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const response = await axios.post(
-                    `${API_BASE_URL}/admin/payments/invoices`,
-                    invoiceData,
-                    getAuthHeaders()
-                );
+                const response = await paymentsService.createInvoice(invoiceData);
                 push({ message: 'Invoice created successfully', type: 'success' });
-                return response.data;
+                return response;
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to create invoice';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to create invoice';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
                 return null;
@@ -311,15 +164,11 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const response = await axios.post(
-                    `${API_BASE_URL}/admin/payments/refund/${transactionId}`,
-                    refundData,
-                    getAuthHeaders()
-                );
+                const response = await paymentsService.processRefund(transactionId, refundData);
                 push({ message: 'Refund processed successfully', type: 'success' });
-                return response.data;
+                return response;
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to process refund';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to process refund';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
                 return null;
@@ -336,25 +185,16 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const params = new URLSearchParams();
-                Object.entries(filters).forEach(([key, value]) => {
-                    if (value) params.append(key, value.toString());
-                });
-
-                const response = await axios.get(
-                    `${API_BASE_URL}/admin/payments/payouts?${params.toString()}`,
-                    getAuthHeaders()
-                );
-
-                setPayouts(response.data.payouts);
+                const response: any = await paymentsService.getAllPayouts(filters);
+                setPayouts(response.payouts);
                 setPagination({
-                    page: response.data.page,
-                    limit: response.data.limit,
-                    total: response.data.total,
-                    totalPages: response.data.totalPages,
+                    page: response.page,
+                    limit: response.limit,
+                    total: response.total,
+                    totalPages: response.totalPages,
                 });
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to fetch payouts';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to fetch payouts';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
             } finally {
@@ -370,15 +210,11 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const response = await axios.post(
-                    `${API_BASE_URL}/admin/payments/payouts/${instructorId}/process`,
-                    payoutData,
-                    getAuthHeaders()
-                );
+                const response = await paymentsService.processPayout(instructorId, payoutData);
                 push({ message: 'Payout processed successfully', type: 'success' });
-                return response.data;
+                return response;
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to process payout';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to process payout';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
                 return null;
@@ -395,31 +231,10 @@ export const usePayments = () => {
             setLoading(true);
             setError(null);
             try {
-                const params = new URLSearchParams();
-                Object.entries(filters).forEach(([key, value]) => {
-                    if (value) params.append(key, value.toString());
-                });
-
-                const response = await axios.get(
-                    `${API_BASE_URL}/admin/payments/export?${params.toString()}`,
-                    getAuthHeaders()
-                );
-
-                // Create download link
-                const blob = new Blob([response.data.data], {
-                    type: filters.format === 'csv' ? 'text/csv' : 'application/json',
-                });
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', response.data.filename);
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-
+                await paymentsService.exportReport(filters);
                 push({ message: 'Report exported successfully', type: 'success' });
             } catch (err: any) {
-                const errorMsg = err.response?.data?.message || 'Failed to export report';
+                const errorMsg = err?.message || err?.response?.data?.message || 'Failed to export report';
                 setError(errorMsg);
                 push({ message: errorMsg, type: 'error' });
             } finally {

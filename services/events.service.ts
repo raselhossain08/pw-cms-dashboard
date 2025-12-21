@@ -43,4 +43,46 @@ export const eventsService = {
         const res = await axios.post<{ data: Events }>('/cms/home/events', data)
         return res.data.data || res.data
     },
+
+    async duplicateEvent(slug: string) {
+        const res = await axios.post<{ data: Events }>(`/cms/home/events/${slug}/duplicate`)
+        return res.data.data || res.data
+    },
+
+    async exportEvents(format: "json" | "pdf") {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+
+        // Get token from cookies
+        let token = ''
+        try {
+            const { cookieService } = await import('@/lib/cookie.service')
+            token = cookieService.get('token') || ''
+        } catch {
+            // Fallback to localStorage if cookie service not available
+            if (typeof window !== 'undefined') {
+                token = localStorage.getItem('token') || ''
+            }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/cms/home/events/export?format=${format}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        })
+
+        if (!res.ok) {
+            throw new Error('Failed to export events')
+        }
+
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `events-export_${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : 'json'}`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+    },
 }

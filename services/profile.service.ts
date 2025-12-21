@@ -8,6 +8,10 @@ export async function fetchProfile() {
 }
 
 export async function updateProfile(id: string, data: Partial<AuthUser & { phone?: string; bio?: string; country?: string; state?: string; city?: string; certifications?: string[]; flightHours?: number }>) {
+  // Use /users/me for current user, /users/:id for other users
+  if (id) {
+    return apiFetch(`/users/me`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
   return apiFetch(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 }
 
@@ -64,7 +68,8 @@ export async function setAvatar(id: string, avatarUrl: string) {
 
 // Security
 export async function changePassword(id: string, currentPassword: string, newPassword: string) {
-  return apiFetch(`/users/${id}/change-password`, { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) })
+  // Use /users/me/change-password for current user
+  return apiFetch(`/users/me/change-password`, { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) })
 }
 
 export async function deleteAccount(id?: string) {
@@ -111,4 +116,99 @@ export async function getInvoices(page = 1, limit = 10) {
 
 export async function getOrders(page = 1, limit = 10) {
   return apiFetch<{ orders: OrderItem[]; total: number; page: number; limit: number }>(`/orders/my-orders?page=${page}&limit=${limit}`)
+}
+
+// Email Verification
+export async function resendVerificationEmail() {
+  return apiFetch(`/auth/resend-verification`, { method: 'POST', body: JSON.stringify({}) })
+}
+
+export async function getEmailVerificationStatus() {
+  return apiFetch<{ emailVerified: boolean; email?: string }>(`/auth/email-status`)
+}
+
+// User Sessions
+export type SessionItem = {
+  _id: string
+  device?: string
+  browser?: string
+  ip?: string
+  location?: string
+  lastActive?: string
+  isCurrent?: boolean
+}
+
+export async function getUserSessions() {
+  return apiFetch<{ sessions: SessionItem[] }>(`/auth/sessions`)
+}
+
+export async function deleteSession(sessionId: string) {
+  return apiFetch(`/auth/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+export async function deleteAllSessions() {
+  return apiFetch(`/auth/sessions`, { method: 'DELETE' })
+}
+
+// Notification Preferences
+export type NotificationPreferences = {
+  email?: {
+    courseUpdates?: boolean
+    marketing?: boolean
+    security?: boolean
+    system?: boolean
+  }
+  push?: {
+    courseUpdates?: boolean
+    marketing?: boolean
+    security?: boolean
+    system?: boolean
+  }
+}
+
+export async function getNotificationPreferences() {
+  return apiFetch<{ preferences: NotificationPreferences }>(`/users/notification-preferences`)
+}
+
+export async function updateNotificationPreferences(preferences: NotificationPreferences) {
+  return apiFetch(`/users/notification-preferences`, { method: 'PATCH', body: JSON.stringify(preferences) })
+}
+
+// Privacy Settings
+export type PrivacySettings = {
+  profileVisibility?: 'public' | 'private' | 'friends'
+  showEmail?: boolean
+  showPhone?: boolean
+  allowMessages?: boolean
+  showActivity?: boolean
+}
+
+export async function getPrivacySettings() {
+  return apiFetch<{ settings: PrivacySettings }>(`/users/privacy-settings`)
+}
+
+export async function updatePrivacySettings(settings: PrivacySettings) {
+  return apiFetch(`/users/privacy-settings`, { method: 'PATCH', body: JSON.stringify(settings) })
+}
+
+// Download Invoice/Order
+export async function downloadInvoice(invoiceId: string) {
+  return apiFetch<{ url: string }>(`/payments/invoices/${invoiceId}/download`)
+}
+
+export async function downloadOrder(orderId: string) {
+  return apiFetch<{ url: string }>(`/orders/${orderId}/download`)
+}
+
+// Profile Statistics
+export type ProfileStats = {
+  coursesEnrolled?: number
+  coursesCompleted?: number
+  certificatesEarned?: number
+  totalSpent?: number
+  lastLogin?: string
+}
+
+export async function getProfileStats() {
+  return apiFetch<{ stats: ProfileStats }>(`/users/profile/stats`)
 }

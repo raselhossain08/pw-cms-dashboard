@@ -37,6 +37,12 @@ export interface SeoMeta {
   canonicalUrl?: string;
 }
 
+export interface AcceptanceSection {
+  title: string;
+  content: string;
+  isActive: boolean;
+}
+
 export interface TermsConditions {
   _id: string;
   headerSection: HeaderSection;
@@ -44,6 +50,7 @@ export interface TermsConditions {
   sections: TermsSection[];
   contactInfo: ContactInfo;
   seoMeta: SeoMeta;
+  acceptanceSection: AcceptanceSection;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -57,7 +64,7 @@ export interface TermsConditionsResponse {
 
 export class TermsConditionsService {
   private static readonly API_BASE_URL =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
   private static getAuthHeader() {
     const token = cookieService.get("token");
@@ -76,7 +83,31 @@ export class TermsConditionsService {
           cache: "no-store",
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -95,7 +126,31 @@ export class TermsConditionsService {
           cache: "no-store",
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -114,7 +169,31 @@ export class TermsConditionsService {
           cache: "no-store",
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure: { success, data: { success, data: {...} } }
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -135,7 +214,31 @@ export class TermsConditionsService {
           cache: "no-store",
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to fetch: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -157,7 +260,31 @@ export class TermsConditionsService {
           body: JSON.stringify(data),
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to create: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -180,7 +307,31 @@ export class TermsConditionsService {
           body: JSON.stringify(data),
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to update: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -206,7 +357,31 @@ export class TermsConditionsService {
           body: formData,
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to upload: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -228,13 +403,152 @@ export class TermsConditionsService {
           headers: this.getAuthHeader(),
         }
       );
-      return await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to delete: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
     } catch (error: any) {
       return {
         success: false,
         message: error.message || "Failed to delete terms & conditions",
         data: null,
       };
+    }
+  }
+
+  static async toggleActiveStatus(id: string): Promise<TermsConditionsResponse> {
+    try {
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/terms-conditions/${id}/toggle-active`,
+        {
+          method: "POST",
+          headers: this.getAuthHeader(),
+        }
+      );
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to toggle status: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.message || "Failed to toggle terms & conditions status",
+        data: null,
+      };
+    }
+  }
+
+  static async duplicateTermsConditions(id: string): Promise<TermsConditionsResponse> {
+    try {
+      const response = await fetch(
+        `${this.API_BASE_URL}/cms/terms-conditions/${id}/duplicate`,
+        {
+          method: "POST",
+          headers: this.getAuthHeader(),
+        }
+      );
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Failed to duplicate: ${response.status} ${response.statusText}`,
+          data: null,
+        };
+      }
+
+      const result = await response.json();
+
+      // Handle nested response structure
+      if (result && result.success && result.data && result.data.success && result.data.data) {
+        return {
+          success: true,
+          message: result.data.message || "Success",
+          data: result.data.data,
+        };
+      }
+
+      return {
+        success: false,
+        message: result?.message || "Invalid response structure",
+        data: null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.message || "Failed to duplicate terms & conditions",
+        data: null,
+      };
+    }
+  }
+
+  static async exportTermsConditions(format: "json" | "pdf", id?: string): Promise<void> {
+    try {
+      const url = id
+        ? `${this.API_BASE_URL}/cms/terms-conditions/${id}/export?format=${format}`
+        : `${this.API_BASE_URL}/cms/terms-conditions/export?format=${format}`;
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this.getAuthHeader(),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to export terms & conditions");
+      }
+
+      const blob = await response.blob();
+      const url_blob = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url_blob;
+      link.download = `terms-conditions-export_${new Date().toISOString().split("T")[0]}.${format === "pdf" ? "pdf" : "json"}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url_blob);
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to export terms & conditions");
     }
   }
 }

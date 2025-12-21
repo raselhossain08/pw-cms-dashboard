@@ -30,11 +30,30 @@ import {
   Globe,
   Plus,
   Trash2,
+  Download,
+  Copy,
+  Eye,
+  Loader2,
+  EyeOff,
 } from "lucide-react";
-import type { Footer } from "@/types/cms";
+import type { Footer, FooterSocialLink } from "@/types/cms";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { footerApi } from "@/services/cms.service";
 import { useToast } from "@/context/ToastContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 
 interface FooterEditorProps {
   footerId?: string;
@@ -81,6 +100,8 @@ export function FooterEditor({
     [key: string]: number;
   }>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Sync data when effectiveFooter loads
   useEffect(() => {
@@ -337,24 +358,170 @@ export function FooterEditor({
             Manage your website footer content
           </p>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={isSaving}
-          size="lg"
-          className="w-full sm:w-auto"
-        >
-          {isSaving ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant={data?.isActive ? "default" : "secondary"}>
+            {data?.isActive ? (
+              <>
+                <Eye className="w-3 h-3 mr-1" /> Active
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3 mr-1" /> Inactive
+              </>
+            )}
+          </Badge>
+          <Button
+            variant="outline"
+            onClick={() => setShowPreview(true)}
+            disabled={!data || isSaving}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          {data?._id && (
             <>
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="mr-2 h-4 w-4" />
-              Save Changes
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={isExporting || isSaving}>
+                    {isExporting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      if (!data._id) return;
+                      setIsExporting(true);
+                      try {
+                        await footerApi.export(data._id, "json");
+                        push({
+                          message: "Footer exported as JSON",
+                          type: "success",
+                        });
+                      } catch (err) {
+                        push({ message: "Failed to export", type: "error" });
+                      } finally {
+                        setIsExporting(false);
+                      }
+                    }}
+                  >
+                    Export as JSON
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      if (!data._id) return;
+                      setIsExporting(true);
+                      try {
+                        await footerApi.export(data._id, "pdf");
+                        push({
+                          message: "Footer exported as PDF",
+                          type: "success",
+                        });
+                      } catch (err) {
+                        push({ message: "Failed to export", type: "error" });
+                      } finally {
+                        setIsExporting(false);
+                      }
+                    }}
+                  >
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (!data._id) return;
+                  setIsSaving(true);
+                  try {
+                    const duplicated = await footerApi.duplicate(data._id);
+                    queryClient.invalidateQueries({
+                      queryKey: ["activeFooter"],
+                    });
+                    push({
+                      message: "Footer duplicated successfully",
+                      type: "success",
+                    });
+                    setData(duplicated);
+                  } catch (err) {
+                    push({ message: "Failed to duplicate", type: "error" });
+                  } finally {
+                    setIsSaving(false);
+                  }
+                }}
+                disabled={isSaving}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (!data._id) return;
+                  setIsSaving(true);
+                  try {
+                    const toggled = await footerApi.toggleActive(data._id);
+                    queryClient.invalidateQueries({
+                      queryKey: ["activeFooter"],
+                    });
+                    push({
+                      message: `Footer ${
+                        toggled.isActive ? "activated" : "deactivated"
+                      }`,
+                      type: "success",
+                    });
+                    setData(toggled);
+                  } catch (err) {
+                    push({ message: "Failed to toggle status", type: "error" });
+                  } finally {
+                    setIsSaving(false);
+                  }
+                }}
+                disabled={isSaving}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${isSaving ? "animate-spin" : ""}`}
+                />
+                Toggle Active
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["activeFooter"] });
+                  push({ message: "Footer refreshed", type: "success" });
+                }}
+                disabled={isSaving}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
             </>
           )}
-        </Button>
+          <Button
+            onClick={handleSave}
+            disabled={isSaving}
+            size="lg"
+            className="w-full sm:w-auto"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Save Changes
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -1505,8 +1672,144 @@ export function FooterEditor({
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Upload Progress Indicator */}
+      {Object.values(uploadProgress).some(
+        (progress) => progress > 0 && progress < 100
+      ) && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading media...</span>
+                  <span className="text-muted-foreground">
+                    {Math.max(...Object.values(uploadProgress))}%
+                  </span>
+                </div>
+                <Progress value={Math.max(...Object.values(uploadProgress))} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Footer Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your footer will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {data && (
+            <div className="space-y-6 mt-4">
+              {/* Logo Preview */}
+              {data.logo && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Logo</h3>
+                  <div className="p-4 border rounded-lg">
+                    <img
+                      src={data.logo.src}
+                      alt={data.logo.alt || "Footer Logo"}
+                      className="h-12"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Company Info Preview */}
+              {data.companyInfo?.description && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Company Description</h3>
+                  <p className="text-muted-foreground">
+                    {data.companyInfo.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Sections Preview */}
+              {data.sections && data.sections.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Footer Sections</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {data.sections.map((section, idx) => (
+                      <div key={idx} className="p-3 border rounded-lg">
+                        <p className="font-medium">{section.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {section.links.length} links
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Contact Info Preview */}
+              {data.contact && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Contact Information</h3>
+                  <div className="p-4 border rounded-lg space-y-2">
+                    {data.contact.email && (
+                      <p className="flex items-center gap-2">
+                        <Mail className="w-4 h-4" />
+                        {data.contact.email}
+                      </p>
+                    )}
+                    {data.contact.phone && (
+                      <p className="flex items-center gap-2">
+                        <Phone className="w-4 h-4" />
+                        {data.contact.phone}
+                      </p>
+                    )}
+                    {data.contact.address && (
+                      <p className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4" />
+                        {data.contact.address}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Social Media Preview */}
+              {data.socialMedia?.links && data.socialMedia.links.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Social Media</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {data.socialMedia.links.map(
+                      (social: FooterSocialLink, idx: number) => (
+                        <Badge key={idx} variant="outline">
+                          {social.platform}: {social.href}
+                        </Badge>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Copyright Preview */}
+              {data.companyInfo?.rightsText && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Copyright</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {data.companyInfo.rightsText}
+                  </p>
+                </div>
+              )}
+
+              {/* Status */}
+              <div className="space-y-2">
+                <h3 className="font-semibold">Status</h3>
+                <Badge variant={data.isActive ? "default" : "secondary"}>
+                  {data.isActive ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-

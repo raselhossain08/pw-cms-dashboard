@@ -58,9 +58,13 @@ interface CoursesTableProps {
   onDuplicate: (courseId: string) => void;
   onPublish: (courseId: string) => void;
   onUnpublish: (courseId: string) => void;
+  onToggleStatus?: (courseId: string) => void;
   onReorder?: (courses: Course[]) => void;
   actionLoading?: string | null;
   viewMode?: "table" | "grid";
+  selectedIds?: string[];
+  onToggleSelection?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
 export default function CoursesTable({
@@ -70,13 +74,14 @@ export default function CoursesTable({
   onDuplicate,
   onPublish,
   onUnpublish,
+  onToggleStatus,
   onReorder,
   actionLoading,
   viewMode = "table",
+  selectedIds = [],
+  onToggleSelection,
+  onToggleSelectAll,
 }: CoursesTableProps) {
-  const [selectedCourses, setSelectedCourses] = React.useState<Set<string>>(
-    new Set()
-  );
   const [quickViewCourse, setQuickViewCourse] = React.useState<Course | null>(
     null
   );
@@ -87,25 +92,15 @@ export default function CoursesTable({
   }, [courses]);
 
   const handleSelectAll = () => {
-    if (selectedCourses.size === localCourses.length) {
-      setSelectedCourses(new Set());
-    } else {
-      setSelectedCourses(
-        new Set(
-          localCourses.map((c) => c.id).filter((id): id is string => !!id)
-        )
-      );
+    if (onToggleSelectAll) {
+      onToggleSelectAll();
     }
   };
 
   const handleSelectCourse = (courseId: string) => {
-    const newSelected = new Set(selectedCourses);
-    if (newSelected.has(courseId)) {
-      newSelected.delete(courseId);
-    } else {
-      newSelected.add(courseId);
+    if (onToggleSelection) {
+      onToggleSelection(courseId);
     }
-    setSelectedCourses(newSelected);
   };
 
   const handleDragEnd = (result: DropResult) => {
@@ -119,16 +114,6 @@ export default function CoursesTable({
     if (onReorder) {
       onReorder(items);
     }
-  };
-
-  const handleBulkDelete = () => {
-    selectedCourses.forEach((id) => onDelete(id));
-    setSelectedCourses(new Set());
-  };
-
-  const handleBulkPublish = () => {
-    selectedCourses.forEach((id) => onPublish(id));
-    setSelectedCourses(new Set());
   };
 
   const getStatusColor = (status?: string) => {
@@ -168,47 +153,6 @@ export default function CoursesTable({
   return (
     <>
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        {/* Bulk Actions Bar */}
-        {selectedCourses.size > 0 && (
-          <div className="bg-primary/5 border-b border-primary/10 px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CheckboxIcon className="w-4 h-4 text-primary" />
-              <span className="font-medium text-secondary">
-                {selectedCourses.size} course
-                {selectedCourses.size > 1 ? "s" : ""} selected
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBulkPublish}
-                disabled={!!actionLoading}
-              >
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                Publish Selected
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBulkDelete}
-                disabled={!!actionLoading}
-                className="text-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete Selected
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedCourses(new Set())}
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-        )}
-
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="courses-table">
             {(provided, snapshot) => (
@@ -223,7 +167,7 @@ export default function CoursesTable({
                       <TableHead className="w-12">
                         <Checkbox
                           checked={
-                            selectedCourses.size === localCourses.length &&
+                            selectedIds.length === localCourses.length &&
                             localCourses.length > 0
                           }
                           onCheckedChange={handleSelectAll}
@@ -281,14 +225,14 @@ export default function CoursesTable({
                                 className={`${
                                   snapshot.isDragging
                                     ? "bg-primary/10 shadow-lg"
-                                    : selectedCourses.has(courseId)
+                                    : selectedIds.includes(courseId)
                                     ? "bg-primary/5"
                                     : ""
                                 } transition-colors`}
                               >
                                 <TableCell>
                                   <Checkbox
-                                    checked={selectedCourses.has(courseId)}
+                                    checked={selectedIds.includes(courseId)}
                                     onCheckedChange={() =>
                                       handleSelectCourse(courseId)
                                     }
@@ -566,35 +510,61 @@ export default function CoursesTable({
                                           Duplicate
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
-                                        {course.isPublished ? (
+                                        {onToggleStatus ? (
                                           <DropdownMenuItem
                                             onClick={() =>
                                               course.id &&
-                                              onUnpublish(course.id)
+                                              onToggleStatus(course.id)
                                             }
                                             disabled={!!actionLoading}
                                           >
                                             {actionLoading === course.id ? (
                                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                            ) : (
+                                            ) : course.isPublished ||
+                                              course.status === "published" ? (
                                               <XCircle className="w-4 h-4 mr-2" />
-                                            )}
-                                            Unpublish
-                                          </DropdownMenuItem>
-                                        ) : (
-                                          <DropdownMenuItem
-                                            onClick={() =>
-                                              course.id && onPublish(course.id)
-                                            }
-                                            disabled={!!actionLoading}
-                                          >
-                                            {actionLoading === course.id ? (
-                                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                                             ) : (
                                               <CheckCircle2 className="w-4 h-4 mr-2" />
                                             )}
-                                            Publish
+                                            {course.isPublished ||
+                                            course.status === "published"
+                                              ? "Unpublish"
+                                              : "Publish"}
                                           </DropdownMenuItem>
+                                        ) : (
+                                          <>
+                                            {course.isPublished ? (
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  course.id &&
+                                                  onUnpublish(course.id)
+                                                }
+                                                disabled={!!actionLoading}
+                                              >
+                                                {actionLoading === course.id ? (
+                                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                ) : (
+                                                  <XCircle className="w-4 h-4 mr-2" />
+                                                )}
+                                                Unpublish
+                                              </DropdownMenuItem>
+                                            ) : (
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  course.id &&
+                                                  onPublish(course.id)
+                                                }
+                                                disabled={!!actionLoading}
+                                              >
+                                                {actionLoading === course.id ? (
+                                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                ) : (
+                                                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                                                )}
+                                                Publish
+                                              </DropdownMenuItem>
+                                            )}
+                                          </>
                                         )}
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem

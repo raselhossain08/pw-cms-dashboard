@@ -28,9 +28,13 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  Download,
+  Copy,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
-import { TermsConditionsService } from "@/lib/services/terms-conditions.service";
+import { useTermsConditions } from "@/hooks/useTermsConditions";
 import type {
   TermsConditions,
   HeaderSection,
@@ -40,17 +44,40 @@ import type {
   SeoMeta,
 } from "@/lib/services/terms-conditions.service";
 import { useToast } from "@/context/ToastContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function TermsConditionsEditor() {
   const { push } = useToast();
-  const [TermsConditions, setTermsConditions] =
-    useState<TermsConditions | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const {
+    termsConditions,
+    loading,
+    saving,
+    uploadProgress,
+    updateTermsConditions,
+    updateTermsConditionsWithUpload,
+    toggleActiveStatus,
+    duplicateTermsConditions,
+    exportTermsConditions,
+    refreshTermsConditions,
+  } = useTermsConditions();
   const [activeTab, setActiveTab] = useState("header");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<TermsConditions>>({
     headerSection: {
@@ -75,6 +102,11 @@ export function TermsConditionsEditor() {
       ogImage: "",
       canonicalUrl: "",
     },
+    acceptanceSection: {
+      title: "",
+      content: "",
+      isActive: true,
+    },
     isActive: true,
   });
 
@@ -98,43 +130,26 @@ export function TermsConditionsEditor() {
   const [subsectionContentInput, setSubsectionContentInput] = useState("");
 
   useEffect(() => {
-    fetchTermsConditions();
-  }, []);
-
-  useEffect(() => {
-    if (TermsConditions) {
+    if (termsConditions) {
       setFormData({
-        headerSection: TermsConditions.headerSection,
-        lastUpdated: TermsConditions.lastUpdated,
-        sections: TermsConditions.sections,
-        contactInfo: TermsConditions.contactInfo,
-        seoMeta: TermsConditions.seoMeta,
-        isActive: TermsConditions.isActive,
+        headerSection: termsConditions.headerSection,
+        lastUpdated: termsConditions.lastUpdated,
+        sections: termsConditions.sections,
+        contactInfo: termsConditions.contactInfo,
+        seoMeta: termsConditions.seoMeta,
+        acceptanceSection: termsConditions.acceptanceSection || {
+          title: "Acceptance of Terms",
+          content:
+            "By using Personal Wings, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions. If you do not agree to these terms, you must discontinue use of our services immediately.",
+          isActive: true,
+        },
+        isActive: termsConditions.isActive,
       });
-      if (TermsConditions.headerSection?.image) {
-        setImagePreview(TermsConditions.headerSection.image);
+      if (termsConditions.headerSection?.image) {
+        setImagePreview(termsConditions.headerSection.image);
       }
     }
-  }, [TermsConditions]);
-
-  const fetchTermsConditions = async () => {
-    try {
-      setLoading(true);
-      const response = await TermsConditionsService.getDefaultTermsConditions();
-      if (response.success && response.data) {
-        setTermsConditions(response.data as TermsConditions);
-      } else {
-        push({
-          message: response.message || "Failed to fetch Terms & Conditions",
-          type: "error",
-        });
-      }
-    } catch (error) {
-      push({ message: "Failed to fetch Terms & Conditions", type: "error" });
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [termsConditions]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -149,90 +164,61 @@ export function TermsConditionsEditor() {
   };
 
   const handleSave = async () => {
-    if (!TermsConditions?._id) {
+    if (!termsConditions?._id) {
       push({ message: "No Terms & Conditions data found", type: "error" });
       return;
     }
 
-    try {
-      setSaving(true);
+    if (imageFile) {
+      const formDataObj = new FormData();
+      formDataObj.append("image", imageFile);
+      formDataObj.append(
+        "headerSection",
+        JSON.stringify(formData.headerSection)
+      );
+      formDataObj.append("lastUpdated", formData.lastUpdated || "");
+      formDataObj.append("sections", JSON.stringify(formData.sections));
+      formDataObj.append("contactInfo", JSON.stringify(formData.contactInfo));
+      formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
+      formDataObj.append(
+        "acceptanceSection",
+        JSON.stringify(formData.acceptanceSection)
+      );
+      formDataObj.append("isActive", String(formData.isActive));
 
-      if (imageFile) {
-        const formDataObj = new FormData();
-        formDataObj.append("image", imageFile);
-        formDataObj.append(
-          "headerSection",
-          JSON.stringify(formData.headerSection)
-        );
-        formDataObj.append("lastUpdated", formData.lastUpdated || "");
-        formDataObj.append("sections", JSON.stringify(formData.sections));
-        formDataObj.append("contactInfo", JSON.stringify(formData.contactInfo));
-        formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
-        formDataObj.append("isActive", String(formData.isActive));
-
-        setUploadProgress(0);
-        const progressInterval = setInterval(() => {
-          setUploadProgress((prev) => {
-            if (prev >= 90) {
-              clearInterval(progressInterval);
-              return 90;
-            }
-            return prev + 10;
-          });
-        }, 100);
-
-        const response =
-          await TermsConditionsService.updateTermsConditionsWithUpload(
-            TermsConditions._id,
-            formDataObj
-          );
-
-        clearInterval(progressInterval);
-        setUploadProgress(100);
-
-        if (response.success) {
-          push({
-            message: "Terms & Conditions updated successfully with image",
-            type: "success",
-          });
-          setTimeout(() => {
-            setUploadProgress(0);
-            setImageFile(null);
-          }, 1000);
-          await fetchTermsConditions();
-        } else {
-          throw new Error(response.message);
-        }
-      } else {
-        const response = await TermsConditionsService.updateTermsConditions(
-          TermsConditions._id,
-          formData
-        );
-        if (response.success) {
-          push({
-            message: "Terms & Conditions updated successfully",
-            type: "success",
-          });
-          await fetchTermsConditions();
-        } else {
-          throw new Error(response.message);
-        }
-      }
-    } catch (error: any) {
-      push({
-        message: error.message || "Failed to save Terms & Conditions",
-        type: "error",
-      });
-      setUploadProgress(0);
-    } finally {
-      setSaving(false);
+      await updateTermsConditionsWithUpload(termsConditions._id, formDataObj);
+      setImageFile(null);
+    } else {
+      await updateTermsConditions(termsConditions._id, formData);
     }
   };
 
   const handleRefresh = () => {
-    fetchTermsConditions();
+    refreshTermsConditions();
     setImageFile(null);
-    setUploadProgress(0);
+  };
+
+  const handleToggleActive = async () => {
+    if (!termsConditions?._id) return;
+    await toggleActiveStatus(termsConditions._id);
+  };
+
+  const handleDuplicate = async () => {
+    if (!termsConditions?._id) return;
+    await duplicateTermsConditions(termsConditions._id);
+    await refreshTermsConditions();
+  };
+
+  const handleExport = async (format: "json" | "pdf") => {
+    if (!termsConditions?._id) return;
+    setIsExporting(true);
+    try {
+      await exportTermsConditions(format, termsConditions._id);
+    } catch (err) {
+      console.error("Failed to export:", err);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleAddContentParagraph = () => {
@@ -387,12 +373,61 @@ export function TermsConditionsEditor() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefresh} disabled={saving}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button
+            variant="outline"
+            onClick={() => setPreviewOpen(true)}
+            disabled={saving || loading}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isExporting || saving || loading}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("json")}>
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            onClick={handleDuplicate}
+            disabled={saving || loading || !termsConditions?._id}
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Duplicate
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
+          <Button onClick={handleSave} disabled={saving || loading}>
+            {saving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
             {saving ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -411,9 +446,8 @@ export function TermsConditionsEditor() {
             <div className="flex items-center space-x-2">
               <Switch
                 checked={formData.isActive}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, isActive: checked })
-                }
+                onCheckedChange={handleToggleActive}
+                disabled={saving || loading || !termsConditions?._id}
               />
               <Label>{formData.isActive ? "Active" : "Inactive"}</Label>
               {formData.isActive ? (
@@ -428,11 +462,12 @@ export function TermsConditionsEditor() {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="header">Header</TabsTrigger>
           <TabsTrigger value="sections">Sections</TabsTrigger>
           <TabsTrigger value="contact">Contact Info</TabsTrigger>
           <TabsTrigger value="seo">SEO</TabsTrigger>
+          <TabsTrigger value="acceptance">Acceptance</TabsTrigger>
         </TabsList>
 
         {/* Header Tab */}
@@ -1069,7 +1104,218 @@ export function TermsConditionsEditor() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Acceptance Tab */}
+        <TabsContent value="acceptance" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Acceptance Section</CardTitle>
+              <CardDescription>
+                Configure the acceptance of terms section displayed at the
+                bottom of the page
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="acceptanceTitle">Title</Label>
+                <Input
+                  id="acceptanceTitle"
+                  value={formData.acceptanceSection?.title || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      acceptanceSection: {
+                        ...formData.acceptanceSection!,
+                        title: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="Acceptance of Terms"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="acceptanceContent">Content</Label>
+                <Textarea
+                  id="acceptanceContent"
+                  value={formData.acceptanceSection?.content || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      acceptanceSection: {
+                        ...formData.acceptanceSection!,
+                        content: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="By using Personal Wings, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions..."
+                  rows={6}
+                />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="acceptanceActive"
+                  checked={formData.acceptanceSection?.isActive !== false}
+                  onCheckedChange={(checked) =>
+                    setFormData({
+                      ...formData,
+                      acceptanceSection: {
+                        ...formData.acceptanceSection!,
+                        isActive: checked,
+                      },
+                    })
+                  }
+                />
+                <Label htmlFor="acceptanceActive" className="cursor-pointer">
+                  Show Acceptance Section
+                </Label>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Upload Progress Indicator */}
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading image...</span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Terms & Conditions Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your Terms & Conditions page will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {termsConditions && (
+            <div className="space-y-6 mt-4">
+              {/* Header Section */}
+              {termsConditions.headerSection && (
+                <div className="space-y-4">
+                  {termsConditions.headerSection.image && (
+                    <div className="relative w-full h-64 rounded-lg overflow-hidden">
+                      <Image
+                        src={termsConditions.headerSection.image}
+                        alt={termsConditions.headerSection.imageAlt || "Header"}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <h1 className="text-3xl font-bold">
+                      {termsConditions.headerSection.title}
+                    </h1>
+                    <p className="text-muted-foreground mt-2">
+                      {termsConditions.headerSection.subtitle}
+                    </p>
+                    {termsConditions.lastUpdated && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Last Updated: {termsConditions.lastUpdated}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Sections */}
+              {termsConditions.sections &&
+                termsConditions.sections.length > 0 && (
+                  <div className="space-y-6">
+                    {termsConditions.sections
+                      .filter((section) => section.isActive)
+                      .sort((a, b) => a.order - b.order)
+                      .map((section) => (
+                        <div key={section.id} className="space-y-4">
+                          <h2 className="text-2xl font-semibold">
+                            {section.title}
+                          </h2>
+                          {section.content && section.content.length > 0 && (
+                            <div className="space-y-2">
+                              {section.content.map((paragraph, idx) => (
+                                <p key={idx} className="text-muted-foreground">
+                                  {paragraph}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                          {section.subsections &&
+                            section.subsections.length > 0 && (
+                              <div className="ml-4 space-y-4">
+                                {section.subsections.map((subsection, idx) => (
+                                  <div key={idx} className="space-y-2">
+                                    <h3 className="text-xl font-medium">
+                                      {subsection.title}
+                                    </h3>
+                                    {subsection.content &&
+                                      subsection.content.length > 0 && (
+                                        <ul className="list-disc list-inside space-y-1 ml-4">
+                                          {subsection.content.map(
+                                            (item, itemIdx) => (
+                                              <li
+                                                key={itemIdx}
+                                                className="text-muted-foreground"
+                                              >
+                                                {item}
+                                              </li>
+                                            )
+                                          )}
+                                        </ul>
+                                      )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+              {/* Contact Info */}
+              {termsConditions.contactInfo && (
+                <div className="border-t pt-6 space-y-2">
+                  <h3 className="text-xl font-semibold">Contact Information</h3>
+                  <div className="space-y-1 text-muted-foreground">
+                    <p>Email: {termsConditions.contactInfo.email}</p>
+                    <p>Phone: {termsConditions.contactInfo.phone}</p>
+                    <p>Address: {termsConditions.contactInfo.address}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Acceptance Section */}
+              {termsConditions.acceptanceSection &&
+                termsConditions.acceptanceSection.isActive !== false && (
+                  <div className="border-t pt-6 space-y-2 bg-[#180f4c] text-white p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold">
+                      {termsConditions.acceptanceSection.title}
+                    </h3>
+                    <p className="text-sm leading-relaxed">
+                      {termsConditions.acceptanceSection.content}
+                    </p>
+                  </div>
+                )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

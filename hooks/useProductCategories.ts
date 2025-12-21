@@ -2,6 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { productCategoriesService, ProductCategory, CreateProductCategoryDto, UpdateProductCategoryDto, GetProductCategoriesParams } from "@/services/product-categories.service";
 import { useToast } from "@/context/ToastContext";
 
+interface BulkOperationResult {
+    updated?: number;
+    deleted?: number;
+    errors?: string[];
+}
+
 interface UseProductCategoriesResult {
     categories: ProductCategory[];
     loading: boolean;
@@ -15,6 +21,8 @@ interface UseProductCategoriesResult {
     deleteCategory: (id: string) => Promise<boolean>;
     getCategoryById: (id: string) => Promise<ProductCategory | null>;
     refreshCategories: () => Promise<void>;
+    bulkUpdateStatus: (ids: string[], status: "active" | "inactive") => Promise<BulkOperationResult | null>;
+    bulkDelete: (ids: string[]) => Promise<BulkOperationResult | null>;
 }
 
 export function useProductCategories(initialParams?: GetProductCategoriesParams): UseProductCategoriesResult {
@@ -144,6 +152,54 @@ export function useProductCategories(initialParams?: GetProductCategoriesParams)
         await fetchCategories(currentParams);
     }, [currentParams, fetchCategories]);
 
+    const bulkUpdateStatus = useCallback(async (ids: string[], status: "active" | "inactive"): Promise<BulkOperationResult | null> => {
+        setLoading(true);
+        setError(null);
+        try {
+            const result = await productCategoriesService.bulkUpdateStatus(ids, status);
+            push({
+                message: `${result.updated} categories updated successfully`,
+                type: "success",
+            });
+            await fetchCategories(currentParams);
+            return result;
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || "Failed to update categories";
+            setError(errorMessage);
+            push({
+                message: errorMessage,
+                type: "error",
+            });
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, [currentParams, fetchCategories, push]);
+
+    const bulkDelete = useCallback(async (ids: string[]): Promise<BulkOperationResult | null> => {
+        setLoading(true);
+        setError(null);
+        try {
+            const result = await productCategoriesService.bulkDelete(ids);
+            push({
+                message: `${result.deleted} categories deleted successfully${result.errors && result.errors.length > 0 ? `. ${result.errors.length} failed.` : ""}`,
+                type: result.errors && result.errors.length > 0 ? "info" : "success",
+            });
+            await fetchCategories(currentParams);
+            return result;
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.message || err?.message || "Failed to delete categories";
+            setError(errorMessage);
+            push({
+                message: errorMessage,
+                type: "error",
+            });
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, [currentParams, fetchCategories, push]);
+
     useEffect(() => {
         fetchCategories(initialParams);
     }, []);
@@ -161,5 +217,7 @@ export function useProductCategories(initialParams?: GetProductCategoriesParams)
         deleteCategory,
         getCategoryById,
         refreshCategories,
+        bulkUpdateStatus,
+        bulkDelete,
     };
 }

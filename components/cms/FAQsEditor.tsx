@@ -17,6 +17,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Upload,
   Save,
   RefreshCw,
@@ -35,6 +41,9 @@ import {
   Search,
   Edit,
   X,
+  Download,
+  Copy,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
 import { FaqsService } from "@/lib/services/faqs.service";
@@ -46,6 +55,7 @@ import type {
   SeoMeta,
 } from "@/lib/services/faqs.service";
 import { useToast } from "@/context/ToastContext";
+import { useFAQs } from "@/hooks/useFAQs";
 
 // Icon map for category icons
 const iconMap = {
@@ -62,13 +72,26 @@ type IconName = keyof typeof iconMap;
 
 export function FAQsEditor() {
   const { push } = useToast();
-  const [faqs, setFaqs] = useState<Faqs | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const {
+    faqs,
+    loading,
+    saving,
+    uploadProgress,
+    error,
+    fetchFaqs,
+    updateFaqs,
+    updateFaqsWithUpload,
+    toggleActive,
+    duplicateFaqs,
+    exportFaqs,
+    refreshFaqs,
+  } = useFAQs();
+
   const [activeTab, setActiveTab] = useState("header");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Form data state
   const [formData, setFormData] = useState<Partial<Faqs>>({
@@ -115,10 +138,6 @@ export function FAQsEditor() {
   const [tagInput, setTagInput] = useState("");
 
   useEffect(() => {
-    fetchFaqs();
-  }, []);
-
-  useEffect(() => {
     if (faqs) {
       setFormData({
         headerSection: faqs.headerSection,
@@ -132,28 +151,6 @@ export function FAQsEditor() {
       }
     }
   }, [faqs]);
-
-  const fetchFaqs = async () => {
-    try {
-      setLoading(true);
-      const response = await FaqsService.getDefaultFaqs();
-      if (response.success && response.data) {
-        setFaqs(response.data);
-      } else {
-        push({
-          message: response.message || "Failed to fetch FAQs",
-          type: "error",
-        });
-      }
-    } catch (error) {
-      push({
-        message: "Failed to fetch FAQs",
-        type: "error",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -176,81 +173,23 @@ export function FAQsEditor() {
       return;
     }
 
-    try {
-      setSaving(true);
+    if (imageFile) {
+      const formDataObj = new FormData();
+      formDataObj.append("image", imageFile);
+      formDataObj.append(
+        "headerSection",
+        JSON.stringify(formData.headerSection)
+      );
+      formDataObj.append("categories", JSON.stringify(formData.categories));
+      formDataObj.append("faqs", JSON.stringify(formData.faqs));
+      formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
+      formDataObj.append("isActive", String(formData.isActive));
 
-      if (imageFile) {
-        const formDataObj = new FormData();
-        formDataObj.append("image", imageFile);
-        formDataObj.append(
-          "headerSection",
-          JSON.stringify(formData.headerSection)
-        );
-        formDataObj.append("categories", JSON.stringify(formData.categories));
-        formDataObj.append("faqs", JSON.stringify(formData.faqs));
-        formDataObj.append("seoMeta", JSON.stringify(formData.seoMeta));
-        formDataObj.append("isActive", String(formData.isActive));
-
-        // Simulate upload progress
-        setUploadProgress(0);
-        const progressInterval = setInterval(() => {
-          setUploadProgress((prev) => {
-            if (prev >= 90) {
-              clearInterval(progressInterval);
-              return 90;
-            }
-            return prev + 10;
-          });
-        }, 100);
-
-        const response = await FaqsService.updateFaqsWithUpload(
-          faqs._id,
-          formDataObj
-        );
-
-        clearInterval(progressInterval);
-        setUploadProgress(100);
-
-        if (response.success) {
-          push({
-            message: "FAQs updated successfully with image",
-            type: "success",
-          });
-          setTimeout(() => {
-            setUploadProgress(0);
-            setImageFile(null);
-          }, 1000);
-          await fetchFaqs();
-        } else {
-          throw new Error(response.message);
-        }
-      } else {
-        const response = await FaqsService.updateFaqs(faqs._id, formData);
-        if (response.success) {
-          push({
-            message: "FAQs updated successfully",
-            type: "success",
-          });
-          await fetchFaqs();
-        } else {
-          throw new Error(response.message);
-        }
-      }
-    } catch (error: any) {
-      push({
-        message: error.message || "Failed to save FAQs",
-        type: "error",
-      });
-      setUploadProgress(0);
-    } finally {
-      setSaving(false);
+      await updateFaqsWithUpload(formDataObj);
+      setImageFile(null);
+    } else {
+      await updateFaqs(formData);
     }
-  };
-
-  const handleRefresh = () => {
-    fetchFaqs();
-    setImageFile(null);
-    setUploadProgress(0);
   };
 
   // Category handlers
@@ -374,31 +313,183 @@ export function FAQsEditor() {
     setFaqForm({ ...faqForm, tags: updatedTags });
   };
 
+  const handleExport = async (format: "json" | "pdf") => {
+    setIsExporting(true);
+    try {
+      await exportFaqs(format);
+      push({
+        message: `FAQs exported successfully as ${format.toUpperCase()}`,
+        type: "success",
+      });
+    } catch (error) {
+      push({
+        message: `Failed to export FAQs`,
+        type: "error",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    try {
+      await duplicateFaqs();
+      push({
+        message: "FAQs duplicated successfully",
+        type: "success",
+      });
+    } catch (error) {
+      push({
+        message: "Failed to duplicate FAQs",
+        type: "error",
+      });
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center h-64 space-y-4">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading FAQs data...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!faqs) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center h-64 space-y-4">
+          <MessageCircle className="w-12 h-12 text-muted-foreground" />
+          <div className="text-center space-y-2">
+            <p className="text-lg font-semibold">No FAQs Data Found</p>
+            <p className="text-sm text-muted-foreground">
+              {error ||
+                "The backend will create default FAQs data automatically."}
+            </p>
+            {error && (
+              <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                <p className="text-xs text-red-600 dark:text-red-400 font-mono">
+                  {error}
+                </p>
+              </div>
+            )}
+            <div className="flex gap-2 justify-center mt-4">
+              <Button onClick={refreshFaqs} variant="outline">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry Loading
+              </Button>
+              <Button
+                onClick={() => {
+                  window.open(
+                    "http://localhost:5000/api/cms/faqs/default",
+                    "_blank"
+                  );
+                }}
+                variant="secondary"
+                size="sm"
+              >
+                Test API Connection
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header Actions */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">FAQs Management</h2>
           <p className="text-muted-foreground">
             Manage your FAQ content, categories, and SEO settings
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefresh} disabled={saving}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant={faqs?.isActive ? "default" : "secondary"}>
+            {faqs?.isActive ? (
+              <>
+                <Eye className="w-3 h-3 mr-1" /> Active
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3 mr-1" /> Inactive
+              </>
+            )}
+          </Badge>
+          <Button
+            variant="outline"
+            onClick={() => setShowPreview(true)}
+            disabled={!faqs || saving}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          {faqs?._id && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={isExporting || saving}>
+                    {isExporting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleExport("json")}>
+                    Export as JSON
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                onClick={handleDuplicate}
+                disabled={saving}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  await toggleActive();
+                  await refreshFaqs();
+                }}
+                disabled={saving}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${saving ? "animate-spin" : ""}`}
+                />
+                Toggle Active
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            onClick={refreshFaqs}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
+            {saving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
             {saving ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -417,9 +508,12 @@ export function FAQsEditor() {
             <div className="flex items-center space-x-2">
               <Switch
                 checked={formData.isActive}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, isActive: checked })
-                }
+                onCheckedChange={async (checked) => {
+                  setFormData({ ...formData, isActive: checked });
+                  await toggleActive();
+                  await refreshFaqs();
+                }}
+                disabled={saving}
               />
               <Label>{formData.isActive ? "Active" : "Inactive"}</Label>
               {formData.isActive ? (
@@ -1106,5 +1200,3 @@ export function FAQsEditor() {
     </div>
   );
 }
-
-

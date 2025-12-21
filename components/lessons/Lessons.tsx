@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
+import { useLessons } from "@/hooks/useLessons";
 import {
   lessonsService,
   LessonType,
@@ -59,6 +60,10 @@ import {
   Trash2,
   BookOpen,
   Image as ImageIcon,
+  Power,
+  PowerOff,
+  CheckSquare,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -130,7 +135,24 @@ type LessonItem = {
 export default function Lessons() {
   const queryClient = useQueryClient();
   const { push } = useToast();
+  const {
+    createLesson: createLessonHook,
+    updateLesson: updateLessonHook,
+    deleteLesson: deleteLessonHook,
+    toggleLessonStatus,
+    duplicateLesson: duplicateLessonHook,
+    bulkDeleteLessons,
+    bulkToggleStatus,
+    getLessonAnalytics,
+    reorderLessons: reorderLessonsHook,
+    refreshLessons,
+    analyticsLoading,
+    analytics,
+  } = useLessons();
   const [selectedCourseId, setSelectedCourseId] = React.useState<string>("");
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [actionLoading, setActionLoading] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
@@ -562,12 +584,12 @@ export default function Lessons() {
                 }, 500);
               }
             }}
-            onDuration={(d) => {
+            onDuration={(d: number) => {
               if (onDuration && d && !isNaN(d) && d > 0) {
                 onDuration(Math.round(d));
               }
             }}
-            onError={(error, data) => {
+            onError={(error: Error, data?: unknown) => {
               console.error("Video playback error:", error, data);
             }}
           />
@@ -779,62 +801,59 @@ export default function Lessons() {
     return { total, videoCount, avgDuration, avgCompletion };
   }, [lessons]);
 
-  // Reorder mutation
-  const reorderMutation = useMutation({
-    mutationFn: ({
-      courseId,
-      lessonIds,
-      moduleId,
-    }: {
-      courseId: string;
-      lessonIds: string[];
-      moduleId?: string;
-    }) => lessonsService.reorderLessons(courseId, lessonIds, moduleId),
-    onSuccess: () => {
-      push({ type: "success", message: "Order updated successfully" });
+  // Reorder handler
+  const handleReorderLessons = async (
+    courseId: string,
+    lessonIds: string[],
+    moduleId?: string
+  ) => {
+    setActionLoading(true);
+    try {
+      await reorderLessonsHook(courseId, lessonIds, moduleId);
       queryClient.invalidateQueries({
         queryKey: ["lessons", selectedCourseId],
       });
-    },
-    onError: (error: any) => {
-      push({
-        type: "error",
-        message: error?.message || "Failed to update order",
-      });
-    },
-  });
+      await refreshLessons(courseId);
+    } catch (error) {
+      console.error("Failed to reorder lessons:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-  // Create mutation
-  const createMutation = useMutation({
-    mutationFn: ({
-      courseId,
-      payload,
-    }: {
-      courseId: string;
-      payload: CreateLessonPayload;
-    }) => lessonsService.createLesson(courseId, payload),
-    onSuccess: () => {
-      push({ type: "success", message: "Lesson created successfully" });
+  // Create lesson handler
+  const handleCreateLesson = async (
+    courseId: string,
+    payload: CreateLessonPayload
+  ) => {
+    setActionLoading(true);
+    try {
+      await createLessonHook(courseId, payload);
       queryClient.invalidateQueries({
         queryKey: ["lessons", selectedCourseId],
       });
       setCreateOpen(false);
-    },
-    onError: (error: any) => {
-      push({
-        type: "error",
-        message: error?.message || "Failed to create lesson",
-      });
-    },
-  });
+      // Reset form
+      setVideoPreview(null);
+      setVideoFile(null);
+      setThumbnailPreview(null);
+      setThumbnailFile(null);
+      setAutoDurationSeconds(null);
+    } catch (error) {
+      console.error("Failed to create lesson:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-  // Update mutation
-  const updateMutation = useMutation({
-    mutationFn: ({ lessonId, payload }: { lessonId: string; payload: any }) =>
-      lessonsService.updateLesson(lessonId, payload),
-    onSuccess: () => {
-      push({ type: "success", message: "Lesson updated successfully" });
-      // Invalidate all lesson queries to ensure fresh data
+  // Update lesson handler
+  const handleUpdateLesson = async (
+    lessonId: string,
+    payload: UpdateLessonPayload
+  ) => {
+    setActionLoading(true);
+    try {
+      await updateLessonHook(lessonId, payload);
       queryClient.invalidateQueries({
         queryKey: ["lessons"],
       });
@@ -846,53 +865,59 @@ export default function Lessons() {
       setDragOverId(null);
       setDragOverModuleId(null);
       setEditLesson(null);
-    },
-    onError: (error: any) => {
-      push({
-        type: "error",
-        message: error?.message || "Failed to update lesson",
-      });
+      // Reset form
+      setVideoPreview(null);
+      setVideoFile(null);
+      setThumbnailPreview(null);
+      setThumbnailFile(null);
+      setAutoDurationSeconds(null);
+    } catch (error) {
+      console.error("Failed to update lesson:", error);
       // Clear drag state on error too
       setDraggedId(null);
       setDragOverId(null);
       setDragOverModuleId(null);
-    },
-  });
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: (lessonId: string) => lessonsService.deleteLesson(lessonId),
-    onSuccess: () => {
-      push({ type: "success", message: "Lesson deleted successfully" });
+  // Delete lesson handler
+  const handleDeleteLesson = async (lessonId: string) => {
+    setActionLoading(true);
+    try {
+      await deleteLessonHook(lessonId);
       queryClient.invalidateQueries({
         queryKey: ["lessons", selectedCourseId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["course-modules"],
+      });
+      if (selectedCourseId) {
+        await refreshLessons(selectedCourseId);
+      }
       setDeleteId(null);
-    },
-    onError: (error: any) => {
-      push({
-        type: "error",
-        message: error?.message || "Failed to delete lesson",
-      });
-    },
-  });
+    } catch (error) {
+      console.error("Failed to delete lesson:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-  // Duplicate mutation
-  const duplicateMutation = useMutation({
-    mutationFn: (lessonId: string) => lessonsService.duplicateLesson(lessonId),
-    onSuccess: () => {
-      push({ type: "success", message: "Lesson duplicated successfully" });
-      queryClient.invalidateQueries({
-        queryKey: ["lessons", selectedCourseId],
-      });
-    },
-    onError: (error: any) => {
-      push({
-        type: "error",
-        message: error?.message || "Failed to duplicate lesson",
-      });
-    },
-  });
+  // Helper functions for bulk operations
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filtered.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filtered.map((l) => l.id));
+    }
+  };
 
   function onDrop(targetId: string) {
     if (!draggedId || draggedId === targetId) {
@@ -913,11 +938,7 @@ export default function Lessons() {
     const ids = order.map((l) => l.id);
     if (selectedCourseId) {
       const moduleId = filterModuleId !== "all" ? filterModuleId : undefined;
-      reorderMutation.mutate({
-        courseId: selectedCourseId,
-        lessonIds: ids,
-        moduleId,
-      });
+      handleReorderLessons(selectedCourseId, ids, moduleId);
     }
     setDraggedId(null);
     setDragOverId(null);
@@ -945,10 +966,7 @@ export default function Lessons() {
     }
 
     // Move lesson to new module
-    updateMutation.mutate({
-      lessonId: draggedId,
-      payload: { moduleId },
-    });
+    handleUpdateLesson(draggedId, { moduleId });
 
     setDraggedId(null);
     setDragOverModuleId(null);
@@ -1005,12 +1023,117 @@ export default function Lessons() {
                   <Folder className="w-4 h-4 mr-1" /> Modules
                 </Button>
               </div>
-              <Button
-                variant="outline"
-                className="border-gray-300 hover:bg-gray-50 transition-all"
-              >
-                <Download className="w-4 h-4 mr-2" /> Export
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="border-gray-300 hover:bg-gray-50 transition-all"
+                  >
+                    <Download className="w-4 h-4 mr-2" /> Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      try {
+                        const blob = await lessonsService.exportLessons("csv", {
+                          courseId: selectedCourseId,
+                          moduleId:
+                            filterModuleId !== "all"
+                              ? filterModuleId
+                              : undefined,
+                        });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `lessons.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        push({
+                          type: "success",
+                          message: "Lessons exported as CSV",
+                        });
+                      } catch (error: any) {
+                        push({
+                          type: "error",
+                          message: error?.message || "Failed to export lessons",
+                        });
+                      }
+                    }}
+                  >
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      try {
+                        const blob = await lessonsService.exportLessons(
+                          "xlsx",
+                          {
+                            courseId: selectedCourseId,
+                            moduleId:
+                              filterModuleId !== "all"
+                                ? filterModuleId
+                                : undefined,
+                          }
+                        );
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `lessons.xlsx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        push({
+                          type: "success",
+                          message: "Lessons exported as Excel",
+                        });
+                      } catch (error: any) {
+                        push({
+                          type: "error",
+                          message: error?.message || "Failed to export lessons",
+                        });
+                      }
+                    }}
+                  >
+                    Export as Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      try {
+                        const blob = await lessonsService.exportLessons("pdf", {
+                          courseId: selectedCourseId,
+                          moduleId:
+                            filterModuleId !== "all"
+                              ? filterModuleId
+                              : undefined,
+                        });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `lessons.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        push({
+                          type: "success",
+                          message: "Lessons exported as PDF",
+                        });
+                      } catch (error: any) {
+                        push({
+                          type: "error",
+                          message: error?.message || "Failed to export lessons",
+                        });
+                      }
+                    }}
+                  >
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 onClick={() => {
                   setCreatePreset(null);
@@ -1026,18 +1149,38 @@ export default function Lessons() {
 
         {/* Search Bar */}
         <div className="bg-white rounded-xl p-4 shadow-md border border-gray-200 mb-6 animate-slide-up">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Search lessons... (Ctrl+K)"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              ref={searchRef}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-            />
-            {(searchLoading || lessonsFetching) && (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search lessons... (Ctrl+K)"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                ref={searchRef}
+                className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
+              {(searchLoading || lessonsFetching) && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />
+              )}
+            </div>
+            {filtered.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (selectedIds.length === filtered.length) {
+                    setSelectedIds([]);
+                  } else {
+                    setSelectedIds(filtered.map((l) => l.id));
+                  }
+                }}
+                className="text-slate-600"
+              >
+                {selectedIds.length === filtered.length
+                  ? "Deselect All"
+                  : "Select All"}
+              </Button>
             )}
           </div>
         </div>
@@ -1343,15 +1486,36 @@ export default function Lessons() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <h4
-                            className="font-semibold text-gray-800 truncate group-hover:text-primary transition-colors cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPreviewLesson(lesson);
-                            }}
-                          >
-                            {lesson.title}
-                          </h4>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(lesson.id)}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                if (e.target.checked) {
+                                  setSelectedIds((prev) => [
+                                    ...prev,
+                                    lesson.id,
+                                  ]);
+                                } else {
+                                  setSelectedIds((prev) =>
+                                    prev.filter((id) => id !== lesson.id)
+                                  );
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                            />
+                            <h4
+                              className="font-semibold text-gray-800 truncate group-hover:text-primary transition-colors cursor-pointer flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewLesson(lesson);
+                              }}
+                            >
+                              {lesson.title}
+                            </h4>
+                          </div>
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               asChild
@@ -1383,6 +1547,80 @@ export default function Lessons() {
                               >
                                 <Eye className="w-4 h-4 mr-2" />
                                 Preview
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setActionLoading(true);
+                                  try {
+                                    await getLessonAnalytics(lesson.id);
+                                    setAnalyticsLesson(lesson);
+                                  } catch (error) {
+                                    console.error(
+                                      "Failed to load analytics:",
+                                      error
+                                    );
+                                  } finally {
+                                    setActionLoading(false);
+                                  }
+                                }}
+                              >
+                                <ChartLine className="w-4 h-4 mr-2" />
+                                Analytics
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setActionLoading(true);
+                                  try {
+                                    await duplicateLessonHook(lesson.id);
+                                    queryClient.invalidateQueries({
+                                      queryKey: ["lessons", selectedCourseId],
+                                    });
+                                  } catch (error) {
+                                    console.error(
+                                      "Failed to duplicate lesson:",
+                                      error
+                                    );
+                                  } finally {
+                                    setActionLoading(false);
+                                  }
+                                }}
+                              >
+                                <Copy className="w-4 h-4 mr-2" />
+                                Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setActionLoading(true);
+                                  try {
+                                    await toggleLessonStatus(lesson.id);
+                                    queryClient.invalidateQueries({
+                                      queryKey: ["lessons", selectedCourseId],
+                                    });
+                                  } catch (error) {
+                                    console.error(
+                                      "Failed to toggle status:",
+                                      error
+                                    );
+                                  } finally {
+                                    setActionLoading(false);
+                                  }
+                                }}
+                              >
+                                {lesson.status === LessonStatus.PUBLISHED ? (
+                                  <>
+                                    <PowerOff className="w-4 h-4 mr-2 text-amber-600" />
+                                    Unpublish
+                                  </>
+                                ) : (
+                                  <>
+                                    <Power className="w-4 h-4 mr-2 text-green-600" />
+                                    Publish
+                                  </>
+                                )}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -1854,9 +2092,8 @@ export default function Lessons() {
                                   size="sm"
                                   onClick={() => {
                                     // Remove from module (unassign)
-                                    updateMutation.mutate({
-                                      lessonId: lesson.id,
-                                      payload: { moduleId: null },
+                                    handleUpdateLesson(lesson.id, {
+                                      moduleId: undefined,
                                     });
                                   }}
                                   className="h-7 px-2 text-slate-600 hover:text-orange-600 hover:bg-orange-50"
@@ -1985,7 +2222,7 @@ export default function Lessons() {
               payload.videoUrl = finalVideoUrl || undefined;
               payload.thumbnail = finalThumbnail || undefined;
 
-              createMutation.mutate({ courseId: selectedCourseId, payload });
+              handleCreateLesson(selectedCourseId, payload);
             }}
             className="space-y-6"
             onReset={() => {
@@ -2566,16 +2803,16 @@ export default function Lessons() {
                 type="button"
                 variant="outline"
                 onClick={() => setCreateOpen(false)}
-                disabled={createMutation.isPending}
+                disabled={actionLoading}
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                disabled={createMutation.isPending}
+                disabled={actionLoading}
               >
-                {createMutation.isPending ? (
+                {actionLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Creating...
@@ -2687,7 +2924,7 @@ export default function Lessons() {
                 payload.videoUrl = finalVideoUrl || undefined;
                 payload.thumbnail = finalThumbnail || undefined;
 
-                updateMutation.mutate({ lessonId: editLesson.id, payload });
+                handleUpdateLesson(editLesson.id, payload);
               }}
               className="space-y-6"
               onReset={() => {
@@ -3146,16 +3383,16 @@ export default function Lessons() {
                     setThumbnailFile(null);
                     setAutoDurationSeconds(null);
                   }}
-                  disabled={updateMutation.isPending}
+                  disabled={actionLoading}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="bg-primary text-white"
-                  disabled={updateMutation.isPending}
+                  disabled={actionLoading}
                 >
-                  {updateMutation.isPending ? (
+                  {actionLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Saving...
@@ -3716,7 +3953,11 @@ export default function Lessons() {
       {/* Analytics Lesson Dialog */}
       <Dialog
         open={!!analyticsLesson}
-        onOpenChange={(v) => !v && setAnalyticsLesson(null)}
+        onOpenChange={(v) => {
+          if (!v) {
+            setAnalyticsLesson(null);
+          }
+        }}
       >
         <DialogContent className="max-w-4xl w-[95vw] max-h-[95vh] overflow-hidden flex flex-col">
           <DialogHeader className="flex-shrink-0">
@@ -3731,81 +3972,205 @@ export default function Lessons() {
           <div className="flex-1 overflow-y-auto pr-2">
             {analyticsLesson && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-primary/10 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-primary font-medium">
-                          Total Views
-                        </p>
-                        <p className="text-2xl font-bold text-primary mt-1">
-                          {analyticsLesson.views}
-                        </p>
+                {analyticsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                  </div>
+                ) : analytics ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-primary/10 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-primary font-medium">
+                              Total Views
+                            </p>
+                            <p className="text-2xl font-bold text-primary mt-1">
+                              {analytics.views || analyticsLesson.views}
+                            </p>
+                          </div>
+                          <Eye className="w-8 h-8 text-primary" />
+                        </div>
                       </div>
-                      <Eye className="w-8 h-8 text-primary" />
-                    </div>
-                  </div>
 
-                  <div className="bg-green-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-green-600 font-medium">
-                          Completions
-                        </p>
-                        <p className="text-2xl font-bold text-green-900 mt-1">
-                          {analyticsLesson.completionCount}
-                        </p>
+                      <div className="bg-green-50 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-green-600 font-medium">
+                              Completions
+                            </p>
+                            <p className="text-2xl font-bold text-green-900 mt-1">
+                              {analytics.completions ||
+                                analyticsLesson.completionCount}
+                            </p>
+                          </div>
+                          <CheckCircle className="w-8 h-8 text-green-500" />
+                        </div>
                       </div>
-                      <CheckCircle className="w-8 h-8 text-green-500" />
-                    </div>
-                  </div>
 
-                  <div className="bg-purple-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-purple-600 font-medium">
-                          Avg. Score
-                        </p>
-                        <p className="text-2xl font-bold text-purple-900 mt-1">
-                          {analyticsLesson.averageScore}%
-                        </p>
+                      <div className="bg-purple-50 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-purple-600 font-medium">
+                              Avg. Progress
+                            </p>
+                            <p className="text-2xl font-bold text-purple-900 mt-1">
+                              {analytics.averageProgress ||
+                                analyticsLesson.completion}
+                              %
+                            </p>
+                          </div>
+                          <Target className="w-8 h-8 text-purple-500" />
+                        </div>
                       </div>
-                      <Target className="w-8 h-8 text-purple-500" />
-                    </div>
-                  </div>
 
-                  <div className="bg-orange-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-orange-600 font-medium">
-                          Duration
-                        </p>
-                        <p className="text-2xl font-bold text-orange-900 mt-1">
-                          {analyticsLesson.durationDisplay}
-                        </p>
+                      <div className="bg-orange-50 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-orange-600 font-medium">
+                              Avg. Time Spent
+                            </p>
+                            <p className="text-2xl font-bold text-orange-900 mt-1">
+                              {analytics.averageTimeSpent
+                                ? `${Math.floor(
+                                    analytics.averageTimeSpent / 60
+                                  )}m`
+                                : analyticsLesson.durationDisplay}
+                            </p>
+                          </div>
+                          <Clock className="w-8 h-8 text-orange-500" />
+                        </div>
                       </div>
-                      <Clock className="w-8 h-8 text-orange-500" />
                     </div>
-                  </div>
-                </div>
 
-                <div className="border-t pt-4">
-                  <h4 className="font-semibold mb-3">Completion Rate</h4>
-                  <div className="w-full bg-gray-200 rounded-full h-4">
-                    <div
-                      className="bg-gradient-to-r from-accent to-primary h-4 rounded-full transition-all duration-500"
-                      style={{ width: `${analyticsLesson.completion}%` }}
-                    />
+                    <div className="border-t pt-4">
+                      <h4 className="font-semibold mb-3">Completion Rate</h4>
+                      <div className="w-full bg-gray-200 rounded-full h-4">
+                        <div
+                          className="bg-gradient-to-r from-accent to-primary h-4 rounded-full transition-all duration-500"
+                          style={{
+                            width: `${
+                              analytics.averageProgress ||
+                              analyticsLesson.completion
+                            }%`,
+                          }}
+                        />
+                      </div>
+                      <p className="text-sm text-gray-600 mt-2 text-right">
+                        {analytics.averageProgress ||
+                          analyticsLesson.completion}
+                        %
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-12 text-slate-500">
+                    No analytics data available yet
                   </div>
-                  <p className="text-sm text-gray-600 mt-2 text-right">
-                    {analyticsLesson.completion}%
-                  </p>
-                </div>
+                )}
               </div>
             )}
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Actions */}
+      {selectedIds.length > 0 && (
+        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckSquare className="w-5 h-5 text-primary" />
+            <span className="font-semibold text-primary">
+              {selectedIds.length} lesson{selectedIds.length > 1 ? "s" : ""}{" "}
+              selected
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setActionLoading(true);
+                try {
+                  await bulkToggleStatus(selectedIds);
+                  setSelectedIds([]);
+                  queryClient.invalidateQueries({
+                    queryKey: ["lessons", selectedCourseId],
+                  });
+                } catch (error) {
+                  console.error("Failed to toggle status:", error);
+                } finally {
+                  setActionLoading(false);
+                }
+              }}
+              disabled={actionLoading}
+            >
+              <Power className="w-4 h-4 mr-2" />
+              Toggle Status
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+              disabled={actionLoading}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedIds([])}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog
+        open={bulkDeleteOpen}
+        onOpenChange={(v) => !v && setBulkDeleteOpen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-bold">
+              Delete {selectedIds.length} Lesson
+              {selectedIds.length > 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              This will permanently delete the selected lesson
+              {selectedIds.length > 1 ? "s" : ""} from the course. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setActionLoading(true);
+                try {
+                  await bulkDeleteLessons(selectedIds);
+                  setBulkDeleteOpen(false);
+                  setSelectedIds([]);
+                  queryClient.invalidateQueries({
+                    queryKey: ["lessons", selectedCourseId],
+                  });
+                } catch (error) {
+                  console.error("Failed to delete lessons:", error);
+                } finally {
+                  setActionLoading(false);
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={actionLoading}
+            >
+              {actionLoading ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation Dialog - For permanent deletion */}
       <AlertDialog
@@ -3827,19 +4192,19 @@ export default function Lessons() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>
+            <AlertDialogCancel disabled={actionLoading}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (deleteId) {
-                  deleteMutation.mutate(deleteId);
+                  handleDeleteLesson(deleteId);
                 }
               }}
-              disabled={deleteMutation.isPending}
+              disabled={actionLoading}
               className="bg-red-600 hover:bg-red-700"
             >
-              {deleteMutation.isPending ? (
+              {actionLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Deleting...
@@ -4024,9 +4389,8 @@ export default function Lessons() {
                   // Update each selected lesson to add to the target module
                   const updatePromises = Array.from(selectedLessonsToAdd).map(
                     (lessonId) =>
-                      updateMutation.mutateAsync({
-                        lessonId,
-                        payload: { moduleId: targetModuleForExisting },
+                      updateLessonHook(lessonId, {
+                        moduleId: targetModuleForExisting,
                       })
                   );
 
@@ -4049,12 +4413,10 @@ export default function Lessons() {
                   });
                 }
               }}
-              disabled={
-                selectedLessonsToAdd.size === 0 || updateMutation.isPending
-              }
+              disabled={selectedLessonsToAdd.size === 0 || actionLoading}
               className="bg-green-600 hover:bg-green-700 text-white"
             >
-              {updateMutation.isPending ? (
+              {actionLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Adding...

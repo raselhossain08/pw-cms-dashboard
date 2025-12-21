@@ -1,0 +1,317 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { AboutUsService, AboutUs } from "@/lib/services/about-us.service";
+import { useToast } from "@/context/ToastContext";
+
+interface UseAboutUsResult {
+  aboutUs: AboutUs | null;
+  loading: boolean;
+  saving: boolean;
+  uploadProgress: number;
+  error: string | null;
+  fetchAboutUs: () => Promise<void>;
+  createAboutUs: (data: Partial<AboutUs>) => Promise<AboutUs | null>;
+  updateAboutUs: (id: string, data: Partial<AboutUs>) => Promise<AboutUs | null>;
+  updateAboutUsWithUpload: (id: string, formData: FormData) => Promise<AboutUs | null>;
+  deleteAboutUs: (id: string) => Promise<boolean>;
+  toggleActiveStatus: (id: string) => Promise<AboutUs | null>;
+  duplicateAboutUs: (id: string) => Promise<AboutUs | null>;
+  exportAboutUs: (format: "json" | "pdf", id?: string) => Promise<void>;
+  refreshAboutUs: () => Promise<void>;
+}
+
+export function useAboutUs(): UseAboutUsResult {
+  const { push } = useToast();
+  const [aboutUs, setAboutUs] = useState<AboutUs | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAboutUs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await AboutUsService.getDefaultAboutUs();
+      if (response.success && response.data) {
+        const data = Array.isArray(response.data)
+          ? response.data[0]
+          : response.data;
+        setAboutUs(data);
+      } else {
+        // Create default if none exists
+        const createResponse = await AboutUsService.createAboutUs({
+          headerSection: {
+            title: "About Us",
+            subtitle: "LEARN MORE ABOUT PERSONAL WINGS",
+            image: "",
+            imageAlt: "",
+          },
+          sections: [],
+          seo: {
+            title: "About Us | Personal Wings",
+            description: "Learn about Personal Wings",
+            keywords: [],
+            canonicalUrl: "https://personalwings.com/about-us",
+          },
+          isActive: true,
+        });
+        if (createResponse.success && createResponse.data) {
+          const data = Array.isArray(createResponse.data)
+            ? createResponse.data[0]
+            : createResponse.data;
+          setAboutUs(data);
+        }
+      }
+    } catch (err: any) {
+      const errorMessage =
+        err?.response?.data?.message || err?.message || "Failed to fetch About Us page";
+      setError(errorMessage);
+      push({
+        message: errorMessage,
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [push]);
+
+  const createAboutUs = useCallback(
+    async (data: Partial<AboutUs>): Promise<AboutUs | null> => {
+      setSaving(true);
+      try {
+        const response = await AboutUsService.createAboutUs(data);
+        if (response.success && response.data) {
+          const newAboutUs = Array.isArray(response.data)
+            ? response.data[0]
+            : response.data;
+          setAboutUs(newAboutUs);
+          push({
+            message: "About Us page created successfully!",
+            type: "success",
+          });
+          return newAboutUs;
+        }
+        throw new Error(response.message || "Failed to create About Us page");
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message || err?.message || "Failed to create About Us page";
+        push({
+          message: errorMessage,
+          type: "error",
+        });
+        return null;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [push]
+  );
+
+  const updateAboutUs = useCallback(
+    async (id: string, data: Partial<AboutUs>): Promise<AboutUs | null> => {
+      setSaving(true);
+      try {
+        const response = await AboutUsService.updateAboutUs(id, data);
+        if (response.success && response.data) {
+          const updated = Array.isArray(response.data)
+            ? response.data[0]
+            : response.data;
+          setAboutUs(updated);
+          push({
+            message: "About Us page updated successfully!",
+            type: "success",
+          });
+          return updated;
+        }
+        throw new Error(response.message || "Failed to update About Us page");
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message || err?.message || "Failed to update About Us page";
+        push({
+          message: errorMessage,
+          type: "error",
+        });
+        return null;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [push]
+  );
+
+  const updateAboutUsWithUpload = useCallback(
+    async (id: string, formData: FormData): Promise<AboutUs | null> => {
+      setSaving(true);
+      setUploadProgress(0);
+      try {
+        const response = await AboutUsService.updateAboutUsWithUpload(id, formData);
+        if (response.success && response.data) {
+          const updated = Array.isArray(response.data)
+            ? response.data[0]
+            : response.data;
+          setAboutUs(updated);
+          push({
+            message: "About Us page updated successfully!",
+            type: "success",
+          });
+          setUploadProgress(0);
+          return updated;
+        }
+        throw new Error(response.message || "Failed to update About Us page");
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message || err?.message || "Failed to update About Us page";
+        push({
+          message: errorMessage,
+          type: "error",
+        });
+        setUploadProgress(0);
+        return null;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [push]
+  );
+
+  const deleteAboutUs = useCallback(
+    async (id: string): Promise<boolean> => {
+      setSaving(true);
+      try {
+        const response = await AboutUsService.deleteAboutUs(id);
+        if (response.success) {
+          push({
+            message: "About Us page deleted successfully!",
+            type: "success",
+          });
+          return true;
+        }
+        throw new Error(response.message || "Failed to delete About Us page");
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message || err?.message || "Failed to delete About Us page";
+        push({
+          message: errorMessage,
+          type: "error",
+        });
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [push]
+  );
+
+  const toggleActiveStatus = useCallback(
+    async (id: string): Promise<AboutUs | null> => {
+      setSaving(true);
+      try {
+        const response = await AboutUsService.toggleActiveStatus(id);
+        if (response.success && response.data) {
+          const updated = Array.isArray(response.data)
+            ? response.data[0]
+            : response.data;
+          setAboutUs(updated);
+          push({
+            message: `About Us page ${updated.isActive ? "activated" : "deactivated"} successfully!`,
+            type: "success",
+          });
+          return updated;
+        }
+        throw new Error(response.message || "Failed to toggle About Us page status");
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message || err?.message || "Failed to toggle About Us page status";
+        push({
+          message: errorMessage,
+          type: "error",
+        });
+        return null;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [push]
+  );
+
+  const duplicateAboutUs = useCallback(
+    async (id: string): Promise<AboutUs | null> => {
+      setSaving(true);
+      try {
+        const response = await AboutUsService.duplicateAboutUs(id);
+        if (response.success && response.data) {
+          const duplicated = Array.isArray(response.data)
+            ? response.data[0]
+            : response.data;
+          push({
+            message: "About Us page duplicated successfully!",
+            type: "success",
+          });
+          return duplicated;
+        }
+        throw new Error(response.message || "Failed to duplicate About Us page");
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message || err?.message || "Failed to duplicate About Us page";
+        push({
+          message: errorMessage,
+          type: "error",
+        });
+        return null;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [push]
+  );
+
+  const exportAboutUs = useCallback(
+    async (format: "json" | "pdf", id?: string): Promise<void> => {
+      setSaving(true);
+      try {
+        await AboutUsService.exportAboutUs(format, id);
+        push({
+          message: `About Us page exported successfully as ${format.toUpperCase()}!`,
+          type: "success",
+        });
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message || err?.message || "Failed to export About Us page";
+        push({
+          message: errorMessage,
+          type: "error",
+        });
+      } finally {
+        setSaving(false);
+      }
+    },
+    [push]
+  );
+
+  const refreshAboutUs = useCallback(async () => {
+    await fetchAboutUs();
+  }, [fetchAboutUs]);
+
+  useEffect(() => {
+    fetchAboutUs();
+  }, [fetchAboutUs]);
+
+  return {
+    aboutUs,
+    loading,
+    saving,
+    uploadProgress,
+    error,
+    fetchAboutUs,
+    createAboutUs,
+    updateAboutUs,
+    updateAboutUsWithUpload,
+    deleteAboutUs,
+    toggleActiveStatus,
+    duplicateAboutUs,
+    exportAboutUs,
+    refreshAboutUs,
+  };
+}

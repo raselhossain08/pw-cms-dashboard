@@ -16,6 +16,31 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Upload,
   Save,
@@ -28,6 +53,12 @@ import {
   Link as LinkIcon,
   Eye,
   EyeOff,
+  Download,
+  Copy,
+  ExternalLink,
+  Loader2,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { useBanners } from "@/hooks/useBanner";
 import type {
@@ -41,16 +72,27 @@ export function BannerEditor() {
   const {
     banners,
     loading,
+    saving,
     uploadProgress,
     createBannerWithMedia,
     updateBannerWithMedia,
     updateBanner,
     deleteBanner,
+    duplicateBanner,
+    toggleActiveStatus,
+    bulkDelete,
+    bulkToggleStatus,
+    exportBanners,
+    refreshBanners,
   } = useBanners();
 
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [activeTab, setActiveTab] = useState("list");
+  const [selectedBanners, setSelectedBanners] = useState<string[]>([]);
+  const [previewBanner, setPreviewBanner] = useState<Banner | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const [formData, setFormData] = useState<
     CreateBannerDto & { videoFile?: File; thumbnailFile?: File }
@@ -197,26 +239,61 @@ export function BannerEditor() {
 
       resetForm();
       setActiveTab("list");
+      await refreshBanners();
     } catch (error) {
       console.error("Failed to save banner:", error);
     }
   };
 
   const handleQuickToggle = async (banner: Banner) => {
-    try {
-      await updateBanner(banner._id, { isActive: !banner.isActive });
-    } catch (error) {
-      console.error("Failed to toggle banner:", error);
-    }
+    await toggleActiveStatus(banner._id);
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this banner?")) return;
+    await deleteBanner(id);
+  };
 
+  const handleDuplicate = async (id: string) => {
+    await duplicateBanner(id);
+    await refreshBanners();
+  };
+
+  const handleExport = async (format: "json" | "pdf") => {
+    setIsExporting(true);
     try {
-      await deleteBanner(id);
-    } catch (error) {
-      console.error("Failed to delete banner:", error);
+      const ids = selectedBanners.length > 0 ? selectedBanners : undefined;
+      await exportBanners(format, ids);
+    } catch (err) {
+      console.error("Failed to export:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedBanners.length === 0) return;
+    await bulkDelete(selectedBanners);
+    setSelectedBanners([]);
+    setShowDeleteDialog(false);
+  };
+
+  const handleBulkToggle = async (isActive: boolean) => {
+    if (selectedBanners.length === 0) return;
+    await bulkToggleStatus(selectedBanners, isActive);
+    setSelectedBanners([]);
+  };
+
+  const toggleSelectBanner = (id: string) => {
+    setSelectedBanners((prev) =>
+      prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedBanners.length === banners.length) {
+      setSelectedBanners([]);
+    } else {
+      setSelectedBanners(banners.map((b) => b._id));
     }
   };
 
@@ -230,6 +307,100 @@ export function BannerEditor() {
 
   return (
     <div className="space-y-6">
+      {/* Header Actions */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-2">
+          {selectedBanners.length > 0 && (
+            <Badge variant="default">{selectedBanners.length} selected</Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {selectedBanners.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleBulkToggle(true)}
+                disabled={saving || loading}
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Activate Selected
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleBulkToggle(false)}
+                disabled={saving || loading}
+              >
+                <EyeOff className="w-4 h-4 mr-2" />
+                Deactivate Selected
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowDeleteDialog(true)}
+                disabled={saving || loading}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Selected
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => setPreviewBanner(banners[0] || null)}
+            disabled={saving || loading || banners.length === 0}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isExporting || saving || loading}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("json")}>
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                Export as PDF
+              </DropdownMenuItem>
+              {selectedBanners.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => handleExport("json")}>
+                    Export Selected as JSON
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                    Export Selected as PDF
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            onClick={refreshBanners}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="inline-flex h-auto items-center justify-start rounded-xl bg-white p-2 shadow-sm border border-gray-200 gap-2 flex-wrap">
           <TabsTrigger
@@ -266,8 +437,22 @@ export function BannerEditor() {
 
         <TabsContent value="list" className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Manage Banners</h3>
-            <Button onClick={handleCreate}>
+            <div className="flex items-center gap-4">
+              <h3 className="text-lg font-semibold">Manage Banners</h3>
+              {banners.length > 0 && (
+                <Button variant="outline" size="sm" onClick={toggleSelectAll}>
+                  {selectedBanners.length === banners.length ? (
+                    <CheckSquare className="w-4 h-4 mr-2" />
+                  ) : (
+                    <Square className="w-4 h-4 mr-2" />
+                  )}
+                  {selectedBanners.length === banners.length
+                    ? "Deselect All"
+                    : "Select All"}
+                </Button>
+              )}
+            </div>
+            <Button onClick={handleCreate} disabled={saving || loading}>
               <Plus className="w-4 h-4 mr-2" />
               Add New Banner
             </Button>
@@ -278,7 +463,16 @@ export function BannerEditor() {
               <Card key={banner._id}>
                 <CardContent className="p-6">
                   <div className="flex gap-4">
-                    <div className="w-48 h-32 relative rounded-lg overflow-hidden bg-gray-100 shrink-0">
+                    <div className="flex items-center">
+                      <Checkbox
+                        checked={selectedBanners.includes(banner._id)}
+                        onCheckedChange={() => toggleSelectBanner(banner._id)}
+                      />
+                    </div>
+                    <div
+                      className="w-48 h-32 relative rounded-lg overflow-hidden bg-gray-100 shrink-0 cursor-pointer"
+                      onClick={() => setPreviewBanner(banner)}
+                    >
                       <img
                         src={banner.thumbnail}
                         alt={banner.alt}
@@ -317,6 +511,7 @@ export function BannerEditor() {
                         size="sm"
                         variant="outline"
                         onClick={() => handleEdit(banner)}
+                        disabled={saving || loading}
                       >
                         <Edit3 className="w-4 h-4 mr-2" />
                         Edit
@@ -324,7 +519,17 @@ export function BannerEditor() {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => handleDuplicate(banner._id)}
+                        disabled={saving || loading}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Duplicate
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => handleQuickToggle(banner)}
+                        disabled={saving || loading}
                       >
                         {banner.isActive ? (
                           <EyeOff className="w-4 h-4 mr-2" />
@@ -337,6 +542,7 @@ export function BannerEditor() {
                         size="sm"
                         variant="destructive"
                         onClick={() => handleDelete(banner._id)}
+                        disabled={saving || loading}
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Delete
@@ -527,12 +733,26 @@ export function BannerEditor() {
                 <div className="flex gap-4">
                   <Button
                     type="submit"
-                    disabled={uploadProgress > 0 && uploadProgress < 100}
+                    disabled={
+                      (uploadProgress > 0 && uploadProgress < 100) ||
+                      saving ||
+                      loading
+                    }
                   >
-                    <Save className="w-4 h-4 mr-2" />
-                    {editingBanner ? "Update" : "Create"} Banner
+                    {saving ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    {saving ? "Saving..." : editingBanner ? "Update" : "Create"}{" "}
+                    Banner
                   </Button>
-                  <Button type="button" variant="outline" onClick={resetForm}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetForm}
+                    disabled={saving || loading}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -541,6 +761,125 @@ export function BannerEditor() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Upload Progress Indicator */}
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading media...</span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog
+        open={!!previewBanner}
+        onOpenChange={(open) => !open && setPreviewBanner(null)}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Banner Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your banner will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {previewBanner && (
+            <div className="space-y-6 mt-4">
+              {/* Thumbnail */}
+              {previewBanner.thumbnail && (
+                <div className="relative w-full h-64 rounded-lg overflow-hidden">
+                  <img
+                    src={previewBanner.thumbnail}
+                    alt={previewBanner.alt}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              {/* Video */}
+              {previewBanner.videoUrl && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Video</h3>
+                  <video
+                    src={previewBanner.videoUrl}
+                    controls
+                    className="w-full rounded-lg"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+              )}
+
+              {/* Title & Description */}
+              <div>
+                <h1 className="text-3xl font-bold">{previewBanner.title}</h1>
+                <p className="text-muted-foreground mt-2">
+                  {previewBanner.description}
+                </p>
+              </div>
+
+              {/* Link */}
+              {previewBanner.link && (
+                <div className="pt-4">
+                  <a
+                    href={previewBanner.link}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+                  >
+                    View More
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="border-t pt-4 space-y-2 text-sm text-muted-foreground">
+                <p>Order: {previewBanner.order}</p>
+                <p>Status: {previewBanner.isActive ? "Active" : "Inactive"}</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Selected Banners?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedBanners.length}{" "}
+              banner(s)? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving || loading}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={saving || loading}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

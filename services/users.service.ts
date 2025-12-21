@@ -216,6 +216,63 @@ class UsersService {
             throw error;
         }
     }
+
+    async bulkDeleteUsers(userIds: string[]) {
+        try {
+            // Using POST to /bulk/users/delete as DELETE with body might not be supported
+            const { data } = await apiClient.post("/bulk/users/delete", { userIds });
+            return data;
+        } catch (error) {
+            console.error("Failed to bulk delete users:", error);
+            throw error;
+        }
+    }
+
+    async bulkActivateUsers(userIds: string[]) {
+        try {
+            const { data } = await apiClient.put("/bulk/users/update", {
+                userIds,
+                status: "active"
+            });
+            return data;
+        } catch (error) {
+            console.error("Failed to bulk activate users:", error);
+            throw error;
+        }
+    }
+
+    async bulkDeactivateUsers(userIds: string[]) {
+        try {
+            const { data } = await apiClient.put("/bulk/users/update", {
+                userIds,
+                status: "inactive"
+            });
+            return data;
+        } catch (error) {
+            console.error("Failed to bulk deactivate users:", error);
+            throw error;
+        }
+    }
+
+    async exportUsers(params?: {
+        userIds?: string[];
+        role?: string;
+        status?: string;
+    }) {
+        try {
+            // Use admin export endpoint
+            const { data } = await apiClient.get("/admin/export/users", {
+                params: {
+                    role: params?.role,
+                    status: params?.status,
+                }
+            });
+            return data;
+        } catch (error) {
+            console.error("Failed to export users:", error);
+            throw error;
+        }
+    }
 }
 
 export const usersService = new UsersService();

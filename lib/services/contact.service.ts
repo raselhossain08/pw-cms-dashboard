@@ -149,4 +149,61 @@ export const contactService = {
             throw error;
         }
     },
+
+    // Toggle active status
+    async toggleActive(id: string): Promise<Contact> {
+        try {
+            const response = await axios.post<ApiResponse<ApiResponse<Contact>>>(`/cms/contact/${id}/toggle-active`, {});
+            return (response.data.data as any).data || response.data.data;
+        } catch (error) {
+            console.error("Failed to toggle active status:", error);
+            throw error;
+        }
+    },
+
+    // Duplicate contact
+    async duplicate(id: string): Promise<Contact> {
+        try {
+            const response = await axios.post<ApiResponse<ApiResponse<Contact>>>(`/cms/contact/${id}/duplicate`, {});
+            return (response.data.data as any).data || response.data.data;
+        } catch (error) {
+            console.error("Failed to duplicate contact:", error);
+            throw error;
+        }
+    },
+
+    // Export contact
+    async export(id: string, format: "json" | "pdf" = "json"): Promise<void> {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+        let token = '';
+        try {
+            const { cookieService } = await import('@/lib/cookie.service');
+            token = cookieService.get('token') || '';
+        } catch {
+            if (typeof window !== 'undefined') {
+                token = localStorage.getItem('token') || '';
+            }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/cms/contact/${id}/export?format=${format}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+
+        if (!res.ok) {
+            throw new Error('Failed to export contact');
+        }
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `contact_${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : 'json'}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    },
 };

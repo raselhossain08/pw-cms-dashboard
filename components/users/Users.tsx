@@ -63,6 +63,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUsers } from "@/hooks/useUsers";
+import { useUsersStore } from "@/store/usersStore";
 import { UserFormDialog } from "./UserFormDialog";
 import { UserViewDialog } from "./UserViewDialog";
 import { User, CreateUserDto, UpdateUserDto } from "@/services/users.service";
@@ -74,16 +75,24 @@ export default function Users() {
     stats,
     loading,
     statsLoading,
+    actionLoading,
     total,
+    selectedUsers,
     fetchUsers,
+    refresh,
     createUser,
     updateUser,
     deleteUser,
     activateUser,
     deactivateUser,
     bulkDeleteUsers,
+    bulkActivateUsers,
+    bulkDeactivateUsers,
     exportUsers,
   } = useUsers();
+
+  const { toggleUserSelection, selectAllUsers, clearSelection } =
+    useUsersStore();
 
   const [search, setSearch] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState("all");
@@ -98,8 +107,10 @@ export default function Users() {
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(
     null
   );
-  const [selectedUsers, setSelectedUsers] = React.useState<string[]>([]);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = React.useState(false);
+  const [bulkActivateConfirm, setBulkActivateConfirm] = React.useState(false);
+  const [bulkDeactivateConfirm, setBulkDeactivateConfirm] =
+    React.useState(false);
   const [addUserOpen, setAddUserOpen] = React.useState(false);
   const [addRoleOpen, setAddRoleOpen] = React.useState(false);
 
@@ -158,10 +169,32 @@ export default function Users() {
   };
 
   const handleBulkDelete = async () => {
+    if (selectedUsers.length === 0) return;
     await bulkDeleteUsers(selectedUsers);
-    setSelectedUsers([]);
     setBulkDeleteConfirm(false);
     loadUsers();
+  };
+
+  const handleBulkActivate = async () => {
+    if (selectedUsers.length === 0) return;
+    await bulkActivateUsers(selectedUsers);
+    setBulkActivateConfirm(false);
+    loadUsers();
+  };
+
+  const handleBulkDeactivate = async () => {
+    if (selectedUsers.length === 0) return;
+    await bulkDeactivateUsers(selectedUsers);
+    setBulkDeactivateConfirm(false);
+    loadUsers();
+  };
+
+  const handleBulkExport = async () => {
+    if (selectedUsers.length === 0) {
+      await exportUsers();
+    } else {
+      await exportUsers(selectedUsers);
+    }
   };
 
   const handleToggleUserStatus = async (user: User) => {
@@ -177,20 +210,20 @@ export default function Users() {
     await exportUsers();
   };
 
+  const handleRefresh = async () => {
+    await refresh();
+  };
+
   const handleSelectAll = () => {
     if (selectedUsers.length === filteredUsers.length) {
-      setSelectedUsers([]);
+      clearSelection();
     } else {
-      setSelectedUsers(filteredUsers.map((u) => u._id));
+      selectAllUsers(filteredUsers.map((u) => u._id));
     }
   };
 
   const handleSelectUser = (userId: string) => {
-    setSelectedUsers((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId]
-    );
+    toggleUserSelection(userId);
   };
 
   const getRoleBadge = (role: string) => {
@@ -277,10 +310,23 @@ export default function Users() {
           <Button
             variant="outline"
             className="border-gray-300"
-            onClick={handleExport}
-            disabled={loading}
+            onClick={handleRefresh}
+            disabled={loading || actionLoading}
           >
             {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            Refresh
+          </Button>
+          <Button
+            variant="outline"
+            className="border-gray-300"
+            onClick={handleExport}
+            disabled={loading || actionLoading}
+          >
+            {actionLoading ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Download className="w-4 h-4 mr-2" />
@@ -292,6 +338,7 @@ export default function Users() {
               setSelectedUser(null);
               setFormDialogOpen(true);
             }}
+            disabled={actionLoading}
           >
             <Plus className="w-4 h-4 mr-2" /> Invite User
           </Button>
@@ -402,6 +449,84 @@ export default function Users() {
           ))}
         </nav>
       </div>
+
+      {/* Bulk Actions Toolbar */}
+      {selectedUsers.length > 0 && activeTab !== "Roles & Permissions" && (
+        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-secondary">
+                {selectedUsers.length} user{selectedUsers.length > 1 ? "s" : ""}{" "}
+                selected
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearSelection}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                Clear Selection
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={actionLoading}>
+                    <MoreHorizontal className="w-4 h-4 mr-2" />
+                    Bulk Actions
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => setBulkActivateConfirm(true)}
+                    disabled={actionLoading}
+                  >
+                    <UserCheck className="w-4 h-4 mr-2" />
+                    Activate Selected
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setBulkDeactivateConfirm(true)}
+                    disabled={actionLoading}
+                  >
+                    <UserX className="w-4 h-4 mr-2" />
+                    Deactivate Selected
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleBulkExport}
+                    disabled={actionLoading}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export Selected
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setBulkDeleteConfirm(true)}
+                    disabled={actionLoading}
+                    className="text-red-600"
+                  >
+                    <Trash className="w-4 h-4 mr-2" />
+                    Delete Selected
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeleteConfirm(true)}
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash className="w-4 h-4 mr-2" />
+                )}
+                Delete ({selectedUsers.length})
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab !== "Roles & Permissions" && (
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
@@ -577,6 +702,7 @@ export default function Users() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleToggleUserStatus(u)}
+                            disabled={actionLoading}
                           >
                             {u.isActive ? (
                               <>
@@ -594,6 +720,7 @@ export default function Users() {
                           <DropdownMenuItem
                             onClick={() => setConfirmDeleteId(u._id)}
                             className="text-red-600"
+                            disabled={actionLoading}
                           >
                             <Trash className="w-4 h-4 mr-2" />
                             Delete User
@@ -830,8 +957,19 @@ export default function Users() {
             <AlertDialogCancel onClick={() => setConfirmDeleteId(null)}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteUser}>
-              Delete
+            <AlertDialogAction
+              onClick={handleDeleteUser}
+              disabled={actionLoading}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -842,7 +980,8 @@ export default function Users() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {selectedUsers.length} users?
+              Delete {selectedUsers.length} user
+              {selectedUsers.length > 1 ? "s" : ""}?
             </AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. All selected users will be
@@ -850,11 +989,104 @@ export default function Users() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setBulkDeleteConfirm(false)}>
+            <AlertDialogCancel
+              onClick={() => setBulkDeleteConfirm(false)}
+              disabled={actionLoading}
+            >
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleBulkDelete}>
-              Delete All
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={actionLoading}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete All"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Activate Confirmation Dialog */}
+      <AlertDialog
+        open={bulkActivateConfirm}
+        onOpenChange={setBulkActivateConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Activate {selectedUsers.length} user
+              {selectedUsers.length > 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              All selected users will be activated and can access the platform.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setBulkActivateConfirm(false)}
+              disabled={actionLoading}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkActivate}
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Activating...
+                </>
+              ) : (
+                "Activate All"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Deactivate Confirmation Dialog */}
+      <AlertDialog
+        open={bulkDeactivateConfirm}
+        onOpenChange={setBulkDeactivateConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Deactivate {selectedUsers.length} user
+              {selectedUsers.length > 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              All selected users will be deactivated and will not be able to
+              access the platform.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setBulkDeactivateConfirm(false)}
+              disabled={actionLoading}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDeactivate}
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deactivating...
+                </>
+              ) : (
+                "Deactivate All"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

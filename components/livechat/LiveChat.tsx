@@ -24,6 +24,9 @@ import {
   Check,
   X,
   AlertCircle,
+  CheckCheck,
+  Clock,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,14 +38,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  chatService,
-  type ChatConversation,
-  type ChatMessage,
-} from "@/services/chat.service";
-import type { Socket } from "socket.io-client";
-import { getProfile } from "@/services/auth.service";
-import { useToast } from "@/context/ToastContext";
+import { useChat } from "@/hooks/useChat";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -52,402 +48,183 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-type Message = {
-  id: string;
-  sender: "me" | "other";
-  content: string;
-  time: string;
-  type?: "text" | "code";
-  codeLanguage?: string;
-};
-
-type Conversation = {
-  id: string;
-  name: string;
-  topic: string;
-  avatarUrl: string;
-  online: boolean;
-  lastMessage: string;
-  lastTime: string;
-  unread?: number;
-  messages: Message[];
-};
-
-type Participant =
-  | { _id: string; firstName?: string; lastName?: string; avatar?: string }
-  | string;
-function participantId(p: Participant) {
-  return typeof p === "string" ? p : p._id;
-}
-function toUiConversation(c: ChatConversation, selfId: string): Conversation {
-  const participants: Participant[] = Array.isArray(c.participants)
-    ? (c.participants as Participant[])
-    : [];
-  const other = participants.find((p) => participantId(p) !== selfId);
-  const name = other
-    ? `${typeof other === "string" ? "" : other.firstName || ""} ${
-        typeof other === "string" ? "" : other.lastName || ""
-      }`.trim() || "Unknown"
-    : c.title || "Conversation";
-  const avatarUrl =
-    typeof other === "string"
-      ? "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg"
-      : other?.avatar ||
-        "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg";
-  const lastMsg =
-    typeof c.lastMessage === "object"
-      ? (c.lastMessage as ChatMessage)
-      : undefined;
-  const lastMessage = lastMsg?.content || "";
-  const lastTime = new Date(c.createdAt || Date.now()).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return {
-    id: c._id,
-    name,
-    topic: c.title || "",
-    avatarUrl,
-    online: true,
-    lastMessage,
-    lastTime,
-    unread: c.unreadCount || 0,
-    messages: [],
-  };
-}
+import { useUsers } from "@/hooks/useUsers";
+import { useDebounce } from "@/hooks/useDebounce";
 
 export default function LiveChat() {
-  const [conversations, setConversations] = React.useState<Conversation[]>([]);
-  const [selectedId, setSelectedId] = React.useState<string>("");
   const [messageInput, setMessageInput] = React.useState("");
-  const [isTyping, setIsTyping] = React.useState(false);
-  const [filterTab, setFilterTab] = React.useState<"all" | "unread">("all");
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [isSending, setIsSending] = React.useState(false);
-  const [isNewChatOpen, setIsNewChatOpen] = React.useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
-  const [conversationToDelete, setConversationToDelete] = React.useState<
-    string | null
-  >(null);
+  const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
+    null
+  );
+  const [editContent, setEditContent] = React.useState("");
   const [newChatTitle, setNewChatTitle] = React.useState("");
-  const [newChatParticipants, setNewChatParticipants] = React.useState("");
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
-  const socketRef = React.useRef<Socket | null>(null);
-  const selfIdRef = React.useRef<string>("");
-  const { push: showToast } = useToast();
+  const [newChatParticipants, setNewChatParticipants] = React.useState<
+    string[]
+  >([]);
+  const [userSearchQuery, setUserSearchQuery] = React.useState("");
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
+  const messagesContainerRef = React.useRef<HTMLDivElement>(null);
 
-  const selected = conversations.find((c) => c.id === selectedId);
+  const {
+    conversations,
+    selectedConversation,
+    selectedMessages,
+    isLoading,
+    isSending,
+    isTyping,
+    isLoadingMessages,
+    searchQuery,
+    filterTab,
+    isNewChatOpen,
+    isDeleteDialogOpen,
+    conversationToDelete,
+    hasMoreMessages,
+    error,
+    sendMessage,
+    sendFile,
+    createConversation,
+    deleteConversation,
+    editMessage,
+    deleteMessage,
+    markAsRead,
+    loadMoreMessages,
+    handleTyping,
+    setSelectedConversation,
+    setSearchQuery,
+    setFilterTab,
+    setNewChatOpen,
+    setDeleteDialogOpen,
+    setConversationToDelete,
+    clearError,
+    messagesEndRef,
+  } = useChat();
 
-  const scrollToBottom = () => {
+  const { users } = useUsers();
+  const debouncedUserSearch = useDebounce(userSearchQuery, 300);
+
+  // Filter users for autocomplete
+  const filteredUsers = React.useMemo(() => {
+    if (!debouncedUserSearch) return users.slice(0, 10);
+    return users
+      .filter(
+        (u) =>
+          u.name?.toLowerCase().includes(debouncedUserSearch.toLowerCase()) ||
+          u.email?.toLowerCase().includes(debouncedUserSearch.toLowerCase())
+      )
+      .slice(0, 10);
+  }, [users, debouncedUserSearch]);
+
+  // Scroll to bottom when new messages arrive
+  React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, [selectedMessages, isTyping]);
 
+  // Mark messages as read when conversation is selected
   React.useEffect(() => {
-    scrollToBottom();
-  }, [selected?.messages, isTyping]);
-
-  React.useEffect(() => {
-    let mounted = true;
-    async function init() {
-      try {
-        setIsLoading(true);
-        const profile = await getProfile();
-        if (!profile.success || !profile.data) {
-          showToast({ message: "Failed to load profile", type: "error" });
-          return;
-        }
-        const me = profile.data;
-        selfIdRef.current = me.id;
-        const socket = chatService.connect();
-        socketRef.current = socket;
-
-        socket.on(
-          "conversations_list",
-          (payload: { conversations: ChatConversation[]; total: number }) => {
-            if (!mounted) return;
-            const list = (payload?.conversations || []).map((c) =>
-              toUiConversation(c, selfIdRef.current)
-            );
-            setConversations(list);
-            if (list.length && !selectedId) setSelectedId(list[0].id);
-            setIsLoading(false);
-          }
-        );
-
-        socket.on("new_conversation", (c: ChatConversation) => {
-          const newConv = toUiConversation(c, selfIdRef.current);
-          setConversations((prev) => [newConv, ...prev]);
-          showToast({ message: "New conversation created", type: "success" });
-        });
-
-        socket.on(
-          "conversation_updated",
-          (data: { conversationId: string; lastMessage: ChatMessage }) => {
-            setConversations((prev) =>
-              prev.map((c) =>
-                c.id === data.conversationId
-                  ? {
-                      ...c,
-                      lastMessage: data.lastMessage.content,
-                      lastTime: new Date().toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      }),
-                    }
-                  : c
-              )
-            );
-          }
-        );
-
-        socket.on("new_message", (msg: ChatMessage) => {
-          setConversations((prev) =>
-            prev.map((c) => {
-              const convId =
-                typeof msg.conversation === "string"
-                  ? msg.conversation
-                  : (msg.conversation as { _id: string })._id;
-              if (c.id !== convId) return c;
-              const m: Message = {
-                id: msg._id,
-                sender:
-                  (typeof msg.sender === "object"
-                    ? (msg.sender as { _id: string })._id
-                    : msg.sender) === selfIdRef.current
-                    ? "me"
-                    : "other",
-                content: msg.content,
-                time: new Date(msg.createdAt || Date.now()).toLocaleTimeString(
-                  [],
-                  { hour: "2-digit", minute: "2-digit" }
-                ),
-              };
-              return {
-                ...c,
-                messages: [...c.messages, m],
-                lastMessage: msg.content,
-                lastTime: m.time,
-              };
-            })
-          );
-        });
-
-        socket.on(
-          "user_typing",
-          (data: { conversationId: string; typing: boolean }) => {
-            if (data.conversationId === selectedId) setIsTyping(!!data.typing);
-          }
-        );
-
-        socket.on("disconnect", () => {
-          socketRef.current = null;
-          showToast({ message: "Disconnected from chat", type: "error" });
-        });
-      } catch (error) {
-        console.error("Chat init error:", error);
-        showToast({ message: "Failed to initialize chat", type: "error" });
-        setIsLoading(false);
+    if (selectedConversation?.id && selectedMessages.length > 0) {
+      const unreadIds = selectedMessages
+        .filter((m) => m.sender === "other" && !m.isRead)
+        .map((m) => m.id);
+      if (unreadIds.length > 0) {
+        markAsRead(selectedConversation.id, unreadIds);
       }
     }
-    void init();
-    return () => {
-      mounted = false;
-      if (socketRef.current) socketRef.current.disconnect();
-    };
-  }, [selectedId]);
+  }, [selectedConversation?.id, selectedMessages]);
 
-  React.useEffect(() => {
-    async function loadMessages() {
-      const socket = socketRef.current;
-      if (!socket || !selectedId) return;
-      const resp = await chatService.joinConversation(socket, selectedId);
-      if (resp.success && resp.messages) {
-        const msgs: Message[] = resp.messages.map((msg) => ({
-          id: msg._id,
-          sender:
-            (typeof msg.sender === "object"
-              ? (msg.sender as { _id: string })._id
-              : msg.sender) === selfIdRef.current
-              ? "me"
-              : "other",
-          content: msg.content,
-          time: new Date(msg.createdAt || Date.now()).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        }));
-        setConversations((prev) =>
-          prev.map((c) => (c.id === selectedId ? { ...c, messages: msgs } : c))
-        );
-      }
-    }
-    void loadMessages();
-  }, [selectedId]);
-
-  const filteredConversations = conversations.filter((c) => {
-    if (filterTab === "unread") return c.unread && c.unread > 0;
-    if (searchQuery) {
-      return (
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.topic.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    return true;
-  });
-
-  const sendMessage = async () => {
-    const text = messageInput.trim();
-    if (!text || !selected || !socketRef.current || isSending) return;
-
-    try {
-      setIsSending(true);
-      const now = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      const optimisticMsg: Message = {
-        id: Math.random().toString(36).slice(2),
-        sender: "me",
-        content: text,
-        time: now,
-      };
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === selected.id
-            ? {
-                ...c,
-                messages: [...c.messages, optimisticMsg],
-                lastMessage: text,
-                lastTime: "Just now",
-              }
-            : c
-        )
-      );
-      setMessageInput("");
-      await chatService.sendMessageSocket(
-        socketRef.current,
-        selected.id,
-        text,
-        "text"
-      );
-    } catch (error) {
-      showToast({ message: "Failed to send message", type: "error" });
-    } finally {
-      setIsSending(false);
+  // Handle message input with typing indicator
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessageInput(e.target.value);
+    if (selectedConversation?.id) {
+      handleTyping(selectedConversation.id);
     }
   };
 
+  // Handle send message
+  const handleSendMessage = async () => {
+    if (!messageInput.trim() || !selectedConversation?.id) return;
+    await sendMessage(selectedConversation.id, messageInput, "text");
+    setMessageInput("");
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedConversation?.id) return;
+    await sendFile(selectedConversation.id, file, "file");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Handle image upload
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedConversation?.id) return;
+    await sendFile(selectedConversation.id, file, "image");
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  };
+
+  // Handle edit message
+  const handleEditMessage = (messageId: string, currentContent: string) => {
+    setEditingMessageId(messageId);
+    setEditContent(currentContent);
+  };
+
+  // Handle save edit
+  const handleSaveEdit = async () => {
+    if (!editingMessageId || !editContent.trim() || !selectedConversation?.id)
+      return;
+    await editMessage(
+      selectedConversation.id,
+      editingMessageId,
+      editContent.trim()
+    );
+    setEditingMessageId(null);
+    setEditContent("");
+  };
+
+  // Handle create conversation
   const handleCreateConversation = async () => {
-    if (!newChatTitle.trim() || !socketRef.current) {
-      showToast({ message: "Please enter a chat title", type: "error" });
+    if (!newChatTitle.trim()) {
       return;
     }
-
-    try {
-      const loadingId = showToast({
-        message: "Creating conversation...",
-        type: "loading",
-      });
-      const participants = newChatParticipants
-        .split(",")
-        .map((p) => p.trim())
-        .filter(Boolean);
-
-      const result = await chatService.createConversationSocket(
-        socketRef.current,
-        {
-          title: newChatTitle,
-          participants: [...participants, selfIdRef.current],
-          type: "direct",
-        }
-      );
-
-      if (result.success) {
-        showToast({
-          message: "Conversation created successfully",
-          type: "success",
-        });
-        setIsNewChatOpen(false);
-        setNewChatTitle("");
-        setNewChatParticipants("");
-      } else {
-        showToast({ message: "Failed to create conversation", type: "error" });
-      }
-    } catch (error) {
-      showToast({ message: "Error creating conversation", type: "error" });
-    }
+    await createConversation(newChatTitle, newChatParticipants);
+    setNewChatTitle("");
+    setNewChatParticipants([]);
+    setUserSearchQuery("");
   };
 
+  // Handle delete conversation
   const handleDeleteConversation = async () => {
     if (!conversationToDelete) return;
-
-    try {
-      const loadingId = showToast({
-        message: "Deleting conversation...",
-        type: "loading",
-      });
-      // Call API to delete conversation
-      const response = await fetch(
-        `/api/chat/conversations/${conversationToDelete}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        setConversations((prev) =>
-          prev.filter((c) => c.id !== conversationToDelete)
-        );
-        if (selectedId === conversationToDelete) {
-          setSelectedId(conversations[0]?.id || "");
-        }
-        showToast({
-          message: "Conversation deleted successfully",
-          type: "success",
-        });
-      } else {
-        showToast({ message: "Failed to delete conversation", type: "error" });
-      }
-    } catch (error) {
-      showToast({ message: "Error deleting conversation", type: "error" });
-    } finally {
-      setIsDeleteDialogOpen(false);
-      setConversationToDelete(null);
-    }
+    await deleteConversation(conversationToDelete);
   };
 
-  const handleExportChat = async () => {
-    if (!selected) return;
-    try {
-      const loadingId = showToast({
-        message: "Exporting chat...",
-        type: "loading",
-      });
-      const chatData = JSON.stringify(
-        {
-          conversation: selected.name,
-          messages: selected.messages,
-          exportedAt: new Date().toISOString(),
-        },
-        null,
-        2
-      );
-      const blob = new Blob([chatData], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `chat-${selected.name}-${Date.now()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast({ message: "Chat exported successfully", type: "success" });
-    } catch (error) {
-      showToast({ message: "Failed to export chat", type: "error" });
+  // Handle export chat
+  const handleExportChat = () => {
+    if (!selectedConversation) return;
+    const chatData = JSON.stringify(
+      {
+        conversation: selectedConversation.name,
+        topic: selectedConversation.topic,
+        messages: selectedMessages,
+        exportedAt: new Date().toISOString(),
+      },
+      null,
+      2
+    );
+    const blob = new Blob([chatData], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chat-${selectedConversation.name}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Handle load more messages
+  const handleLoadMore = () => {
+    if (selectedConversation?.id && hasMoreMessages) {
+      loadMoreMessages(selectedConversation.id);
     }
   };
 
@@ -469,14 +246,14 @@ export default function LiveChat() {
               variant="outline"
               className="border-gray-300 hover:border-primary hover:text-primary transition-all"
               onClick={handleExportChat}
-              disabled={!selected}
+              disabled={!selectedConversation}
             >
               <Download className="w-4 h-4 mr-2" />
               Export Chat
             </Button>
 
             {/* New Chat Dialog */}
-            <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
+            <Dialog open={isNewChatOpen} onOpenChange={setNewChatOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-primary hover:bg-primary/90 shadow-lg transition-all hover:shadow-xl">
                   <Plus className="w-4 h-4 mr-2" />
@@ -491,7 +268,7 @@ export default function LiveChat() {
                   </DialogTitle>
                   <DialogDescription>
                     Start a new conversation with team members. Enter the chat
-                    title and participant IDs.
+                    title and select participants.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -512,21 +289,87 @@ export default function LiveChat() {
                       htmlFor="participants"
                       className="text-sm font-medium"
                     >
-                      Participant IDs (comma-separated)
+                      Search Users
                     </Label>
                     <Input
                       id="participants"
-                      placeholder="e.g., user123, user456"
-                      value={newChatParticipants}
-                      onChange={(e) => setNewChatParticipants(e.target.value)}
+                      placeholder="Search by name or email..."
+                      value={userSearchQuery}
+                      onChange={(e) => setUserSearchQuery(e.target.value)}
                       className="focus:ring-2 focus:ring-primary"
                     />
+                    {userSearchQuery && filteredUsers.length > 0 && (
+                      <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                        {filteredUsers.map((user) => (
+                          <div
+                            key={user._id}
+                            className="p-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+                            onClick={() => {
+                              if (!newChatParticipants.includes(user._id)) {
+                                setNewChatParticipants([
+                                  ...newChatParticipants,
+                                  user._id,
+                                ]);
+                              }
+                              setUserSearchQuery("");
+                            }}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                <span className="text-xs font-medium text-primary">
+                                  {user.name?.[0]?.toUpperCase() ||
+                                    user.email?.[0]?.toUpperCase()}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">
+                                  {user.name || "Unknown"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {user.email}
+                                </p>
+                              </div>
+                            </div>
+                            {newChatParticipants.includes(user._id) && (
+                              <Check className="w-4 h-4 text-primary" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {newChatParticipants.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {newChatParticipants.map((userId) => {
+                          const user = users.find((u) => u._id === userId);
+                          return (
+                            <div
+                              key={userId}
+                              className="flex items-center space-x-1 bg-primary/10 text-primary px-2 py-1 rounded-full text-sm"
+                            >
+                              <span>{user?.name || user?.email || userId}</span>
+                              <button
+                                onClick={() =>
+                                  setNewChatParticipants(
+                                    newChatParticipants.filter(
+                                      (id) => id !== userId
+                                    )
+                                  )
+                                }
+                                className="ml-1 hover:text-primary/80"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <DialogFooter>
                   <Button
                     variant="outline"
-                    onClick={() => setIsNewChatOpen(false)}
+                    onClick={() => setNewChatOpen(false)}
                   >
                     Cancel
                   </Button>
@@ -545,7 +388,7 @@ export default function LiveChat() {
       </div>
 
       {/* Delete Conversation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
@@ -561,7 +404,7 @@ export default function LiveChat() {
             <Button
               variant="outline"
               onClick={() => {
-                setIsDeleteDialogOpen(false);
+                setDeleteDialogOpen(false);
                 setConversationToDelete(null);
               }}
             >
@@ -577,6 +420,22 @@ export default function LiveChat() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Error Display */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-red-600" />
+            <span className="text-sm text-red-600">{error}</span>
+          </div>
+          <button
+            onClick={clearError}
+            className="text-red-600 hover:text-red-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Chat Interface */}
       <div
@@ -659,7 +518,7 @@ export default function LiveChat() {
                   </p>
                 </div>
               </div>
-            ) : filteredConversations.length === 0 ? (
+            ) : conversations.length === 0 ? (
               <div className="flex items-center justify-center h-64">
                 <div className="text-center">
                   <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -670,7 +529,7 @@ export default function LiveChat() {
                     variant="outline"
                     size="sm"
                     className="mt-3"
-                    onClick={() => setIsNewChatOpen(true)}
+                    onClick={() => setNewChatOpen(true)}
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Start a Chat
@@ -678,17 +537,17 @@ export default function LiveChat() {
                 </div>
               </div>
             ) : (
-              filteredConversations.map((c) => (
+              conversations.map((c) => (
                 <div
                   key={c.id}
                   className={`group p-4 border-b border-gray-100 cursor-pointer transition-all hover:bg-gray-50 relative ${
-                    selectedId === c.id
+                    selectedConversation?.id === c.id
                       ? "bg-indigo-50 border-r-4 border-r-primary"
                       : ""
                   }`}
                 >
                   <div
-                    onClick={() => setSelectedId(c.id)}
+                    onClick={() => setSelectedConversation(c.id)}
                     className="flex items-center space-x-3"
                   >
                     <div className="relative">
@@ -747,7 +606,7 @@ export default function LiveChat() {
                         className="cursor-pointer text-red-600"
                         onClick={() => {
                           setConversationToDelete(c.id);
-                          setIsDeleteDialogOpen(true);
+                          setDeleteDialogOpen(true);
                         }}
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
@@ -759,60 +618,79 @@ export default function LiveChat() {
               ))
             )}
           </div>
-
-          <div className="p-4 border-t border-gray-200">
-            <h4 className="font-medium text-secondary mb-3">Online Now</h4>
-            <div className="text-xs text-gray-500">Connected</div>
-          </div>
         </div>
 
         {/* Chat Main Area */}
         <div className="flex-1 flex flex-col">
-          {selected && (
+          {selectedConversation ? (
             <>
               {/* Chat Header */}
-              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white">
                 <div className="flex items-center space-x-3">
                   <div className="relative">
                     <img
-                      src={selected.avatarUrl}
-                      alt={selected.name}
+                      src={selectedConversation.avatarUrl}
+                      alt={selectedConversation.name}
                       className="w-10 h-10 rounded-full"
                     />
-                    {selected.online && (
+                    {selectedConversation.online && (
                       <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />
                     )}
                   </div>
                   <div>
                     <h3 className="font-semibold text-secondary">
-                      {selected.name}
+                      {selectedConversation.name}
                     </h3>
                     <div className="flex items-center space-x-1">
                       <span className="text-xs text-gray-500">
-                        {selected.topic}
+                        {selectedConversation.topic}
                       </span>
                       <span className="text-xs text-gray-500">•</span>
                       <span className="text-xs text-green-600">
-                        {selected.online ? "Online" : "Offline"}
+                        {selectedConversation.online ? "Online" : "Offline"}
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <button className="p-2 text-gray-400 hover:text-primary">
+                  <button className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all">
                     <Phone className="w-5 h-5" />
                   </button>
-                  <button className="p-2 text-gray-400 hover:text-primary">
+                  <button className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all">
                     <Video className="w-5 h-5" />
                   </button>
-                  <button className="p-2 text-gray-400 hover:text-primary">
+                  <button className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all">
                     <Info className="w-5 h-5" />
                   </button>
                 </div>
               </div>
 
               {/* Messages Area */}
-              <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 p-4 overflow-y-auto bg-gray-50"
+              >
+                {/* Load More Button */}
+                {hasMoreMessages && (
+                  <div className="flex justify-center mb-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMessages}
+                    >
+                      {isLoadingMessages ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        "Load More Messages"
+                      )}
+                    </Button>
+                  </div>
+                )}
+
                 {/* Date Divider */}
                 <div className="flex items-center justify-center my-6">
                   <div className="bg-white px-3 py-1 rounded-full border border-gray-200">
@@ -821,47 +699,150 @@ export default function LiveChat() {
                 </div>
 
                 {/* Messages */}
-                {selected.messages.map((m) => (
+                {selectedMessages.map((m) => (
                   <div
                     key={m.id}
-                    className={`flex space-x-2 mb-4 ${
+                    className={`flex space-x-2 mb-4 group ${
                       m.sender === "me" ? "justify-end" : "justify-start"
                     }`}
                   >
                     {m.sender === "other" && (
                       <img
-                        src={selected.avatarUrl}
-                        alt={selected.name}
+                        src={selectedConversation.avatarUrl}
+                        alt={selectedConversation.name}
                         className="w-8 h-8 rounded-full shrink-0"
                       />
                     )}
-                    <div
-                      className={`max-w-[70%] p-3 ${
-                        m.sender === "me"
-                          ? "bg-primary text-white rounded-[18px] rounded-br-lg"
-                          : "bg-gray-200 text-gray-800 rounded-[18px] rounded-bl-lg"
-                      }`}
-                    >
-                      {m.type === "code" ? (
-                        <div
-                          className={`${
-                            m.sender === "me"
-                              ? "bg-blue-900 text-white"
-                              : "bg-gray-800 text-green-400"
-                          } p-2 rounded mt-2 font-mono text-xs whitespace-pre`}
-                        >
-                          {m.content}
-                        </div>
-                      ) : (
-                        <p className="text-sm">{m.content}</p>
-                      )}
-                      <span
-                        className={`text-xs mt-1 block ${
-                          m.sender === "me" ? "text-white/80" : "text-gray-500"
+                    <div className="flex flex-col max-w-[70%]">
+                      <div
+                        className={`p-3 relative ${
+                          m.sender === "me"
+                            ? "bg-primary text-white rounded-[18px] rounded-br-lg"
+                            : "bg-gray-200 text-gray-800 rounded-[18px] rounded-bl-lg"
                         }`}
                       >
-                        {m.time}
-                      </span>
+                        {editingMessageId === m.id ? (
+                          <div className="flex items-center space-x-2">
+                            <Input
+                              value={editContent}
+                              onChange={(e) => setEditContent(e.target.value)}
+                              className="bg-white text-gray-800"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  handleSaveEdit();
+                                } else if (e.key === "Escape") {
+                                  setEditingMessageId(null);
+                                  setEditContent("");
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              onClick={handleSaveEdit}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              <Check className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingMessageId(null);
+                                setEditContent("");
+                              }}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            {m.type === "image" ? (
+                              <img
+                                src={m.content}
+                                alt="Shared image"
+                                className="max-w-full h-auto rounded-lg mb-1"
+                              />
+                            ) : m.type === "file" ? (
+                              <div className="flex items-center space-x-2 mb-1">
+                                <FileText className="w-4 h-4" />
+                                <a
+                                  href={m.content}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline hover:opacity-80"
+                                >
+                                  {m.fileName || "Download file"}
+                                </a>
+                              </div>
+                            ) : m.type === "code" ? (
+                              <div
+                                className={`${
+                                  m.sender === "me"
+                                    ? "bg-blue-900 text-white"
+                                    : "bg-gray-800 text-green-400"
+                                } p-2 rounded mt-2 font-mono text-xs whitespace-pre`}
+                              >
+                                {m.content}
+                              </div>
+                            ) : (
+                              <p className="text-sm">{m.content}</p>
+                            )}
+                            {m.isEdited && (
+                              <span className="text-xs opacity-70 italic">
+                                (edited)
+                              </span>
+                            )}
+                            <div className="flex items-center justify-end mt-1 space-x-1">
+                              <span
+                                className={`text-xs ${
+                                  m.sender === "me"
+                                    ? "text-white/80"
+                                    : "text-gray-500"
+                                }`}
+                              >
+                                {m.time}
+                              </span>
+                              {m.sender === "me" && (
+                                <span className="text-xs text-white/80">
+                                  {m.isRead ? (
+                                    <CheckCheck className="w-3 h-3 inline" />
+                                  ) : (
+                                    <Check className="w-3 h-3 inline" />
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      {m.sender === "me" && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="opacity-0 group-hover:opacity-100 self-end mt-1 p-1 text-gray-400 hover:text-primary transition-all">
+                              <MoreVertical className="w-3 h-3" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="cursor-pointer"
+                              onClick={() => handleEditMessage(m.id, m.content)}
+                            >
+                              <Edit2 className="w-4 h-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="cursor-pointer text-red-600"
+                              onClick={() =>
+                                deleteMessage(selectedConversation.id, m.id)
+                              }
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
                     {m.sender === "me" && (
                       <img
@@ -877,14 +858,14 @@ export default function LiveChat() {
                 {isTyping && (
                   <div className="flex space-x-2 mb-4">
                     <img
-                      src={selected.avatarUrl}
-                      alt={selected.name}
+                      src={selectedConversation.avatarUrl}
+                      alt={selectedConversation.name}
                       className="w-8 h-8 rounded-full shrink-0"
                     />
                     <div className="bg-gray-200 text-gray-800 rounded-[18px] rounded-bl-lg p-3">
                       <div className="flex items-center space-x-1">
                         <span className="text-sm text-gray-500 mr-2">
-                          {selected.name.split(" ")[0]} is typing
+                          {selectedConversation.name.split(" ")[0]} is typing
                         </span>
                         <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" />
                         <span
@@ -905,10 +886,32 @@ export default function LiveChat() {
               {/* Message Input */}
               <div className="p-4 border-t border-gray-200 bg-white">
                 <div className="flex items-center space-x-3">
-                  <button className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    accept="*/*"
+                  />
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                    accept="image/*"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all"
+                    title="Attach file"
+                  >
                     <Paperclip className="w-5 h-5" />
                   </button>
-                  <button className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all">
+                  <button
+                    onClick={() => imageInputRef.current?.click()}
+                    className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all"
+                    title="Send image"
+                  >
                     <ImageIcon className="w-5 h-5" />
                   </button>
                   <button className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all">
@@ -918,20 +921,20 @@ export default function LiveChat() {
                     <input
                       type="text"
                       value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
+                      onChange={handleInputChange}
                       placeholder="Type a message..."
                       disabled={isSending}
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
-                          sendMessage();
+                          handleSendMessage();
                         }
                       }}
                     />
                   </div>
                   <button
-                    onClick={sendMessage}
+                    onClick={handleSendMessage}
                     disabled={!messageInput.trim() || isSending}
                     className="p-3 bg-primary text-white rounded-full hover:bg-primary/90 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-md"
                   >
@@ -944,6 +947,25 @@ export default function LiveChat() {
                 </div>
               </div>
             </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="text-center">
+                <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-600 mb-2">
+                  No conversation selected
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Select a conversation from the sidebar to start chatting
+                </p>
+                <Button
+                  onClick={() => setNewChatOpen(true)}
+                  className="bg-primary"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Start New Conversation
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </div>

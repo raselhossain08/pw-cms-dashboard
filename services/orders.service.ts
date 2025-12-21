@@ -38,6 +38,7 @@ export interface UpdateOrderDto {
     status?: Order["status"];
     paymentStatus?: Order["paymentStatus"];
     trackingNumber?: string;
+    notes?: string;
 }
 
 class OrdersService {
@@ -149,6 +150,16 @@ class OrdersService {
             return response;
         } catch (error) {
             console.error("Failed to export orders:", error);
+            throw error;
+        }
+    }
+
+    async downloadOrder(id: string) {
+        try {
+            const { data } = await apiClient.get(`/orders/${id}/download`);
+            return data;
+        } catch (error) {
+            console.error(`Failed to download order ${id}:`, error);
             throw error;
         }
     }

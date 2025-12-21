@@ -6,7 +6,7 @@ import {
   Filter,
   ArrowUpDown,
   EllipsisVertical,
-  Ticket,
+  Ticket as TicketIcon,
   Clock,
   Star,
   AlertTriangle,
@@ -54,77 +54,56 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/context/ToastContext";
-import { apiClient } from "@/lib/api-client";
-
-type TicketStatus = "open" | "pending" | "closed" | "escalated" | "in-progress";
-type TicketPriority = "high" | "medium" | "low" | "urgent";
-
-type TicketItem = {
-  _id: string;
-  subject: string;
-  description: string;
-  status: TicketStatus;
-  priority: TicketPriority;
-  category: string;
-  ticketNumber?: string;
-  userId?: {
-    _id: string;
-    name?: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-  };
-  assignedTo?: {
-    _id: string;
-    name?: string;
-    firstName?: string;
-    lastName?: string;
-  };
-  createdAt?: string;
-  updatedAt?: string;
-  rating?: number;
-  replies?: Array<{
-    _id: string;
-    message: string;
-    user?: {
-      _id: string;
-      name?: string;
-    };
-    createdAt: string;
-  }>;
-};
-
-type TicketStats = {
-  open: number;
-  pending: number;
-  closed: number;
-  escalated: number;
-  inProgress: number;
-  avgResponseTime: string;
-  satisfactionRate: number;
-};
+import { useSupport } from "@/hooks/useSupport";
+import { useUsers } from "@/hooks/useUsers";
+import {
+  Ticket,
+  TicketReply,
+  TicketStatus,
+  TicketPriority,
+} from "@/services/support.service";
 
 export default function SupportTickets() {
-  const [tickets, setTickets] = React.useState<TicketItem[]>([]);
-  const [stats, setStats] = React.useState<TicketStats | null>(null);
+  const {
+    tickets,
+    stats,
+    pagination,
+    isLoading,
+    isActionLoading,
+    fetchTickets,
+    fetchMyTickets,
+    fetchTicketById,
+    fetchStats,
+    createTicket,
+    updateTicket,
+    deleteTicket,
+    addReply,
+    assignTicket,
+    setFilters,
+  } = useSupport();
+
+  const { users, fetchUsers } = useUsers();
+
   const [search, setSearch] = React.useState("");
   const [priorityFilter, setPriorityFilter] = React.useState("all");
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [sortBy, setSortBy] = React.useState("newest");
   const [tab, setTab] = React.useState("all");
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [isCreating, setIsCreating] = React.useState(false);
-  const [isUpdating, setIsUpdating] = React.useState(false);
+  const [page, setPage] = React.useState(1);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [viewOpen, setViewOpen] = React.useState(false);
-  const [selectedTicket, setSelectedTicket] = React.useState<TicketItem | null>(
+  const [replyOpen, setReplyOpen] = React.useState(false);
+  const [assignOpen, setAssignOpen] = React.useState(false);
+  const [selectedTicket, setSelectedTicket] = React.useState<Ticket | null>(
     null
   );
-  const [ticketToDelete, setTicketToDelete] = React.useState<TicketItem | null>(
+  const [ticketToDelete, setTicketToDelete] = React.useState<Ticket | null>(
     null
   );
+  const [replyMessage, setReplyMessage] = React.useState("");
+  const [assignUserId, setAssignUserId] = React.useState("");
 
   const [formData, setFormData] = React.useState({
     subject: "",
@@ -137,32 +116,33 @@ export default function SupportTickets() {
   const { push: showToast } = useToast();
 
   React.useEffect(() => {
-    void fetchTickets();
+    void loadTickets();
     void fetchStats();
-  }, []);
+    void fetchUsers({ role: "admin,instructor", limit: 100 });
+  }, [tab, page, statusFilter, priorityFilter]);
 
-  const fetchTickets = async () => {
-    try {
-      setIsLoading(true);
-      const response = await apiClient.get<{
-        tickets: TicketItem[];
-        pagination: any;
-      }>("/tickets");
-      setTickets(response.data.tickets || []);
-    } catch (error) {
-      showToast({ message: "Failed to load tickets", type: "error" });
-      console.error(error);
-    } finally {
-      setIsLoading(false);
+  const loadTickets = async () => {
+    const params: any = {
+      page,
+      limit: 20,
+    };
+
+    if (statusFilter !== "all") {
+      params.status = statusFilter;
     }
-  };
+    if (priorityFilter !== "all") {
+      params.priority = priorityFilter;
+    }
 
-  const fetchStats = async () => {
-    try {
-      const response = await apiClient.get<any>("/tickets/stats");
-      setStats(response.data);
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
+    if (tab === "my-tickets") {
+      await fetchMyTickets(params);
+    } else if (tab === "assigned") {
+      // Get current user ID from auth context or store
+      // For now, we'll use a placeholder - you may need to get this from auth context
+      params.assignedTo = "current-user-id"; // TODO: Replace with actual user ID
+      await fetchTickets(params);
+    } else {
+      await fetchTickets(params);
     }
   };
 
@@ -173,9 +153,12 @@ export default function SupportTickets() {
     }
 
     try {
-      setIsCreating(true);
-      const response = await apiClient.post<TicketItem>("/tickets", formData);
-      setTickets([response.data, ...tickets]);
+      await createTicket({
+        subject: formData.subject,
+        description: formData.description,
+        category: formData.category as any,
+        priority: formData.priority,
+      });
       setCreateOpen(false);
       setFormData({
         subject: "",
@@ -184,12 +167,10 @@ export default function SupportTickets() {
         category: "technical",
         status: "open",
       });
-      showToast({ message: "Ticket created successfully", type: "success" });
       void fetchStats();
+      void loadTickets();
     } catch (error) {
-      showToast({ message: "Failed to create ticket", type: "error" });
-    } finally {
-      setIsCreating(false);
+      // Error handled by hook
     }
   };
 
@@ -197,22 +178,19 @@ export default function SupportTickets() {
     if (!selectedTicket) return;
 
     try {
-      setIsUpdating(true);
-      const response = await apiClient.patch<TicketItem>(
-        `/tickets/${selectedTicket._id}`,
-        formData
-      );
-      setTickets(
-        tickets.map((t) => (t._id === selectedTicket._id ? response.data : t))
-      );
+      await updateTicket(selectedTicket._id, {
+        status: formData.status,
+        priority: formData.priority,
+        category: formData.category as any,
+        subject: formData.subject,
+        description: formData.description,
+      });
       setEditOpen(false);
       setSelectedTicket(null);
-      showToast({ message: "Ticket updated successfully", type: "success" });
       void fetchStats();
+      void loadTickets();
     } catch (error) {
-      showToast({ message: "Failed to update ticket", type: "error" });
-    } finally {
-      setIsUpdating(false);
+      // Error handled by hook
     }
   };
 
@@ -220,17 +198,13 @@ export default function SupportTickets() {
     if (!ticketToDelete) return;
 
     try {
-      setIsUpdating(true);
-      await apiClient.delete(`/tickets/${ticketToDelete._id}`);
-      setTickets(tickets.filter((t) => t._id !== ticketToDelete._id));
+      await deleteTicket(ticketToDelete._id);
       setDeleteOpen(false);
       setTicketToDelete(null);
-      showToast({ message: "Ticket deleted successfully", type: "success" });
       void fetchStats();
+      void loadTickets();
     } catch (error) {
-      showToast({ message: "Failed to delete ticket", type: "error" });
-    } finally {
-      setIsUpdating(false);
+      // Error handled by hook
     }
   };
 
@@ -239,19 +213,52 @@ export default function SupportTickets() {
     newStatus: TicketStatus
   ) => {
     try {
-      const response = await apiClient.patch<TicketItem>(
-        `/tickets/${ticketId}`,
-        { status: newStatus }
-      );
-      setTickets(tickets.map((t) => (t._id === ticketId ? response.data : t)));
-      showToast({ message: "Status updated successfully", type: "success" });
+      await updateTicket(ticketId, { status: newStatus });
       void fetchStats();
+      void loadTickets();
     } catch (error) {
-      showToast({ message: "Failed to update status", type: "error" });
+      // Error handled by hook
     }
   };
 
-  const openEditDialog = (ticket: TicketItem) => {
+  const handleAddReply = async () => {
+    if (!selectedTicket || !replyMessage.trim()) {
+      showToast({ message: "Please enter a reply message", type: "error" });
+      return;
+    }
+
+    try {
+      await addReply(selectedTicket._id, { message: replyMessage });
+      setReplyOpen(false);
+      setReplyMessage("");
+      // Refresh ticket details
+      if (selectedTicket) {
+        const ticketData = await fetchTicketById(selectedTicket._id);
+        setSelectedTicket({ ...selectedTicket, replies: ticketData.replies });
+      }
+      void loadTickets();
+    } catch (error) {
+      // Error handled by hook
+    }
+  };
+
+  const handleAssignTicket = async () => {
+    if (!selectedTicket || !assignUserId) {
+      showToast({ message: "Please select a user to assign", type: "error" });
+      return;
+    }
+
+    try {
+      await assignTicket(selectedTicket._id, assignUserId);
+      setAssignOpen(false);
+      setAssignUserId("");
+      void loadTickets();
+    } catch (error) {
+      // Error handled by hook
+    }
+  };
+
+  const openEditDialog = async (ticket: Ticket) => {
     setSelectedTicket(ticket);
     setFormData({
       subject: ticket.subject,
@@ -260,11 +267,25 @@ export default function SupportTickets() {
       category: ticket.category,
       status: ticket.status,
     });
+    // Fetch full ticket with replies
+    try {
+      const ticketData = await fetchTicketById(ticket._id);
+      setSelectedTicket({ ...ticket, replies: ticketData.replies });
+    } catch (error) {
+      // Use ticket as is if fetch fails
+    }
     setEditOpen(true);
   };
 
-  const openViewDialog = (ticket: TicketItem) => {
+  const openViewDialog = async (ticket: Ticket) => {
     setSelectedTicket(ticket);
+    // Fetch full ticket with replies
+    try {
+      const ticketData = await fetchTicketById(ticket._id);
+      setSelectedTicket({ ...ticket, replies: ticketData.replies });
+    } catch (error) {
+      // Use ticket as is if fetch fails
+    }
     setViewOpen(true);
   };
 
@@ -272,28 +293,23 @@ export default function SupportTickets() {
     return tickets
       .filter((t) => {
         const searchLower = search.toLowerCase();
+        const userName =
+          typeof t.userId === "object" && t.userId
+            ? `${t.userId.firstName || ""} ${t.userId.lastName || ""}`.trim()
+            : "";
         const matchesSearch =
           !search ||
           t.subject.toLowerCase().includes(searchLower) ||
           t.description.toLowerCase().includes(searchLower) ||
           t.ticketNumber?.toLowerCase().includes(searchLower) ||
-          (t.userId?.firstName + " " + t.userId?.lastName)
-            .toLowerCase()
-            .includes(searchLower);
+          userName.toLowerCase().includes(searchLower);
 
         const matchesPriority =
           priorityFilter === "all" || t.priority === priorityFilter;
         const matchesStatus =
           statusFilter === "all" || t.status === statusFilter;
-        const matchesTab =
-          tab === "all" ||
-          (tab === "open" && t.status === "open") ||
-          (tab === "pending" && t.status === "pending") ||
-          (tab === "closed" && t.status === "closed") ||
-          (tab === "escalated" && t.status === "escalated") ||
-          (tab === "in-progress" && t.status === "in-progress");
 
-        return matchesSearch && matchesPriority && matchesStatus && matchesTab;
+        return matchesSearch && matchesPriority && matchesStatus;
       })
       .sort((a, b) => {
         if (sortBy === "newest") {
@@ -313,14 +329,18 @@ export default function SupportTickets() {
           return order[b.priority] - order[a.priority];
         }
         if (sortBy === "status") {
-          const order = {
-            escalated: 5,
-            "in-progress": 4,
-            open: 3,
-            pending: 2,
+          const order: Record<string, number> = {
+            escalated: 6,
+            "in-progress": 5,
+            open: 4,
+            pending: 3,
+            resolved: 2,
             closed: 1,
+            waiting_for_customer: 3,
           };
-          return order[b.status] - order[a.status];
+          const aOrder = order[a.status] || 0;
+          const bOrder = order[b.status] || 0;
+          return bOrder - aOrder;
         }
         return 0;
       });
@@ -337,18 +357,22 @@ export default function SupportTickets() {
   };
 
   const statusBadge = (s: TicketStatus) => {
-    const styles = {
+    const styles: Record<string, string> = {
       open: "bg-blue-500 text-white",
       pending: "bg-yellow-500 text-white",
       closed: "bg-gray-500 text-white",
       escalated: "bg-red-500 text-white",
       "in-progress": "bg-primary text-white",
+      resolved: "bg-green-500 text-white",
+      waiting_for_customer: "bg-orange-500 text-white",
     };
     return (
       <span
-        className={`px-2.5 py-1 rounded-full text-xs font-medium ${styles[s]}`}
+        className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+          styles[s] || "bg-gray-500 text-white"
+        }`}
       >
-        {s.replace("-", " ").toUpperCase()}
+        {s.replace("-", " ").replace("_", " ").toUpperCase()}
       </span>
     );
   };
@@ -399,7 +423,7 @@ export default function SupportTickets() {
             variant="outline"
             className="border-gray-300 hover:border-primary hover:text-primary transition-all"
             onClick={() => {
-              void fetchTickets();
+              void loadTickets();
               void fetchStats();
             }}
           >
@@ -431,7 +455,7 @@ export default function SupportTickets() {
               </p>
             </div>
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Ticket className="text-blue-600 w-6 h-6" />
+              <TicketIcon className="text-blue-600 w-6 h-6" />
             </div>
           </div>
         </div>
@@ -647,7 +671,15 @@ export default function SupportTickets() {
                       <div className="flex flex-wrap gap-4 text-sm text-gray-500">
                         <div className="flex items-center gap-1.5">
                           <User className="w-4 h-4" />
-                          <span>{t.userId?.name || "Unknown User"}</span>
+                          <span>
+                            {typeof t.userId === "object" && t.userId
+                              ? `${t.userId.firstName || ""} ${
+                                  t.userId.lastName || ""
+                                }`.trim() ||
+                                t.userId.email ||
+                                "Unknown User"
+                              : "Unknown User"}
+                          </span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Calendar className="w-4 h-4" />
@@ -660,7 +692,13 @@ export default function SupportTickets() {
                         {t.assignedTo && (
                           <div className="flex items-center gap-1.5">
                             <UserCheck className="w-4 h-4" />
-                            <span>{t.assignedTo.name}</span>
+                            <span>
+                              {typeof t.assignedTo === "object" && t.assignedTo
+                                ? `${t.assignedTo.firstName || ""} ${
+                                    t.assignedTo.lastName || ""
+                                  }`.trim() || "Assigned"
+                                : "Assigned"}
+                            </span>
                           </div>
                         )}
                         {t.replies && t.replies.length > 0 && (
@@ -678,7 +716,7 @@ export default function SupportTickets() {
                     variant="outline"
                     size="sm"
                     className="border-gray-300 hover:border-primary hover:text-primary transition-all"
-                    onClick={() => openViewDialog(t)}
+                    onClick={() => void openViewDialog(t)}
                   >
                     <Eye className="w-4 h-4 mr-2" />
                     View
@@ -687,7 +725,7 @@ export default function SupportTickets() {
                     variant="outline"
                     size="sm"
                     className="border-gray-300 hover:border-primary hover:text-primary transition-all"
-                    onClick={() => openEditDialog(t)}
+                    onClick={() => void openEditDialog(t)}
                   >
                     <Edit2 className="w-4 h-4 mr-2" />
                     Edit
@@ -703,14 +741,33 @@ export default function SupportTickets() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-48">
-                      <DropdownMenuItem onClick={() => openViewDialog(t)}>
+                      <DropdownMenuItem onClick={() => void openViewDialog(t)}>
                         <Eye className="w-4 h-4 mr-2" />
                         View Details
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openEditDialog(t)}>
+                      <DropdownMenuItem onClick={() => void openEditDialog(t)}>
                         <Edit2 className="w-4 h-4 mr-2" />
                         Edit Ticket
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSelectedTicket(t);
+                          setReplyOpen(true);
+                        }}
+                      >
+                        <MessageSquare className="w-4 h-4 mr-2" />
+                        Add Reply
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSelectedTicket(t);
+                          setAssignOpen(true);
+                        }}
+                      >
+                        <UserCheck className="w-4 h-4 mr-2" />
+                        Assign Ticket
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-red-600 focus:text-red-600"
                         onClick={() => {
@@ -727,6 +784,66 @@ export default function SupportTickets() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {pagination && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between mb-8 bg-card rounded-xl p-4 border border-gray-100">
+          <div className="text-sm text-gray-600">
+            Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
+            {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
+            {pagination.total} tickets
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page === 1 || isLoading}
+              className="border-gray-300"
+            >
+              Previous
+            </Button>
+            <div className="flex items-center gap-1">
+              {Array.from(
+                { length: Math.min(5, pagination.totalPages) },
+                (_, i) => {
+                  let pageNum;
+                  if (pagination.totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (page <= 3) {
+                    pageNum = i + 1;
+                  } else if (page >= pagination.totalPages - 2) {
+                    pageNum = pagination.totalPages - 4 + i;
+                  } else {
+                    pageNum = page - 2 + i;
+                  }
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={page === pageNum ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setPage(pageNum)}
+                      disabled={isLoading}
+                      className={page === pageNum ? "" : "border-gray-300"}
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                }
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+              disabled={page === pagination.totalPages || isLoading}
+              className="border-gray-300"
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
 
@@ -903,10 +1020,10 @@ export default function SupportTickets() {
             </Button>
             <Button
               onClick={() => void handleCreateTicket()}
-              disabled={isCreating}
+              disabled={isActionLoading}
               className="bg-primary hover:bg-primary/90"
             >
-              {isCreating ? (
+              {isActionLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Creating...
@@ -1091,7 +1208,14 @@ export default function SupportTickets() {
                   <div>
                     <span className="text-gray-500">Requester:</span>
                     <span className="ml-2">
-                      {selectedTicket.userId?.name || "N/A"}
+                      {typeof selectedTicket.userId === "object" &&
+                      selectedTicket.userId
+                        ? `${selectedTicket.userId.firstName || ""} ${
+                            selectedTicket.userId.lastName || ""
+                          }`.trim() ||
+                          selectedTicket.userId.email ||
+                          "N/A"
+                        : "N/A"}
                     </span>
                   </div>
                   <div>
@@ -1116,10 +1240,10 @@ export default function SupportTickets() {
             </Button>
             <Button
               onClick={() => void handleUpdateTicket()}
-              disabled={isUpdating}
+              disabled={isActionLoading}
               className="bg-primary hover:bg-primary/90"
             >
-              {isUpdating ? (
+              {isActionLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Updating...
@@ -1182,7 +1306,14 @@ export default function SupportTickets() {
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Created By</p>
                   <p className="text-sm font-medium">
-                    {selectedTicket.userId?.name || "N/A"}
+                    {typeof selectedTicket.userId === "object" &&
+                    selectedTicket.userId
+                      ? `${selectedTicket.userId.firstName || ""} ${
+                          selectedTicket.userId.lastName || ""
+                        }`.trim() ||
+                        selectedTicket.userId.email ||
+                        "N/A"
+                      : "N/A"}
                   </p>
                 </div>
                 <div>
@@ -1223,22 +1354,45 @@ export default function SupportTickets() {
                     Replies ({selectedTicket.replies.length})
                   </h4>
                   <div className="space-y-3">
-                    {selectedTicket.replies.map((reply: any, index: number) => (
-                      <div
-                        key={index}
-                        className="bg-gray-50 rounded-lg p-4 border-l-4 border-primary"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium">
-                            {reply.user?.name || "Staff"}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {formatDate(reply.createdAt)}
-                          </span>
+                    {selectedTicket.replies.map((reply: TicketReply) => {
+                      const userName =
+                        typeof reply.userId === "object" && reply.userId
+                          ? `${reply.userId.firstName || ""} ${
+                              reply.userId.lastName || ""
+                            }`.trim() ||
+                            reply.userId.email ||
+                            "Staff"
+                          : "Staff";
+                      return (
+                        <div
+                          key={reply._id}
+                          className={`bg-gray-50 rounded-lg p-4 border-l-4 ${
+                            reply.isStaffReply
+                              ? "border-primary"
+                              : "border-blue-400"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">
+                                {userName}
+                              </span>
+                              {reply.isStaffReply && (
+                                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                                  Staff
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {formatDate(reply.createdAt)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700">
+                            {reply.message}
+                          </p>
                         </div>
-                        <p className="text-sm text-gray-700">{reply.message}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1253,18 +1407,34 @@ export default function SupportTickets() {
             >
               Close
             </Button>
-            <Button
-              onClick={() => {
-                if (selectedTicket) {
-                  setViewOpen(false);
-                  openEditDialog(selectedTicket);
-                }
-              }}
-              className="bg-primary hover:bg-primary/90"
-            >
-              <Edit2 className="w-4 h-4 mr-2" />
-              Edit Ticket
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => {
+                  if (selectedTicket) {
+                    setViewOpen(false);
+                    void openEditDialog(selectedTicket);
+                  }
+                }}
+                variant="outline"
+                className="border-gray-300"
+              >
+                <Edit2 className="w-4 h-4 mr-2" />
+                Edit Ticket
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedTicket) {
+                    setViewOpen(false);
+                    setSelectedTicket(selectedTicket);
+                    setReplyOpen(true);
+                  }
+                }}
+                className="bg-primary hover:bg-primary/90"
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Add Reply
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1318,10 +1488,10 @@ export default function SupportTickets() {
             </Button>
             <Button
               onClick={() => void handleDeleteTicket()}
-              disabled={isUpdating}
+              disabled={isActionLoading}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {isUpdating ? (
+              {isActionLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Deleting...
@@ -1330,6 +1500,173 @@ export default function SupportTickets() {
                 <>
                   <Trash2 className="w-4 h-4 mr-2" />
                   Delete Ticket
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reply Dialog */}
+      <Dialog open={replyOpen} onOpenChange={setReplyOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl">Add Reply</DialogTitle>
+                <DialogDescription>
+                  {selectedTicket &&
+                    `Reply to ticket #${selectedTicket.ticketNumber}`}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedTicket && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-700 mb-1">
+                  {selectedTicket.subject}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Ticket #{selectedTicket.ticketNumber}
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="reply-message" className="text-sm font-medium">
+                Reply Message <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="reply-message"
+                value={replyMessage}
+                onChange={(e) => setReplyMessage(e.target.value)}
+                placeholder="Enter your reply message..."
+                rows={6}
+                className="border-gray-300 focus:border-primary resize-none"
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReplyOpen(false);
+                setReplyMessage("");
+              }}
+              className="border-gray-300"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleAddReply()}
+              disabled={isActionLoading || !replyMessage.trim()}
+              className="bg-primary hover:bg-primary/90"
+            >
+              {isActionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Send Reply
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Ticket Dialog */}
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                <UserCheck className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl">Assign Ticket</DialogTitle>
+                <DialogDescription>
+                  {selectedTicket &&
+                    `Assign ticket #${selectedTicket.ticketNumber} to a team member`}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedTicket && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-700 mb-1">
+                  {selectedTicket.subject}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Ticket #{selectedTicket.ticketNumber}
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="assign-user" className="text-sm font-medium">
+                Assign To <span className="text-red-500">*</span>
+              </Label>
+              <Select value={assignUserId} onValueChange={setAssignUserId}>
+                <SelectTrigger id="assign-user" className="border-gray-300">
+                  <SelectValue placeholder="Select a team member..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.length > 0 ? (
+                    users
+                      .filter(
+                        (u) =>
+                          u.role === "admin" ||
+                          u.role === "instructor" ||
+                          u.role === "super_admin"
+                      )
+                      .map((user) => (
+                        <SelectItem key={user._id} value={user._id}>
+                          {user.firstName} {user.lastName} ({user.email})
+                        </SelectItem>
+                      ))
+                  ) : (
+                    <SelectItem value="no-users" disabled>
+                      No team members available
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAssignOpen(false);
+                setAssignUserId("");
+              }}
+              className="border-gray-300"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleAssignTicket()}
+              disabled={isActionLoading || !assignUserId}
+              className="bg-primary hover:bg-primary/90"
+            >
+              {isActionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Assigning...
+                </>
+              ) : (
+                <>
+                  <UserCheck className="w-4 h-4 mr-2" />
+                  Assign Ticket
                 </>
               )}
             </Button>

@@ -290,5 +290,92 @@ export const useActivityLogs = () => {
 
         clearFilters: store.clearFilters,
         resetStore: store.resetStore,
+
+        // New actions
+        getLogById: async (type: 'activity' | 'error' | 'ai' | 'chat' | 'system', id: string) => {
+            try {
+                return await activityLogsService.getLogById(type, id);
+            } catch (error: any) {
+                push({ message: 'Failed to load log details', type: 'error' });
+                throw error;
+            }
+        },
+        markErrorAsResolved: async (id: string, solution?: string) => {
+            try {
+                await activityLogsService.markErrorAsResolved(id, solution);
+                push({ message: 'Error marked as resolved', type: 'success' });
+                fetchErrorLogs();
+            } catch (error: any) {
+                push({ message: 'Failed to mark error as resolved', type: 'error' });
+            }
+        },
+        markErrorAsUnresolved: async (id: string) => {
+            try {
+                await activityLogsService.markErrorAsUnresolved(id);
+                push({ message: 'Error marked as unresolved', type: 'success' });
+                fetchErrorLogs();
+            } catch (error: any) {
+                push({ message: 'Failed to mark error as unresolved', type: 'error' });
+            }
+        },
+        bulkMarkErrorsAsResolved: async (ids: string[], solution?: string) => {
+            try {
+                await activityLogsService.bulkMarkErrorsAsResolved(ids, solution);
+                push({ message: `${ids.length} errors marked as resolved`, type: 'success' });
+                fetchErrorLogs();
+            } catch (error: any) {
+                push({ message: 'Failed to resolve errors', type: 'error' });
+            }
+        },
+        deleteLog: async (type: 'activity' | 'error' | 'ai' | 'chat' | 'system', id: string) => {
+            try {
+                await activityLogsService.deleteLog(type, id);
+                push({ message: 'Log deleted successfully', type: 'success' });
+                switch (type) {
+                    case 'activity':
+                        fetchActivityLogs();
+                        break;
+                    case 'error':
+                        fetchErrorLogs();
+                        break;
+                    case 'ai':
+                        fetchAiLogs();
+                        break;
+                    case 'chat':
+                        fetchChatLogs();
+                        break;
+                    case 'system':
+                        fetchSystemLogs();
+                        break;
+                }
+            } catch (error: any) {
+                push({ message: 'Failed to delete log', type: 'error' });
+            }
+        },
+        bulkDeleteLogs: async (type: 'activity' | 'error' | 'ai' | 'chat' | 'system', ids: string[]) => {
+            try {
+                await activityLogsService.bulkDeleteLogs(type, ids);
+                push({ message: `${ids.length} logs deleted`, type: 'success' });
+                switch (type) {
+                    case 'activity':
+                        fetchActivityLogs();
+                        break;
+                    case 'error':
+                        fetchErrorLogs();
+                        break;
+                    case 'ai':
+                        fetchAiLogs();
+                        break;
+                    case 'chat':
+                        fetchChatLogs();
+                        break;
+                    case 'system':
+                        fetchSystemLogs();
+                        break;
+                }
+            } catch (error: any) {
+                push({ message: 'Failed to delete logs', type: 'error' });
+            }
+        },
     };
 };

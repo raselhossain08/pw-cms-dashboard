@@ -26,29 +26,54 @@ import {
   Eye,
   EyeOff,
   Search,
+  Download,
+  Copy,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
-import axios from "@/lib/axios";
-import { contactService } from "@/lib/services/contact.service";
+import { useContact } from "@/hooks/useContact";
 import type {
-  Contact,
   ContactInfo,
   ContactFormSection,
   MapSection,
   SeoMeta,
   UpdateContactDto,
 } from "@/lib/services/contact.service";
-import { useToast } from "@/context/ToastContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function ContactEditor() {
-  const { push } = useToast();
-  const [contact, setContact] = useState<Contact | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const {
+    contact,
+    loading,
+    saving,
+    uploadProgress,
+    fetchContact,
+    updateContact,
+    updateContactWithUpload,
+    toggleActive,
+    duplicateContact,
+    exportContact,
+    refreshContact,
+  } = useContact();
+
   const [activeTab, setActiveTab] = useState("contact-info");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [localUploadProgress, setLocalUploadProgress] = useState(0);
 
   const [formData, setFormData] = useState<UpdateContactDto>({
     contactInfo: {
@@ -77,10 +102,6 @@ export function ContactEditor() {
     },
     isActive: true,
   });
-
-  useEffect(() => {
-    fetchContact();
-  }, []);
 
   useEffect(() => {
     if (contact) {
@@ -120,22 +141,6 @@ export function ContactEditor() {
     }
   }, [contact]);
 
-  const fetchContact = async () => {
-    try {
-      setLoading(true);
-      const data = await contactService.getDefault();
-      setContact(data);
-    } catch (error) {
-      console.error("Failed to fetch contact:", error);
-      push({
-        message: "Failed to load contact data",
-        type: "error",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -154,188 +159,252 @@ export function ContactEditor() {
     formData.append("type", "image");
     formData.append("description", "Contact page image");
 
-    const response = await axios.post<{ data: { url: string } }>(
-      "/uploads/upload",
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            setUploadProgress(progress);
-          }
-        },
-      }
-    );
+    const API_BASE_URL =
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
-    return (response.data as any).data.url;
+    // Get auth token from cookies
+    let token: string | null | undefined;
+    try {
+      const { cookieService } = await import("@/lib/cookie.service");
+      token = cookieService.get("token");
+    } catch (e) {
+      // Token not available, continue without it
+    }
+
+    // Use XMLHttpRequest for upload progress tracking
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded * 100) / event.total);
+          setLocalUploadProgress(progress);
+        }
+      });
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            const url = response.data?.url || response.data?.data?.url;
+            if (url) {
+              resolve(url);
+            } else {
+              reject(new Error("Invalid response format"));
+            }
+          } catch (error) {
+            reject(new Error("Failed to parse response"));
+          }
+        } else {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        reject(new Error("Upload failed"));
+      });
+
+      xhr.open("POST", `${API_BASE_URL}/uploads/upload`);
+
+      if (token) {
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      }
+
+      xhr.send(formData);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!contact) {
-      push({ message: "Contact data not loaded", type: "error" });
-      return;
-    }
-
-    if (!contact._id) {
-      push({ message: "Missing contact ID", type: "error" });
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setUploadProgress(0);
-
-      // If image file is selected, use FormData upload endpoint
-      if (imageFile) {
-        const submitFormData = new FormData();
-
-        // Add image file
-        submitFormData.append("image", imageFile);
-
-        // Add contactInfo fields
-        submitFormData.append(
-          "contactInfo[email]",
-          formData.contactInfo?.email || ""
-        );
-        submitFormData.append(
-          "contactInfo[location]",
-          formData.contactInfo?.location || ""
-        );
-        if (formData.contactInfo?.phone) {
-          submitFormData.append(
-            "contactInfo[phone]",
-            formData.contactInfo.phone
-          );
-        }
-
-        // Add contactFormSection fields
-        submitFormData.append(
-          "contactFormSection[badge]",
-          formData.contactFormSection?.badge || ""
-        );
-        submitFormData.append(
-          "contactFormSection[title]",
-          formData.contactFormSection?.title || ""
-        );
-        if (formData.contactFormSection?.image) {
-          submitFormData.append(
-            "contactFormSection[image]",
-            formData.contactFormSection.image
-          );
-        }
-        if (formData.contactFormSection?.imageAlt) {
-          submitFormData.append(
-            "contactFormSection[imageAlt]",
-            formData.contactFormSection.imageAlt
-          );
-        }
-
-        // Add mapSection fields
-        submitFormData.append(
-          "mapSection[embedUrl]",
-          formData.mapSection?.embedUrl || ""
-        );
-        submitFormData.append(
-          "mapSection[showMap]",
-          String(formData.mapSection?.showMap ?? true)
-        );
-
-        // Add SEO fields
-        if (formData.seo?.title)
-          submitFormData.append("seo[title]", formData.seo.title);
-        if (formData.seo?.description)
-          submitFormData.append("seo[description]", formData.seo.description);
-        if (formData.seo?.keywords)
-          submitFormData.append("seo[keywords]", formData.seo.keywords);
-        if (formData.seo?.ogImage)
-          submitFormData.append("seo[ogImage]", formData.seo.ogImage);
-        if (formData.seo?.ogTitle)
-          submitFormData.append("seo[ogTitle]", formData.seo.ogTitle);
-        if (formData.seo?.ogDescription)
-          submitFormData.append(
-            "seo[ogDescription]",
-            formData.seo.ogDescription
-          );
-        if (formData.seo?.canonicalUrl)
-          submitFormData.append("seo[canonicalUrl]", formData.seo.canonicalUrl);
-
-        // Add isActive
-        submitFormData.append("isActive", String(formData.isActive ?? true));
-
-        // Use upload endpoint with FormData
-        const response = await axios.put<{ data: Contact }>(
-          `/cms/contact/${contact._id}/upload`,
-          submitFormData,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-            onUploadProgress: (progressEvent) => {
-              if (progressEvent.total) {
-                const progress = Math.round(
-                  (progressEvent.loaded * 100) / progressEvent.total
-                );
-                setUploadProgress(progress);
-              }
-            },
-          }
-        );
-
-        setContact((response.data as any).data);
-        setImageFile(null);
-        push({
-          message: "Contact page updated successfully with image",
-          type: "success",
-        });
-
-        // Keep progress at 100% for 2 seconds before resetting
-        setTimeout(() => {
-          setUploadProgress(0);
-        }, 2000);
-      } else {
-        // No image upload, use regular JSON update
-        const updateData: UpdateContactDto = {
-          contactInfo: formData.contactInfo,
-          contactFormSection: formData.contactFormSection,
-          mapSection: formData.mapSection,
-          seo: formData.seo,
-          isActive: formData.isActive,
-        };
-
-        const updated = await contactService.update(contact._id, updateData);
-        setContact(updated);
-        push({ message: "Contact page updated successfully", type: "success" });
+    if (imageFile) {
+      const submitFormData = new FormData();
+      submitFormData.append("image", imageFile);
+      submitFormData.append(
+        "contactInfo[email]",
+        formData.contactInfo?.email || ""
+      );
+      submitFormData.append(
+        "contactInfo[location]",
+        formData.contactInfo?.location || ""
+      );
+      if (formData.contactInfo?.phone) {
+        submitFormData.append("contactInfo[phone]", formData.contactInfo.phone);
       }
-    } catch (error: any) {
-      console.error("Failed to update contact:", error);
-      push({
-        message:
-          error.response?.data?.message || "Failed to update contact page",
-        type: "error",
-      });
-      setUploadProgress(0);
+      submitFormData.append(
+        "contactFormSection[badge]",
+        formData.contactFormSection?.badge || ""
+      );
+      submitFormData.append(
+        "contactFormSection[title]",
+        formData.contactFormSection?.title || ""
+      );
+      if (formData.contactFormSection?.image) {
+        submitFormData.append(
+          "contactFormSection[image]",
+          formData.contactFormSection.image
+        );
+      }
+      if (formData.contactFormSection?.imageAlt) {
+        submitFormData.append(
+          "contactFormSection[imageAlt]",
+          formData.contactFormSection.imageAlt
+        );
+      }
+      submitFormData.append(
+        "mapSection[embedUrl]",
+        formData.mapSection?.embedUrl || ""
+      );
+      submitFormData.append(
+        "mapSection[showMap]",
+        String(formData.mapSection?.showMap ?? true)
+      );
+      if (formData.seo?.title)
+        submitFormData.append("seo[title]", formData.seo.title);
+      if (formData.seo?.description)
+        submitFormData.append("seo[description]", formData.seo.description);
+      if (formData.seo?.keywords)
+        submitFormData.append("seo[keywords]", formData.seo.keywords);
+      if (formData.seo?.ogImage)
+        submitFormData.append("seo[ogImage]", formData.seo.ogImage);
+      if (formData.seo?.ogTitle)
+        submitFormData.append("seo[ogTitle]", formData.seo.ogTitle);
+      if (formData.seo?.ogDescription)
+        submitFormData.append("seo[ogDescription]", formData.seo.ogDescription);
+      if (formData.seo?.canonicalUrl)
+        submitFormData.append("seo[canonicalUrl]", formData.seo.canonicalUrl);
+      submitFormData.append("isActive", String(formData.isActive ?? true));
+
+      await updateContactWithUpload(submitFormData);
+      setImageFile(null);
+      await refreshContact();
+    } else {
+      const updateData: UpdateContactDto = {
+        contactInfo: formData.contactInfo,
+        contactFormSection: formData.contactFormSection,
+        mapSection: formData.mapSection,
+        seo: formData.seo,
+        isActive: formData.isActive,
+      };
+      await updateContact(updateData);
+      await refreshContact();
+    }
+  };
+
+  const handleDuplicate = async () => {
+    await duplicateContact();
+    await refreshContact();
+  };
+
+  const handleExport = async (format: "json" | "pdf") => {
+    setIsExporting(true);
+    try {
+      await exportContact(format);
+    } catch (err) {
+      console.error("Failed to export:", err);
     } finally {
-      setSaving(false);
+      setIsExporting(false);
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white"></div>
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full space-y-6">
+      {/* Header Actions */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">
+            Contact Page Management
+          </h2>
+          <p className="text-muted-foreground">
+            Manage contact information, form section, and SEO settings
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant={contact?.isActive ? "default" : "secondary"}>
+            {contact?.isActive ? (
+              <>
+                <Eye className="w-3 h-3 mr-1" /> Active
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3 mr-1" /> Inactive
+              </>
+            )}
+          </Badge>
+          <Button
+            variant="outline"
+            onClick={() => setShowPreview(true)}
+            disabled={!contact || saving}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Preview
+          </Button>
+          {contact?._id && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={isExporting || saving}>
+                    {isExporting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleExport("json")}>
+                    Export as JSON
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                onClick={handleDuplicate}
+                disabled={saving}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  await toggleActive();
+                  await refreshContact();
+                }}
+                disabled={saving}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${saving ? "animate-spin" : ""}`}
+                />
+                Toggle Active
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            onClick={refreshContact}
+            disabled={saving || loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit}>
         <Tabs
           value={activeTab}
@@ -901,7 +970,7 @@ export function ContactEditor() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={fetchContact}
+                  onClick={refreshContact}
                   disabled={loading || saving}
                   className="flex-1 sm:flex-none"
                 >
@@ -932,8 +1001,180 @@ export function ContactEditor() {
           </CardContent>
         </Card>
       </form>
+
+      {/* Upload Progress Indicator */}
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading media...</span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Contact Page Preview</DialogTitle>
+            <DialogDescription>
+              Preview how your contact page will appear to users
+            </DialogDescription>
+          </DialogHeader>
+          {contact && (
+            <div className="space-y-6 mt-4">
+              {/* Contact Info Preview */}
+              {contact.contactInfo && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Contact Information</h3>
+                  <div className="p-4 border rounded-lg space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-muted-foreground" />
+                      <span>{contact.contactInfo.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-muted-foreground" />
+                      <span>{contact.contactInfo.location}</span>
+                    </div>
+                    {contact.contactInfo.phone && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Phone:</span>
+                        <span>{contact.contactInfo.phone}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Form Section Preview */}
+              {(contact.contactFormSection || (contact as any).formSection) && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Form Section</h3>
+                  <div className="p-4 border rounded-lg space-y-2">
+                    {(
+                      contact.contactFormSection || (contact as any).formSection
+                    )?.badge && (
+                      <Badge variant="outline">
+                        {
+                          (
+                            contact.contactFormSection ||
+                            (contact as any).formSection
+                          )?.badge
+                        }
+                      </Badge>
+                    )}
+                    <h4 className="text-xl font-bold">
+                      {
+                        (
+                          contact.contactFormSection ||
+                          (contact as any).formSection
+                        )?.title
+                      }
+                    </h4>
+                    {(
+                      contact.contactFormSection || (contact as any).formSection
+                    )?.image && (
+                      <div className="relative w-full h-48 rounded-lg overflow-hidden mt-4">
+                        <img
+                          src={
+                            (
+                              contact.contactFormSection ||
+                              (contact as any).formSection
+                            )?.image
+                          }
+                          alt={
+                            (
+                              contact.contactFormSection ||
+                              (contact as any).formSection
+                            )?.imageAlt || "Form Section Image"
+                          }
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Map Section Preview */}
+              {contact.mapSection && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">Map Section</h3>
+                  <div className="p-4 border rounded-lg space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          contact.mapSection.showMap ? "default" : "secondary"
+                        }
+                      >
+                        {contact.mapSection.showMap
+                          ? "Map Visible"
+                          : "Map Hidden"}
+                      </Badge>
+                    </div>
+                    {contact.mapSection.embedUrl && (
+                      <div className="text-sm text-muted-foreground">
+                        Map URL: {contact.mapSection.embedUrl.substring(0, 50)}
+                        ...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* SEO Preview */}
+              {contact.seo && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold">SEO Metadata</h3>
+                  <div className="p-4 border rounded-lg space-y-2">
+                    {contact.seo.title && (
+                      <p className="font-medium">{contact.seo.title}</p>
+                    )}
+                    {contact.seo.description && (
+                      <p className="text-sm text-muted-foreground">
+                        {contact.seo.description}
+                      </p>
+                    )}
+                    {contact.seo.keywords && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {contact.seo.keywords
+                          .split(",")
+                          .slice(0, 5)
+                          .map((keyword, idx) => (
+                            <Badge
+                              key={idx}
+                              variant="secondary"
+                              className="text-xs"
+                            >
+                              {keyword.trim()}
+                            </Badge>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Status */}
+              <div className="space-y-2">
+                <h3 className="font-semibold">Status</h3>
+                <Badge variant={contact.isActive ? "default" : "secondary"}>
+                  {contact.isActive ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-
