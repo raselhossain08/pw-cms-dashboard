@@ -22,10 +22,35 @@ function toUiConversation(c: ChatConversation, selfId: string): Conversation {
     ? (c.participants as Participant[])
     : [];
   const other = participants.find((p) => participantId(p) !== selfId);
-  const name = other
-    ? `${typeof other === "string" ? "" : other.firstName || ""} ${typeof other === "string" ? "" : other.lastName || ""
-      }`.trim() || "Unknown"
-    : c.title || "Conversation";
+
+  // For support conversations with userName, use that instead of "Unknown"
+  let name: string;
+  if (c.isSupport && c.userName) {
+    name = c.userName;
+    console.log('[toUiConversation] Using userName for support chat:', name);
+  } else if (c.isSupport && c.title?.startsWith('Support - ')) {
+    // Fallback: Extract name from title if userName is not available
+    name = c.title.replace('Support - ', '');
+    console.log('[toUiConversation] Extracted name from title:', name);
+  } else if (other) {
+    name = `${typeof other === "string" ? "" : other.firstName || ""} ${typeof other === "string" ? "" : other.lastName || ""
+      }`.trim() || "Unknown";
+    console.log('[toUiConversation] Using participant name:', name, 'from', other);
+  } else {
+    name = c.title || "Conversation";
+    console.log('[toUiConversation] Using title as name:', name);
+  }
+
+  console.log('[toUiConversation] Conversation data:', {
+    id: c._id,
+    isSupport: c.isSupport,
+    userName: c.userName,
+    userEmail: c.userEmail,
+    title: c.title,
+    finalName: name,
+    participants: participants.length,
+  });
+
   const avatarUrl =
     typeof other === "string"
       ? "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg"
@@ -40,10 +65,14 @@ function toUiConversation(c: ChatConversation, selfId: string): Conversation {
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  // For support conversations, use userEmail as topic instead of title
+  const topic = c.isSupport && c.userEmail ? c.userEmail : (c.title || "");
+
   return {
     id: c._id,
     name,
-    topic: c.title || "",
+    topic: topic,
     avatarUrl,
     online: true,
     lastMessage,
@@ -51,6 +80,9 @@ function toUiConversation(c: ChatConversation, selfId: string): Conversation {
     unread: c.unreadCount || 0,
     messages: [],
     participants: participants,
+    userName: c.userName,
+    userEmail: c.userEmail,
+    isSupport: c.isSupport,
   };
 }
 
@@ -141,7 +173,7 @@ export function useChat() {
         }
         const me = profile.data;
         selfIdRef.current = me.id;
-        const socketInstance = chatService.connect();
+        const socketInstance = chatService.connect(true); // Pass true to include all support conversations
         setSocket(socketInstance);
 
         socketInstance.on("connect", () => {
@@ -176,9 +208,11 @@ export function useChat() {
           "conversations_list",
           (payload: { conversations: ChatConversation[]; total: number }) => {
             if (!mounted) return;
+            console.log('[Chat] Received conversations:', payload?.conversations?.length || 0);
             const list = (payload?.conversations || []).map((c) =>
               toUiConversation(c, selfIdRef.current)
             );
+            console.log('[Chat] Processed conversations:', list.length);
             setConversations(list);
             if (list.length && !selectedConversationId) {
               setSelectedConversation(list[0].id);
@@ -210,16 +244,21 @@ export function useChat() {
 
         socketInstance.on("new_message", (msg: ChatMessage) => {
           if (!mounted) return;
+          console.log('[Chat] new_message received:', msg);
+          console.log('[Chat] selectedConversationId:', selectedConversationId);
           const convId =
             typeof msg.conversation === "string"
               ? msg.conversation
               : (msg.conversation as { _id: string })._id;
+          console.log('[Chat] Message conversation ID:', convId);
           const uiMessage = toUiMessage(msg, selfIdRef.current);
+          console.log('[Chat] UI Message:', uiMessage);
           addMessage(convId, uiMessage);
           updateConversation(convId, {
             lastMessage: msg.content,
             lastTime: uiMessage.time,
           });
+          console.log('[Chat] Message added to store');
         });
 
         socketInstance.on(

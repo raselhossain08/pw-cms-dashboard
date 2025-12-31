@@ -28,6 +28,8 @@ import {
   Clock,
   FileText,
   RefreshCw,
+  MessageSquare,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +54,7 @@ import {
 import { useUsers } from "@/hooks/useUsers";
 import { useDebounce } from "@/hooks/useDebounce";
 import ConversationInfoPanel from "./ConversationInfoPanel";
+import ChatMonitoringPanel from "./ChatMonitoringPanel";
 import { groupMessagesByDate } from "@/lib/chat-utils";
 
 export default function LiveChat() {
@@ -66,6 +69,9 @@ export default function LiveChat() {
   >([]);
   const [userSearchQuery, setUserSearchQuery] = React.useState("");
   const [showInfoPanel, setShowInfoPanel] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<"chats" | "monitoring">(
+    "chats"
+  );
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const messagesContainerRef = React.useRef<HTMLDivElement>(null);
@@ -544,6 +550,36 @@ export default function LiveChat() {
                 Archived
               </button>
             </div>
+
+            {/* Monitoring Tab */}
+            <div className="flex space-x-1 mt-3">
+              <button
+                onClick={() => setActiveTab("chats")}
+                className={`flex-1 py-2 px-2 rounded-lg text-xs font-medium transition-all ${
+                  activeTab === "chats"
+                    ? "bg-blue-500 text-white shadow-md"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <MessageSquare className="w-4 h-4" />
+                  Chats
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab("monitoring")}
+                className={`flex-1 py-2 px-2 rounded-lg text-xs font-medium transition-all ${
+                  activeTab === "monitoring"
+                    ? "bg-blue-500 text-white shadow-md"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <BarChart3 className="w-4 h-4" />
+                  Monitoring
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Chat List */}
@@ -677,7 +713,33 @@ export default function LiveChat() {
 
         {/* Chat Main Area */}
         <div className="flex-1 flex flex-col">
-          {selectedConversation ? (
+          {activeTab === "monitoring" ? (
+            <ChatMonitoringPanel
+              onManualReply={(sessionId) => {
+                console.log("Manual reply requested for session:", sessionId);
+                setActiveTab("chats");
+                // Find and select the conversation for this session
+                const conversation = conversations.find(
+                  (c) => c.id === sessionId
+                );
+                if (conversation) {
+                  setSelectedConversation(conversation.id);
+                }
+              }}
+              onViewHistory={(sessionId) => {
+                console.log("View history requested for session:", sessionId);
+                // TODO: Implement view history functionality
+                setActiveTab("chats");
+                // Find and select the conversation for this session
+                const conversation = conversations.find(
+                  (c) => c.id === sessionId
+                );
+                if (conversation) {
+                  setSelectedConversation(conversation.id);
+                }
+              }}
+            />
+          ) : selectedConversation ? (
             <>
               {/* Chat Header */}
               <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white">
@@ -694,7 +756,7 @@ export default function LiveChat() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-secondary">
-                      {selectedConversation.name}
+                      {selectedConversation.topic}
                     </h3>
                     <div className="flex items-center space-x-1">
                       <span className="text-xs text-gray-500">

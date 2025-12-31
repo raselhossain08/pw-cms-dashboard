@@ -66,7 +66,7 @@ function EditCourse({ courseId }: EditCourseProps) {
     const fetchInstructors = async () => {
       try {
         const response = await fetch(
-          "http://localhost:5000/api/users/instructors"
+          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/users/instructors`
         );
         const data = await response.json();
         setInstructors(data.data || []);

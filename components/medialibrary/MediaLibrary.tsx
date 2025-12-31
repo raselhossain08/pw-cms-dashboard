@@ -800,7 +800,7 @@ export default function MediaLibrary() {
                           />
                           <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/preview:bg-black/40 transition-colors">
                             <div className="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center">
-                              <div className="w-0 h-0 border-l-[16px] border-l-blue-600 border-t-[10px] border-t-transparent border-b-[10px] border-b-transparent ml-1" />
+                              <div className="w-0 h-0 border-l-16 border-l-blue-600 border-t-[10px] border-t-transparent border-b-[10px] border-b-transparent ml-1" />
                             </div>
                           </div>
                         </>

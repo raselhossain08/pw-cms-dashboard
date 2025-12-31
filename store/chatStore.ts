@@ -28,9 +28,12 @@ export type Conversation = {
   lastTime: string;
   unread?: number;
   messages: Message[];
-  participants?: Array<{ _id: string; firstName?: string; lastName?: string; avatar?: string } | string>;
+  participants?: Array<{ _id: string; firstName?: string; lastName?: string; avatar?: string; email?: string } | string>;
   archived?: boolean;
   starred?: boolean;
+  userName?: string;
+  userEmail?: string;
+  isSupport?: boolean;
 };
 
 export interface ChatFilters {

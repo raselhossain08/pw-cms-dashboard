@@ -21,22 +21,27 @@ export type ChatMessage = {
 export type ChatConversation = {
   _id: string;
   title?: string;
-  participants: Array<{ _id: string; firstName?: string; lastName?: string; avatar?: string }> | string[];
+  participants: Array<{ _id: string; firstName?: string; lastName?: string; avatar?: string; email?: string }> | string[];
   lastMessage?: ChatMessage | string;
   unreadCount?: number;
   metadata?: Record<string, unknown>;
   createdAt?: string;
+  userName?: string;
+  userEmail?: string;
+  isSupport?: boolean;
 };
 
 export const chatService = {
-  connect(): Socket {
+  connect(includeSupport: boolean = true): Socket {
     const token = getAccessToken();
     const socketBase = getSocketBase();
     console.log('[Chat] Connecting to:', `${socketBase}/chat`);
     console.log('[Chat] Token available:', !!token);
+    console.log('[Chat] Include support conversations:', includeSupport);
 
     const socket = io(`${socketBase}/chat`, {
       auth: { token: token ? `Bearer ${token}` : undefined },
+      query: { includeSupport: includeSupport.toString() }, // Pass includeSupport as query param
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,

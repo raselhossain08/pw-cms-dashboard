@@ -61,7 +61,9 @@ export default function CreateCourse() {
     const fetchInstructors = async () => {
       try {
         const response = await fetch(
-          "http://localhost:5000/api/users/instructors"
+          `${
+            process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+          }/users/instructors`
         );
         const data = await response.json();
         setInstructors(data.data || []);
@@ -939,12 +941,12 @@ export default function CreateCourse() {
             <Button
               type="submit"
               className="bg-primary hover:bg-primary/90 text-white min-w-[140px]"
-              disabled={isUploading}
+              disabled={isSaving || isUploading}
             >
-              {isUploading ? (
+              {isSaving || isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
+                  {isUploading ? "Uploading..." : "Creating..."}
                 </>
               ) : (
                 <>

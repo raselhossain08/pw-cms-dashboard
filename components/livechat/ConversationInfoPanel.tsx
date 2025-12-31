@@ -35,11 +35,18 @@ export default function ConversationInfoPanel({
     if (!conversation.participants) return [];
     return conversation.participants.map((p) => {
       if (typeof p === "string") {
-        return { _id: p, firstName: "Unknown", lastName: "User", avatar: "" };
+        // For string participants (guest users), check if we have name from conversation
+        return {
+          _id: p,
+          firstName: conversation.name || "Unknown",
+          lastName: "",
+          avatar: "",
+          email: "",
+        };
       }
       return p;
     });
-  }, [conversation.participants]);
+  }, [conversation.participants, conversation.name]);
 
   // Mock data for shared files and links
   const sharedFiles = [
@@ -104,6 +111,11 @@ export default function ConversationInfoPanel({
               {conversation.name}
             </h4>
             <p className="text-sm text-gray-500">{conversation.topic}</p>
+            {conversation.userEmail && (
+              <p className="text-xs text-gray-400 mt-1">
+                {conversation.userEmail}
+              </p>
+            )}
           </div>
 
           <Separator />
@@ -160,7 +172,13 @@ export default function ConversationInfoPanel({
                     <p className="text-sm font-medium text-secondary truncate">
                       {participant.firstName} {participant.lastName}
                     </p>
-                    <p className="text-xs text-gray-500">Online</p>
+                    <p className="text-xs text-gray-500">
+                      {participant.email ||
+                        (conversation.userEmail &&
+                        participant._id.startsWith("guest_")
+                          ? conversation.userEmail
+                          : "Online")}
+                    </p>
                   </div>
                 </div>
               ))}
