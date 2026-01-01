@@ -183,9 +183,13 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
             <h2 className="text-2xl font-bold text-secondary mb-4">
               Course Description
             </h2>
-            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {course.description || "No description available."}
-            </p>
+            <div
+              className="text-gray-700 leading-relaxed prose prose-lg max-w-none"
+              dangerouslySetInnerHTML={{
+                __html:
+                  course.description || "<p>No description available.</p>",
+              }}
+            />
           </div>
         </div>
 
@@ -263,6 +267,43 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
                   {course.rating.toFixed(1)} ({course.totalRatings})
                 </span>
               </div>
+
+              {course.isFeatured && (
+                <div className="flex items-center justify-center gap-2 py-2 px-3 bg-yellow-50 text-yellow-700 rounded-lg border border-yellow-200">
+                  <Star className="w-4 h-4 fill-current" />
+                  <span className="text-sm font-semibold">Featured Course</span>
+                </div>
+              )}
+
+              {course.providesCertificate && (
+                <div className="flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
+                  <Award className="w-4 h-4" />
+                  <span className="text-sm font-semibold">
+                    Certificate Provided
+                  </span>
+                </div>
+              )}
+
+              {course.moneyBackGuarantee > 0 && (
+                <div className="flex items-center justify-center gap-2 py-2 px-3 bg-green-50 text-green-700 rounded-lg border border-green-200">
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="text-sm font-semibold">
+                    {course.moneyBackGuarantee} Day Money Back
+                  </span>
+                </div>
+              )}
+
+              {course.language && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Globe className="w-5 h-5" />
+                    <span>Language</span>
+                  </div>
+                  <span className="font-semibold text-secondary uppercase">
+                    {course.language}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -339,6 +380,38 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
                   </Badge>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Aircraft Types */}
+          {course.aircraftTypes && course.aircraftTypes.length > 0 && (
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h3 className="font-semibold text-secondary mb-4">
+                Aircraft Types
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {course.aircraftTypes.map((aircraft: string, idx: number) => (
+                  <Badge
+                    key={idx}
+                    variant="outline"
+                    className="bg-blue-50 text-blue-700 border-blue-300"
+                  >
+                    {aircraft}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Excerpt */}
+          {course.excerpt && (
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h3 className="font-semibold text-secondary mb-3">
+                Quick Overview
+              </h3>
+              <p className="text-gray-700 text-sm leading-relaxed">
+                {course.excerpt}
+              </p>
             </div>
           )}
         </div>

@@ -18,6 +18,8 @@ import {
   Eye,
   Save,
   Trash2,
+  Star,
+  Award,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RichTextEditor } from "@/components/shared/RichTextEditor";
 
 export default function CreateCourse() {
   const router = useRouter();
@@ -51,11 +54,18 @@ export default function CreateCourse() {
     React.useState<string>("");
   const [level, setLevel] = React.useState<string>("beginner");
   const [type, setType] = React.useState<string>("theoretical");
-  const [status, setStatus] = React.useState<string>("draft");
   const [maxStudents, setMaxStudents] = React.useState<string>("20");
   const [activeTab, setActiveTab] = React.useState("basic");
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDragging, setIsDragging] = React.useState(false);
+  const [description, setDescription] = React.useState<string>("");
+  const [content, setContent] = React.useState<string>("");
+  const [isFeatured, setIsFeatured] = React.useState(false);
+  const [providesCertificate, setProvidesCertificate] = React.useState(false);
+  const [aircraftTypes, setAircraftTypes] = React.useState<string[]>([]);
+  const [excerpt, setExcerpt] = React.useState("");
+  const [language, setLanguage] = React.useState("en");
+  const [moneyBackGuarantee, setMoneyBackGuarantee] = React.useState("30");
 
   React.useEffect(() => {
     const fetchInstructors = async () => {
@@ -186,8 +196,9 @@ export default function CreateCourse() {
             e.preventDefault();
             const fd = new FormData(e.currentTarget as HTMLFormElement);
             const title = String(fd.get("title") || "").trim();
-            const description = String(fd.get("description") || "").trim();
-            const content = String(fd.get("content") || "").trim();
+            // Use state values for description and content (from RichTextEditor)
+            const descriptionValue = description.trim();
+            const contentValue = content.trim();
             const level = String(fd.get("level") || "beginner");
             const type = String(fd.get("type") || "theoretical");
             const isFree = fd.get("isFree") === "on";
@@ -199,7 +210,6 @@ export default function CreateCourse() {
                 : undefined;
             const duration = Number(fd.get("duration") || 1);
             const maxStudents = Number(fd.get("maxStudents") || 1);
-            const status = String(fd.get("status") || "draft");
             const instructor = String(fd.get("instructor") || "").trim();
             const prerequisitesInput = String(fd.get("prerequisites") || "");
             const learningObjectivesInput = String(
@@ -267,8 +277,9 @@ export default function CreateCourse() {
               const createPayload: any = {
                 title,
                 slug,
-                description,
-                content: content || undefined,
+                description: descriptionValue,
+                content: contentValue || undefined,
+                excerpt: excerpt || undefined,
                 level: level as any,
                 type: type as any,
                 price,
@@ -277,13 +288,18 @@ export default function CreateCourse() {
                 duration: Math.max(duration, 1),
                 durationHours: Math.max(duration, 1),
                 maxStudents,
-                isPublished: status === "published",
+                isPublished: true,
                 tags,
                 categories: selectedCats.length ? selectedCats : undefined,
                 prerequisites,
                 learningObjectives,
                 instructor: instructor || undefined,
                 module: moduleId || undefined, // Auto-link to module if moduleId is provided
+                aircraftTypes: aircraftTypes.length ? aircraftTypes : undefined,
+                isFeatured,
+                providesCertificate,
+                moneyBackGuarantee: Number(moneyBackGuarantee),
+                language,
               };
 
               // Only include thumbnail if it has a value
@@ -403,12 +419,29 @@ export default function CreateCourse() {
 
                   <div>
                     <label className="text-sm font-medium text-secondary block mb-2">
-                      Brief Description
+                      Short Excerpt
                     </label>
                     <textarea
-                      name="description"
-                      rows={4}
+                      value={excerpt}
+                      onChange={(e) => setExcerpt(e.target.value)}
+                      rows={3}
+                      placeholder="A brief one or two sentence description for previews..."
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                    />
+                    <input type="hidden" name="excerpt" value={excerpt} />
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Short description that appears in course cards and
+                      previews
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-secondary block mb-4">
+                      Brief Description
+                    </label>
+                    <RichTextEditor
+                      content={description}
+                      onChange={setDescription}
                       placeholder="Brief course description that will appear in course listings"
                     />
                   </div>
@@ -443,6 +476,32 @@ export default function CreateCourse() {
                     />
                     <p className="text-xs text-gray-500 mt-1.5">
                       Select the instructor who will teach this course
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-secondary block mb-2">
+                      Aircraft Types
+                    </label>
+                    <input
+                      value={aircraftTypes.join(", ")}
+                      onChange={(e) => {
+                        const types = e.target.value
+                          .split(",")
+                          .map((t) => t.trim())
+                          .filter(Boolean);
+                        setAircraftTypes(types);
+                      }}
+                      placeholder="e.g., Boeing 737, Airbus A320, Citation CJ3+"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    />
+                    <input
+                      type="hidden"
+                      name="aircraftTypes"
+                      value={JSON.stringify(aircraftTypes)}
+                    />
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Comma-separated list of aircraft covered in this course
                     </p>
                   </div>
                 </div>
@@ -576,20 +635,98 @@ export default function CreateCourse() {
                           }
                         />
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-secondary block mb-2">
-                          Status *
+
+                      <div className="border-t pt-4 space-y-4">
+                        <h4 className="text-sm font-semibold text-secondary mb-3">
+                          Additional Options
+                        </h4>
+
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isFeatured}
+                            onChange={(e) => setIsFeatured(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm font-medium text-secondary flex items-center gap-1.5">
+                            <Star className="w-4 h-4" /> Featured Course
+                          </span>
                         </label>
-                        <Select value={status} onValueChange={setStatus}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="draft">Draft</SelectItem>
-                            <SelectItem value="published">Published</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <input type="hidden" name="status" value={status} />
+                        <input
+                          type="hidden"
+                          name="isFeatured"
+                          value={isFeatured.toString()}
+                        />
+
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={providesCertificate}
+                            onChange={(e) =>
+                              setProvidesCertificate(e.target.checked)
+                            }
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm font-medium text-secondary flex items-center gap-1.5">
+                            <Award className="w-4 h-4" /> Provides Certificate
+                          </span>
+                        </label>
+                        <input
+                          type="hidden"
+                          name="providesCertificate"
+                          value={providesCertificate.toString()}
+                        />
+
+                        <div>
+                          <label className="text-sm font-medium text-secondary block mb-2">
+                            Money Back Guarantee (days)
+                          </label>
+                          <Select
+                            value={moneyBackGuarantee}
+                            onValueChange={setMoneyBackGuarantee}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">No Guarantee</SelectItem>
+                              <SelectItem value="7">7 Days</SelectItem>
+                              <SelectItem value="14">14 Days</SelectItem>
+                              <SelectItem value="30">30 Days</SelectItem>
+                              <SelectItem value="60">60 Days</SelectItem>
+                              <SelectItem value="90">90 Days</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <input
+                            type="hidden"
+                            name="moneyBackGuarantee"
+                            value={moneyBackGuarantee}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-medium text-secondary block mb-2">
+                            Primary Language
+                          </label>
+                          <Select value={language} onValueChange={setLanguage}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="en">English</SelectItem>
+                              <SelectItem value="es">Spanish</SelectItem>
+                              <SelectItem value="fr">French</SelectItem>
+                              <SelectItem value="de">German</SelectItem>
+                              <SelectItem value="pt">Portuguese</SelectItem>
+                              <SelectItem value="zh">Chinese</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <input
+                            type="hidden"
+                            name="language"
+                            value={language}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -882,18 +1019,14 @@ export default function CreateCourse() {
             {/* Content & Details Tab */}
             <TabsContent value="content" className="p-8 space-y-6">
               <div>
-                <label className="text-sm font-medium text-secondary block mb-2">
+                <label className="text-sm font-medium text-secondary block mb-4">
                   Detailed Content
                 </label>
-                <textarea
-                  name="content"
-                  rows={8}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                <RichTextEditor
+                  content={content}
+                  onChange={setContent}
                   placeholder="Detailed course content and curriculum description"
                 />
-                <p className="text-xs text-gray-500 mt-1.5">
-                  Rich text editor support coming soon
-                </p>
               </div>
 
               <div>

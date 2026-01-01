@@ -64,6 +64,9 @@ import {
   PowerOff,
   CheckSquare,
   Copy,
+  Play,
+  Pause,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -200,6 +203,8 @@ export default function Lessons() {
     React.useState<string>("");
   const [previewAutoplay, setPreviewAutoplay] = React.useState(false);
   const [searchLoading, setSearchLoading] = React.useState(false);
+  const [editModuleOpen, setEditModuleOpen] = React.useState(false);
+  const [editModuleData, setEditModuleData] = React.useState<any>(null);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -234,6 +239,15 @@ export default function Lessons() {
   const [expandedModules, setExpandedModules] = React.useState<Set<string>>(
     new Set()
   );
+  // Form state for create lesson to persist across tab switches
+  const [createFormData, setCreateFormData] = React.useState({
+    title: "",
+    description: "",
+    content: "",
+    duration: "0",
+    type: LessonType.VIDEO,
+    isFree: false,
+  });
 
   function formatTime(t: number) {
     const m = Math.floor(t / 60);
@@ -1869,7 +1883,10 @@ export default function Lessons() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setEditLesson(moduleLessons[0])}
+                            onClick={() => {
+                              setEditModuleData(module);
+                              setEditModuleOpen(true);
+                            }}
                             className="text-slate-600 hover:text-primary hover:bg-primary/10"
                           >
                             <Pencil className="w-4 h-4 mr-1" />
@@ -2126,7 +2143,29 @@ export default function Lessons() {
       </div>
 
       {/* Create Lesson Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) {
+            setVideoPreview(null);
+            setVideoFile(null);
+            setThumbnailPreview(null);
+            setThumbnailFile(null);
+            setAutoDurationSeconds(null);
+            setSeoTags([]);
+            setTagInput("");
+            setCreateFormData({
+              title: "",
+              description: "",
+              content: "",
+              duration: "0",
+              type: LessonType.VIDEO,
+              isFree: false,
+            });
+          }
+        }}
+      >
         <DialogContent className="min-w-[80vw] max-w-[80vw] w-[95vw] max-h-[95vh] overflow-y-auto flex flex-col ">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-2xl font-bold flex items-center gap-2">
@@ -2141,30 +2180,22 @@ export default function Lessons() {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              const form = e.currentTarget as HTMLFormElement;
-              const fd = new FormData(form);
 
-              const title = String(fd.get("title") || "");
-              const description = String(fd.get("description") || "");
-              const type = String(
-                fd.get("type") || createPreset?.type || LessonType.VIDEO
-              );
-              const durationInput = String(fd.get("duration") || "0");
+              const title = createFormData.title;
+              const description = createFormData.description;
+              const type = createFormData.type;
+              const durationInput = createFormData.duration;
               const durationMinutes =
                 Number(durationInput.replace(/[^0-9]/g, "")) || 0;
               let duration = durationMinutes * 60;
               if (autoDurationSeconds && autoDurationSeconds > 0) {
                 duration = autoDurationSeconds;
               }
-              const content = String(fd.get("content") || "");
-              const videoUrl = String(fd.get("videoUrl") || "");
-              const isFree = fd.get("isFree") === "on";
-              const status = String(fd.get("status") || LessonStatus.DRAFT);
-              const moduleId = String(
-                fd.get("moduleId") || selectedModuleId || ""
-              );
-              const metaTitle = String(fd.get("metaTitle") || "");
-              const metaDescription = String(fd.get("metaDescription") || "");
+              const content = createFormData.content;
+              const videoUrl = videoPreview || "";
+              const isFree = createFormData.isFree;
+              const status = LessonStatus.PUBLISHED;
+              const moduleId = selectedModuleId || "";
 
               if (!selectedCourseId) {
                 push({
@@ -2225,15 +2256,6 @@ export default function Lessons() {
               handleCreateLesson(selectedCourseId, payload);
             }}
             className="space-y-6"
-            onReset={() => {
-              setVideoPreview(null);
-              setVideoFile(null);
-              setThumbnailPreview(null);
-              setThumbnailFile(null);
-              setAutoDurationSeconds(null);
-              setSeoTags([]);
-              setTagInput("");
-            }}
           >
             <div className="flex-1 overflow-y-auto pr-2">
               <Tabs defaultValue="basic" className="w-full">
@@ -2281,6 +2303,13 @@ export default function Lessons() {
                           placeholder="e.g., Introduction to Flight Controls"
                           required
                           className="text-base"
+                          value={createFormData.title}
+                          onChange={(e) =>
+                            setCreateFormData({
+                              ...createFormData,
+                              title: e.target.value,
+                            })
+                          }
                         />
                       </div>
 
@@ -2335,20 +2364,13 @@ export default function Lessons() {
                             <Layers className="w-4 h-4 text-primary" />
                             Lesson Type *
                           </Label>
-                          <input
-                            type="hidden"
-                            name="type"
-                            value={createPreset?.type || LessonType.VIDEO}
-                          />
                           <Select
-                            defaultValue={
-                              createPreset?.type || LessonType.VIDEO
-                            }
+                            value={createFormData.type}
                             onValueChange={(value) => {
-                              const input = document.querySelector(
-                                'input[name="type"]'
-                              ) as HTMLInputElement;
-                              if (input) input.value = value;
+                              setCreateFormData({
+                                ...createFormData,
+                                type: value as LessonType,
+                              });
                             }}
                           >
                             <SelectTrigger id="lesson-type">
@@ -2382,49 +2404,37 @@ export default function Lessons() {
                             </SelectContent>
                           </Select>
                         </div>
+
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="duration"
+                            className="flex items-center gap-2"
+                          >
+                            <Clock className="w-4 h-4 text-primary" />
+                            Duration (minutes)
+                          </Label>
+                          <Input
+                            id="duration"
+                            name="duration"
+                            type="number"
+                            min="0"
+                            value={createFormData.duration}
+                            onChange={(e) =>
+                              setCreateFormData({
+                                ...createFormData,
+                                duration: e.target.value,
+                              })
+                            }
+                            placeholder="Auto-detected from video"
+                          />
+                        </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label
-                          htmlFor="status"
-                          className="flex items-center gap-2"
-                        >
-                          <Target className="w-4 h-4 text-primary" />
-                          Status
-                        </Label>
-                        <input
-                          type="hidden"
-                          name="status"
-                          value={LessonStatus.DRAFT}
-                        />
-                        <Select
-                          defaultValue={LessonStatus.DRAFT}
-                          onValueChange={(value) => {
-                            const input = document.querySelector(
-                              'input[name="status"]'
-                            ) as HTMLInputElement;
-                            if (input) input.value = value;
-                          }}
-                        >
-                          <SelectTrigger id="status">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={LessonStatus.DRAFT}>
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-amber-500" />
-                                <span>Draft</span>
-                              </div>
-                            </SelectItem>
-                            <SelectItem value={LessonStatus.PUBLISHED}>
-                              <div className="flex items-center gap-2">
-                                <CheckCircle className="w-4 h-4 text-green-500" />
-                                <span>Published</span>
-                              </div>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      <input
+                        type="hidden"
+                        name="status"
+                        value={LessonStatus.PUBLISHED}
+                      />
 
                       {autoDurationSeconds !== null &&
                         autoDurationSeconds > 0 && (
@@ -2456,11 +2466,28 @@ export default function Lessons() {
                           rows={3}
                           placeholder="Brief description of the lesson content..."
                           className="resize-none"
+                          value={createFormData.description}
+                          onChange={(e) =>
+                            setCreateFormData({
+                              ...createFormData,
+                              description: e.target.value,
+                            })
+                          }
                         />
                       </div>
 
                       <div className="flex items-center space-x-2 p-4 bg-muted/50 rounded-lg">
-                        <Switch id="isFree" name="isFree" />
+                        <Switch
+                          id="isFree"
+                          name="isFree"
+                          checked={createFormData.isFree}
+                          onCheckedChange={(checked) =>
+                            setCreateFormData({
+                              ...createFormData,
+                              isFree: checked,
+                            })
+                          }
+                        />
                         <Label
                           htmlFor="isFree"
                           className="flex items-center gap-2 cursor-pointer"
@@ -2560,52 +2587,84 @@ export default function Lessons() {
                             }}
                           />
                           {videoPreview && (
-                            <div className="relative border border-border rounded-lg overflow-hidden bg-muted">
-                              <ResponsivePlayer
-                                url={videoPreview}
-                                className="h-48"
-                                onDuration={(d: number) => {
-                                  setAutoDurationSeconds(d);
-                                  const input = document.querySelector(
-                                    'input[name="duration"]'
-                                  ) as HTMLInputElement | null;
-                                  if (input)
-                                    input.value = String(
-                                      Math.max(1, Math.ceil(d / 60))
-                                    );
-                                }}
-                              />
-                              {uploadProgress > 0 && uploadProgress < 100 && (
-                                <>
-                                  <div className="absolute bottom-0 left-0 right-0 bg-muted h-2">
-                                    <div
-                                      className="bg-primary h-2 transition-all"
-                                      style={{ width: `${uploadProgress}%` }}
-                                    />
-                                  </div>
-                                  <div className="absolute bottom-3 right-3 bg-background/90 backdrop-blur-sm text-foreground text-xs px-3 py-1.5 rounded-full font-medium shadow-lg">
-                                    <Loader2 className="w-3 h-3 inline-block animate-spin mr-1" />
-                                    {uploadProgress}%
-                                  </div>
-                                </>
-                              )}
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="destructive"
-                                onClick={() => {
-                                  setVideoPreview(null);
-                                  setVideoFile(null);
-                                  setThumbnailPreview(null);
-                                  setThumbnailFile(null);
-                                  setAutoDurationSeconds(null);
-                                  if (videoInputRef.current)
-                                    videoInputRef.current.value = "";
-                                }}
-                                className="absolute top-2 right-2"
-                              >
-                                <X className="w-4 h-4" />
-                              </Button>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-sm font-medium flex items-center gap-2">
+                                  <PlayCircle className="w-4 h-4 text-primary" />
+                                  Video Preview
+                                </Label>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    setPreviewAutoplay(!previewAutoplay)
+                                  }
+                                >
+                                  {previewAutoplay ? (
+                                    <>
+                                      <Pause className="w-3 h-3 mr-1" />
+                                      Auto-play Off
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Play className="w-3 h-3 mr-1" />
+                                      Auto-play On
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                              <div className="relative border border-border rounded-lg overflow-hidden bg-muted">
+                                <ResponsivePlayer
+                                  url={videoPreview}
+                                  className="h-64"
+                                  autoPlay={previewAutoplay}
+                                  onDuration={(d: number) => {
+                                    setAutoDurationSeconds(d);
+                                    setCreateFormData({
+                                      ...createFormData,
+                                      duration: String(
+                                        Math.max(1, Math.ceil(d / 60))
+                                      ),
+                                    });
+                                  }}
+                                />
+                                {uploadProgress > 0 && uploadProgress < 100 && (
+                                  <>
+                                    <div className="absolute bottom-0 left-0 right-0 bg-muted h-2">
+                                      <div
+                                        className="bg-primary h-2 transition-all"
+                                        style={{ width: `${uploadProgress}%` }}
+                                      />
+                                    </div>
+                                    <div className="absolute bottom-3 right-3 bg-background/90 backdrop-blur-sm text-foreground text-xs px-3 py-1.5 rounded-full font-medium shadow-lg">
+                                      <Loader2 className="w-3 h-3 inline-block animate-spin mr-1" />
+                                      {uploadProgress}%
+                                    </div>
+                                  </>
+                                )}
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="destructive"
+                                  onClick={() => {
+                                    setVideoPreview(null);
+                                    setVideoFile(null);
+                                    setThumbnailPreview(null);
+                                    setThumbnailFile(null);
+                                    setAutoDurationSeconds(null);
+                                    if (videoInputRef.current)
+                                      videoInputRef.current.value = "";
+                                  }}
+                                  className="absolute top-2 right-2"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              </div>
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Info className="w-3 h-3" />
+                                Preview your video before creating the lesson
+                              </p>
                             </div>
                           )}
                         </div>
@@ -2625,6 +2684,13 @@ export default function Lessons() {
                           rows={8}
                           placeholder="Write your lesson content here..."
                           className="resize-none font-mono text-sm"
+                          value={createFormData.content}
+                          onChange={(e) =>
+                            setCreateFormData({
+                              ...createFormData,
+                              content: e.target.value,
+                            })
+                          }
                         />
                         <p className="text-xs text-muted-foreground">
                           Use markdown formatting for better content structure.
@@ -3355,15 +3421,55 @@ export default function Lessons() {
                           Additional Settings
                         </CardTitle>
                         <CardDescription>
-                          Configure additional lesson settings
+                          Configure additional lesson settings and metadata
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-sm text-blue-700">
-                            <strong>Note:</strong> Additional settings and
-                            metadata can be configured here.
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <Target className="w-4 h-4 text-primary" />
+                            Lesson Order/Position
+                          </Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            defaultValue={editLesson.position}
+                            placeholder="Lesson position in the course"
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Set the order in which this lesson appears in the
+                            course
                           </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <Tag className="w-4 h-4 text-primary" />
+                            Lesson Tags
+                          </Label>
+                          <Input
+                            placeholder="Add tags separated by commas (e.g., beginner, important, theory)"
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Tags help organize and filter lessons
+                          </p>
+                        </div>
+
+                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="flex items-start gap-3">
+                            <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-blue-900">
+                                Additional Metadata
+                              </p>
+                              <p className="text-xs text-blue-700 mt-1">
+                                More advanced settings and metadata options will
+                                be available here in future updates.
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -3434,12 +3540,44 @@ export default function Lessons() {
               <div className="space-y-4">
                 {previewLesson.type === LessonType.VIDEO &&
                   previewLesson.videoUrl && (
-                    <ResponsivePlayer
-                      url={previewLesson.videoUrl}
-                      poster={previewLesson.thumbnail}
-                      className="w-full"
-                      autoPlay={previewAutoplay}
-                    />
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-semibold flex items-center gap-2">
+                          <PlayCircle className="w-5 h-5 text-primary" />
+                          Video Preview
+                        </Label>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setPreviewAutoplay(!previewAutoplay)}
+                        >
+                          {previewAutoplay ? (
+                            <>
+                              <Pause className="w-3 h-3 mr-1" />
+                              Auto-play Off
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3 h-3 mr-1" />
+                              Auto-play On
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      <div className="relative border border-border rounded-lg overflow-hidden bg-muted">
+                        <ResponsivePlayer
+                          url={previewLesson.videoUrl}
+                          poster={previewLesson.thumbnail}
+                          className="h-96"
+                          autoPlay={previewAutoplay}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Info className="w-3 h-3" />
+                        Use the video controls to play, pause, and adjust volume
+                      </p>
+                    </div>
                   )}
                 <div className="flex items-start space-x-4">
                   <div className="flex-1">
@@ -3515,12 +3653,15 @@ export default function Lessons() {
       </Dialog>
 
       <Dialog open={createQuizOpen} onOpenChange={setCreateQuizOpen}>
-        <DialogContent className="max-w-4xl w-[95vw] max-h-[95vh] overflow-hidden flex flex-col">
+        <DialogContent className="min-w-[90vw] max-w-[90vw] w-[95vw] max-h-[95vh] overflow-hidden flex flex-col">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="text-2xl font-bold">
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+              <CircleHelp className="w-6 h-6 text-purple-600" />
               Create Quiz
             </DialogTitle>
-            <DialogDescription>Build a quiz for this course</DialogDescription>
+            <DialogDescription>
+              Build an interactive quiz to test student knowledge
+            </DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => {
@@ -3591,204 +3732,433 @@ export default function Lessons() {
             className="space-y-4"
           >
             <div className="flex-1 overflow-y-auto pr-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                    Quiz Title *
-                  </label>
-                  <input
-                    className="w-full px-4 py-2.5 border rounded-lg"
-                    value={quizForm.title}
-                    onChange={(e) =>
-                      setQuizForm({ ...quizForm, title: e.target.value })
-                    }
-                    required
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                    Description
-                  </label>
-                  <textarea
-                    className="w-full px-4 py-2.5 border rounded-lg"
-                    rows={3}
-                    value={quizForm.description}
-                    onChange={(e) =>
-                      setQuizForm({ ...quizForm, description: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                    Duration (minutes)
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="w-full px-4 py-2.5 border rounded-lg"
-                    value={quizForm.durationMinutes}
-                    onChange={(e) =>
-                      setQuizForm({
-                        ...quizForm,
-                        durationMinutes: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                    Passing Score (%)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    className="w-full px-4 py-2.5 border rounded-lg"
-                    value={quizForm.passingScore}
-                    onChange={(e) =>
-                      setQuizForm({
-                        ...quizForm,
-                        passingScore: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                    Attempts Allowed
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="w-full px-4 py-2.5 border rounded-lg"
-                    value={quizForm.attemptsAllowed}
-                    onChange={(e) =>
-                      setQuizForm({
-                        ...quizForm,
-                        attemptsAllowed: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-                <div className="flex items-center gap-4">
-                  <label className="inline-flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={quizForm.shuffleQuestions}
-                      onChange={(e) =>
-                        setQuizForm({
-                          ...quizForm,
-                          shuffleQuestions: e.target.checked,
-                        })
-                      }
-                    />{" "}
-                    Shuffle Questions
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={quizForm.showCorrectAnswers}
-                      onChange={(e) =>
-                        setQuizForm({
-                          ...quizForm,
-                          showCorrectAnswers: e.target.checked,
-                        })
-                      }
-                    />{" "}
-                    Show Answers
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={quizForm.allowReview}
-                      onChange={(e) =>
-                        setQuizForm({
-                          ...quizForm,
-                          allowReview: e.target.checked,
-                        })
-                      }
-                    />{" "}
-                    Allow Review
-                  </label>
-                </div>
-              </div>
-              <div className="border-t pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold text-gray-700">
-                    Questions
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setQuizForm({
-                        ...quizForm,
-                        questions: [
-                          ...quizForm.questions,
-                          {
-                            type: "multiple_choice",
-                            question: "",
-                            options: ["", "", "", ""],
-                            correctAnswer: "",
-                            points: 1,
-                            order: quizForm.questions.length + 1,
-                          },
-                        ],
-                      })
-                    }
+              <Tabs defaultValue="basic" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger
+                    value="basic"
+                    className="flex items-center gap-2"
                   >
-                    Add Question
-                  </Button>
-                </div>
-                <div className="space-y-3">
-                  {quizForm.questions.map((q, idx) => (
-                    <div key={idx} className="border rounded-lg p-3">
-                      <input
-                        className="w-full px-3 py-2 border rounded mb-2"
-                        placeholder={`Question ${idx + 1}`}
-                        value={q.question}
-                        onChange={(e) => {
-                          const arr = [...quizForm.questions];
-                          arr[idx] = { ...arr[idx], question: e.target.value };
-                          setQuizForm({ ...quizForm, questions: arr });
-                        }}
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        {(q.options || []).map((opt, i) => (
-                          <input
-                            key={i}
-                            className="px-3 py-2 border rounded"
-                            placeholder={`Option ${i + 1}`}
-                            value={opt}
-                            onChange={(e) => {
-                              const arr = [...quizForm.questions];
-                              const opts = [...(arr[idx].options || [])];
-                              opts[i] = e.target.value;
-                              arr[idx] = { ...arr[idx], options: opts };
-                              setQuizForm({ ...quizForm, questions: arr });
-                            }}
+                    <FileText className="w-4 h-4" />
+                    Basic Info
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="questions"
+                    className="flex items-center gap-2"
+                  >
+                    <CircleHelp className="w-4 h-4" />
+                    Questions ({quizForm.questions.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="basic" className="space-y-4 mt-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Quiz Settings</CardTitle>
+                      <CardDescription>
+                        Configure basic quiz information and rules
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="md:col-span-2">
+                          <Label
+                            htmlFor="quiz-title"
+                            className="flex items-center gap-2"
+                          >
+                            <FileText className="w-4 h-4 text-primary" />
+                            Quiz Title *
+                          </Label>
+                          <Input
+                            id="quiz-title"
+                            className="mt-2"
+                            placeholder="e.g., Module 1 Assessment"
+                            value={quizForm.title}
+                            onChange={(e) =>
+                              setQuizForm({
+                                ...quizForm,
+                                title: e.target.value,
+                              })
+                            }
+                            required
                           />
-                        ))}
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label
+                            htmlFor="quiz-description"
+                            className="flex items-center gap-2"
+                          >
+                            <FileText className="w-4 h-4 text-primary" />
+                            Description
+                          </Label>
+                          <Textarea
+                            id="quiz-description"
+                            className="mt-2"
+                            rows={3}
+                            placeholder="Brief description of what this quiz covers..."
+                            value={quizForm.description}
+                            onChange={(e) =>
+                              setQuizForm({
+                                ...quizForm,
+                                description: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor="quiz-duration"
+                            className="flex items-center gap-2"
+                          >
+                            <Clock className="w-4 h-4 text-primary" />
+                            Duration (minutes)
+                          </Label>
+                          <Input
+                            id="quiz-duration"
+                            type="number"
+                            min={1}
+                            className="mt-2"
+                            value={quizForm.durationMinutes}
+                            onChange={(e) =>
+                              setQuizForm({
+                                ...quizForm,
+                                durationMinutes: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor="quiz-passing"
+                            className="flex items-center gap-2"
+                          >
+                            <Target className="w-4 h-4 text-primary" />
+                            Passing Score (%)
+                          </Label>
+                          <Input
+                            id="quiz-passing"
+                            type="number"
+                            min={0}
+                            max={100}
+                            className="mt-2"
+                            value={quizForm.passingScore}
+                            onChange={(e) =>
+                              setQuizForm({
+                                ...quizForm,
+                                passingScore: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor="quiz-attempts"
+                            className="flex items-center gap-2"
+                          >
+                            <CheckCircle className="w-4 h-4 text-primary" />
+                            Attempts Allowed
+                          </Label>
+                          <Input
+                            id="quiz-attempts"
+                            type="number"
+                            min={1}
+                            className="mt-2"
+                            value={quizForm.attemptsAllowed}
+                            onChange={(e) =>
+                              setQuizForm({
+                                ...quizForm,
+                                attemptsAllowed: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <Label className="text-sm font-medium">
+                            Quiz Options
+                          </Label>
+                          <div className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <Switch
+                                id="shuffle-questions"
+                                checked={quizForm.shuffleQuestions}
+                                onCheckedChange={(checked) =>
+                                  setQuizForm({
+                                    ...quizForm,
+                                    shuffleQuestions: checked,
+                                  })
+                                }
+                              />
+                              <Label
+                                htmlFor="shuffle-questions"
+                                className="cursor-pointer"
+                              >
+                                Shuffle Questions
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Switch
+                                id="show-answers"
+                                checked={quizForm.showCorrectAnswers}
+                                onCheckedChange={(checked) =>
+                                  setQuizForm({
+                                    ...quizForm,
+                                    showCorrectAnswers: checked,
+                                  })
+                                }
+                              />
+                              <Label
+                                htmlFor="show-answers"
+                                className="cursor-pointer"
+                              >
+                                Show Correct Answers
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Switch
+                                id="allow-review"
+                                checked={quizForm.allowReview}
+                                onCheckedChange={(checked) =>
+                                  setQuizForm({
+                                    ...quizForm,
+                                    allowReview: checked,
+                                  })
+                                }
+                              />
+                              <Label
+                                htmlFor="allow-review"
+                                className="cursor-pointer"
+                              >
+                                Allow Review After Submission
+                              </Label>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <input
-                        className="mt-2 px-3 py-2 border rounded w-full"
-                        placeholder="Correct answer"
-                        value={(q.correctAnswer as string) || ""}
-                        onChange={(e) => {
-                          const arr = [...quizForm.questions];
-                          arr[idx] = {
-                            ...arr[idx],
-                            correctAnswer: e.target.value,
-                          };
-                          setQuizForm({ ...quizForm, questions: arr });
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="questions" className="space-y-4 mt-4">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg">
+                            Quiz Questions
+                          </CardTitle>
+                          <CardDescription>
+                            Add and manage quiz questions
+                          </CardDescription>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            setQuizForm({
+                              ...quizForm,
+                              questions: [
+                                ...quizForm.questions,
+                                {
+                                  type: "multiple_choice",
+                                  question: "",
+                                  options: ["", "", "", ""],
+                                  correctAnswer: "",
+                                  points: 1,
+                                  order: quizForm.questions.length + 1,
+                                },
+                              ],
+                            })
+                          }
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Question
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {quizForm.questions.length === 0 ? (
+                        <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                          <CircleHelp className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                          <p className="text-gray-600 mb-2">
+                            No questions added yet
+                          </p>
+                          <p className="text-sm text-gray-500 mb-4">
+                            Click "Add Question" to start building your quiz
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              setQuizForm({
+                                ...quizForm,
+                                questions: [
+                                  {
+                                    type: "multiple_choice",
+                                    question: "",
+                                    options: ["", "", "", ""],
+                                    correctAnswer: "",
+                                    points: 1,
+                                    order: 1,
+                                  },
+                                ],
+                              })
+                            }
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add First Question
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {quizForm.questions.map((q, idx) => (
+                            <Card
+                              key={idx}
+                              className="border-l-4 border-l-purple-500"
+                            >
+                              <CardHeader className="pb-3">
+                                <div className="flex items-start justify-between">
+                                  <CardTitle className="text-base flex items-center gap-2">
+                                    <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-sm font-semibold">
+                                      Q{idx + 1}
+                                    </span>
+                                    Question {idx + 1}
+                                  </CardTitle>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      const arr = quizForm.questions.filter(
+                                        (_, i) => i !== idx
+                                      );
+                                      setQuizForm({
+                                        ...quizForm,
+                                        questions: arr,
+                                      });
+                                    }}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </CardHeader>
+                              <CardContent className="space-y-3">
+                                <div>
+                                  <Label className="text-sm font-medium mb-2 block">
+                                    Question Text *
+                                  </Label>
+                                  <Textarea
+                                    placeholder={`Enter question ${idx + 1}...`}
+                                    value={q.question}
+                                    onChange={(e) => {
+                                      const arr = [...quizForm.questions];
+                                      arr[idx] = {
+                                        ...arr[idx],
+                                        question: e.target.value,
+                                      };
+                                      setQuizForm({
+                                        ...quizForm,
+                                        questions: arr,
+                                      });
+                                    }}
+                                    rows={2}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-sm font-medium mb-2 block">
+                                    Answer Options
+                                  </Label>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {(q.options || []).map((opt, i) => (
+                                      <div
+                                        key={i}
+                                        className="flex items-center gap-2"
+                                      >
+                                        <span className="text-sm font-semibold text-gray-500 w-6">
+                                          {String.fromCharCode(65 + i)}.
+                                        </span>
+                                        <Input
+                                          placeholder={`Option ${String.fromCharCode(
+                                            65 + i
+                                          )}`}
+                                          value={opt}
+                                          onChange={(e) => {
+                                            const arr = [...quizForm.questions];
+                                            const opts = [
+                                              ...(arr[idx].options || []),
+                                            ];
+                                            opts[i] = e.target.value;
+                                            arr[idx] = {
+                                              ...arr[idx],
+                                              options: opts,
+                                            };
+                                            setQuizForm({
+                                              ...quizForm,
+                                              questions: arr,
+                                            });
+                                          }}
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
+                                    <CheckCircle className="w-4 h-4 text-green-600" />
+                                    Correct Answer *
+                                  </Label>
+                                  <Input
+                                    placeholder="Enter the correct answer exactly as shown in options"
+                                    value={(q.correctAnswer as string) || ""}
+                                    onChange={(e) => {
+                                      const arr = [...quizForm.questions];
+                                      arr[idx] = {
+                                        ...arr[idx],
+                                        correctAnswer: e.target.value,
+                                      };
+                                      setQuizForm({
+                                        ...quizForm,
+                                        questions: arr,
+                                      });
+                                    }}
+                                    className="border-green-200 focus:border-green-500"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-4 pt-2">
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-sm">Points:</Label>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      value={q.points}
+                                      onChange={(e) => {
+                                        const arr = [...quizForm.questions];
+                                        arr[idx] = {
+                                          ...arr[idx],
+                                          points: Number(e.target.value),
+                                        };
+                                        setQuizForm({
+                                          ...quizForm,
+                                          questions: arr,
+                                        });
+                                      }}
+                                      className="w-20"
+                                    />
+                                  </div>
+                                  <Badge variant="outline" className="text-xs">
+                                    Multiple Choice
+                                  </Badge>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             </div>
-            <DialogFooter className="flex-shrink-0 border-t pt-4 mt-4">
+            <DialogFooter className="flex-shrink-0 border-t pt-4 mt-4 gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -4433,6 +4803,179 @@ export default function Lessons() {
               )}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Module Dialog */}
+      <Dialog open={editModuleOpen} onOpenChange={setEditModuleOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+              <Folder className="w-6 h-6 text-primary" />
+              Edit Module
+            </DialogTitle>
+            <DialogDescription>
+              Update module details and settings
+            </DialogDescription>
+          </DialogHeader>
+          {editModuleData && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget as HTMLFormElement);
+                const title = String(fd.get("title") || "");
+                const description = String(fd.get("description") || "");
+                const status = String(
+                  fd.get("status") || "draft"
+                ) as LessonStatus;
+
+                setActionLoading(true);
+                try {
+                  await modulesService.updateModule(
+                    editModuleData._id || editModuleData.id,
+                    {
+                      title,
+                      description,
+                      status,
+                    }
+                  );
+
+                  push({
+                    type: "success",
+                    message: "Module updated successfully!",
+                  });
+
+                  queryClient.invalidateQueries({
+                    queryKey: ["course-modules"],
+                  });
+                  setEditModuleOpen(false);
+                  setEditModuleData(null);
+                } catch (error: any) {
+                  push({
+                    type: "error",
+                    message: error?.message || "Failed to update module",
+                  });
+                } finally {
+                  setActionLoading(false);
+                }
+              }}
+              className="space-y-6"
+            >
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="module-title"
+                    className="flex items-center gap-2"
+                  >
+                    <Folder className="w-4 h-4 text-primary" />
+                    Module Title *
+                  </Label>
+                  <Input
+                    id="module-title"
+                    name="title"
+                    defaultValue={editModuleData.title}
+                    required
+                    placeholder="e.g., Introduction to Aviation"
+                    className="text-base"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="module-description"
+                    className="flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4 text-primary" />
+                    Description
+                  </Label>
+                  <Textarea
+                    id="module-description"
+                    name="description"
+                    defaultValue={editModuleData.description}
+                    rows={4}
+                    placeholder="Brief description of the module..."
+                    className="resize-none"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="module-status"
+                    className="flex items-center gap-2"
+                  >
+                    <Target className="w-4 h-4 text-primary" />
+                    Status *
+                  </Label>
+                  <Select
+                    name="status"
+                    defaultValue={editModuleData.status || "draft"}
+                  >
+                    <SelectTrigger id="module-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-amber-500" />
+                          <span>Draft</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="published">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <span>Published</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-900">
+                        Module Information
+                      </p>
+                      <p className="text-xs text-blue-700 mt-1">
+                        This module contains{" "}
+                        {editModuleData.lessons?.length || 0} lesson(s). Changes
+                        will be applied immediately.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditModuleOpen(false)}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Update Module
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </main>

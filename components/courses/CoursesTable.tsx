@@ -274,13 +274,23 @@ export default function CoursesTable({
                                     >
                                       {course.title}
                                     </div>
-                                    <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                                       <Badge
                                         variant="outline"
                                         className={getLevelColor(course.level)}
                                       >
                                         {course.level}
                                       </Badge>
+                                      {course.isFeatured && (
+                                        <Badge className="bg-yellow-500 text-white text-xs">
+                                          ⭐ Featured
+                                        </Badge>
+                                      )}
+                                      {course.providesCertificate && (
+                                        <Badge className="bg-blue-500 text-white text-xs">
+                                          🎓 Certificate
+                                        </Badge>
+                                      )}
                                       <span className="text-xs text-gray-500">
                                         {course.duration} hours
                                       </span>
@@ -659,7 +669,12 @@ export default function CoursesTable({
                   <h4 className="font-semibold text-secondary mb-2">
                     Description
                   </h4>
-                  <p className="text-gray-600">{quickViewCourse.description}</p>
+                  <div
+                    className="text-gray-600 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{
+                      __html: quickViewCourse.description,
+                    }}
+                  />
                 </div>
               )}
 
@@ -715,6 +730,63 @@ export default function CoursesTable({
                     </div>
                   </div>
                 )}
+
+              {/* Aircraft Types */}
+              {quickViewCourse.aircraftTypes &&
+                quickViewCourse.aircraftTypes.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold text-secondary mb-2">
+                      Aircraft Types
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {quickViewCourse.aircraftTypes.map((aircraft, idx) => (
+                        <Badge
+                          key={idx}
+                          variant="outline"
+                          className="bg-blue-50 text-blue-700 border-blue-300"
+                        >
+                          {aircraft}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Excerpt */}
+              {quickViewCourse.excerpt && (
+                <div>
+                  <h4 className="font-semibold text-secondary mb-2">
+                    Quick Overview
+                  </h4>
+                  <p className="text-gray-600 text-sm">
+                    {quickViewCourse.excerpt}
+                  </p>
+                </div>
+              )}
+
+              {/* Additional Features */}
+              <div className="flex flex-wrap gap-2">
+                {quickViewCourse.isFeatured && (
+                  <Badge className="bg-yellow-500 text-white">
+                    ⭐ Featured Course
+                  </Badge>
+                )}
+                {quickViewCourse.providesCertificate && (
+                  <Badge className="bg-blue-500 text-white">
+                    🎓 Provides Certificate
+                  </Badge>
+                )}
+                {(quickViewCourse.moneyBackGuarantee ?? 0) > 0 && (
+                  <Badge className="bg-green-500 text-white">
+                    ✓ {quickViewCourse.moneyBackGuarantee} Day Money Back
+                  </Badge>
+                )}
+                {quickViewCourse.language && (
+                  <Badge variant="outline">
+                    🌐 {quickViewCourse.language.toUpperCase()}
+                  </Badge>
+                )}
+              </div>
 
               {/* Action Buttons */}
               <div className="flex items-center gap-3 pt-4 border-t">

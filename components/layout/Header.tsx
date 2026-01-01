@@ -29,7 +29,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { SidebarMobile } from "./Sidebar";
 import { motion } from "framer-motion";
 import {
@@ -255,6 +260,7 @@ export default function Header() {
                 </MotionButton>
               </SheetTrigger>
               <SheetContent side="left" className="p-0 w-80">
+                <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
                 <SidebarMobile />
               </SheetContent>
             </Sheet>
@@ -280,6 +286,7 @@ export default function Header() {
                 </MotionButton>
               </SheetTrigger>
               <SheetContent side="top" className="p-6 space-y-3">
+                <SheetTitle className="sr-only">Search</SheetTitle>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <input

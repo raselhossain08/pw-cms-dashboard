@@ -161,22 +161,28 @@ export default function Quizzes() {
   const courses = (coursesData as any)?.courses || [];
 
   const quizzes: QuizItem[] = React.useMemo(() => {
-    return quizzesData.map((q: QuizDto) => ({
-      id: q._id,
-      title: q.title,
-      description: q.description || "",
-      course: typeof q.course === "object" ? q.course._id : q.course,
-      courseTitle: typeof q.course === "object" ? q.course.title : undefined,
-      questions: Array.isArray(q.questions) ? q.questions.length : 0,
-      duration: q.duration || 60,
-      passingScore: q.passingScore || 70,
-      totalPoints: q.totalPoints || 100,
-      attemptsAllowed: q.attemptsAllowed || 0,
-      status: q.isActive ? "active" : "draft",
-      averageScore: undefined, // Will be loaded from stats
-      completionRate: undefined,
-      totalAttempts: undefined,
-    }));
+    return quizzesData
+      .filter((q: QuizDto | null | undefined) => q && q._id)
+      .map((q: QuizDto) => ({
+        id: q._id,
+        title: q.title || "Untitled Quiz",
+        description: q.description || "",
+        course:
+          typeof q.course === "object" && q.course
+            ? q.course._id
+            : q.course || "",
+        courseTitle:
+          typeof q.course === "object" && q.course ? q.course.title : undefined,
+        questions: Array.isArray(q.questions) ? q.questions.length : 0,
+        duration: q.duration || 60,
+        passingScore: q.passingScore || 70,
+        totalPoints: q.totalPoints || 100,
+        attemptsAllowed: q.attemptsAllowed || 0,
+        status: q.isActive ? "active" : "draft",
+        averageScore: undefined, // Will be loaded from stats
+        completionRate: undefined,
+        totalAttempts: undefined,
+      }));
   }, [quizzesData]);
 
   // Load stats when analytics dialog opens

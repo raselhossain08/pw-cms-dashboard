@@ -869,6 +869,30 @@ export default function Modules() {
                         </div>
                       </div>
                     </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditModule(module);
+                        }}
+                        className="h-7 px-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteId(module.id);
+                        }}
+                        className="h-7 px-2 text-slate-600 hover:text-red-600 hover:bg-red-50"
+                      >
+                        <Trash className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                     <Badge variant="outline" className={module.badgeClass}>
                       {module.status}
                     </Badge>
@@ -1498,7 +1522,7 @@ export default function Modules() {
                         </SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="" disabled>
+                      <SelectItem value="no-courses" disabled>
                         No courses available
                       </SelectItem>
                     )}
@@ -1727,7 +1751,7 @@ export default function Modules() {
                         </SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="" disabled>
+                      <SelectItem value="no-courses" disabled>
                         No courses available
                       </SelectItem>
                     )}
@@ -2102,7 +2126,7 @@ export default function Modules() {
                       </SelectItem>
                     ))
                   ) : (
-                    <SelectItem value="" disabled>
+                    <SelectItem value="no-courses" disabled>
                       No courses available
                     </SelectItem>
                   )}

@@ -41,6 +41,8 @@ export interface Course {
     videoUrl?: string;
     language?: string;
     certificateAvailable?: boolean;
+    providesCertificate?: boolean; // Added new field
+    moneyBackGuarantee?: number; // Added new field (days)
     totalRevenue?: number; // Total revenue generated
     totalEnrollments?: number; // Total enrollments
     aircraftTypes?: string[]; // Aviation specific
@@ -80,6 +82,8 @@ export interface CreateCourseDto {
     videoUrl?: string;
     language?: string;
     certificateAvailable?: boolean;
+    providesCertificate?: boolean; // Added new field
+    moneyBackGuarantee?: number; // Added new field (days)
     difficultyLevel?: string;
     aircraftTypes?: string[];
     metadata?: {

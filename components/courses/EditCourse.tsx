@@ -20,6 +20,8 @@ import {
   Trash2,
   Upload,
   GripVertical,
+  Star,
+  Award,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { RichTextEditor } from "@/components/shared/RichTextEditor";
 
 interface EditCourseProps {
   courseId: string;
@@ -57,16 +60,33 @@ function EditCourse({ courseId }: EditCourseProps) {
     React.useState<string>("");
   const [activeTab, setActiveTab] = React.useState("basic");
   const [isSaving, setIsSaving] = React.useState(false);
+  const [title, setTitle] = React.useState<string>("");
   const [maxStudents, setMaxStudents] = React.useState<string>("");
   const [level, setLevel] = React.useState<string>("beginner");
   const [type, setType] = React.useState<string>("theoretical");
-  const [status, setStatus] = React.useState<string>("draft");
+  const [description, setDescription] = React.useState<string>("");
+  const [content, setContent] = React.useState<string>("");
+  const [isFeatured, setIsFeatured] = React.useState(false);
+  const [providesCertificate, setProvidesCertificate] = React.useState(false);
+  const [isFree, setIsFree] = React.useState(false);
+  const [price, setPrice] = React.useState<string>("0");
+  const [originalPrice, setOriginalPrice] = React.useState<string>("");
+  const [duration, setDuration] = React.useState<string>("1");
+  const [prerequisites, setPrerequisites] = React.useState<string>("");
+  const [learningObjectives, setLearningObjectives] =
+    React.useState<string>("");
+  const [aircraftTypes, setAircraftTypes] = React.useState<string[]>([]);
+  const [excerpt, setExcerpt] = React.useState("");
+  const [language, setLanguage] = React.useState("en");
+  const [moneyBackGuarantee, setMoneyBackGuarantee] = React.useState("30");
 
   React.useEffect(() => {
     const fetchInstructors = async () => {
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/users/instructors`
+          `${
+            process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+          }/users/instructors`
         );
         const data = await response.json();
         setInstructors(data.data || []);
@@ -102,7 +122,10 @@ function EditCourse({ courseId }: EditCourseProps) {
   const course = React.useMemo(() => {
     if (!courseData) return null;
     const raw: any = courseData;
-    const c = raw?.data || raw;
+    // Handle different response structures
+    const c = raw?.data?.course || raw?.data || raw?.course || raw;
+    if (!c) return null;
+
     return {
       ...c,
       id: c._id || c.id,
@@ -112,11 +135,14 @@ function EditCourse({ courseId }: EditCourseProps) {
       learningObjectives: Array.isArray(c.learningObjectives)
         ? c.learningObjectives
         : [],
+      instructor:
+        typeof c.instructor === "object" ? c.instructor?._id : c.instructor,
     };
   }, [courseData]);
 
   React.useEffect(() => {
     if (course) {
+      setTitle(course.title || "");
       setSelectedCats(course.categories || []);
       setSelectedTags(course.tags || []);
       setThumbnailPreview(course.thumbnail || "");
@@ -128,7 +154,32 @@ function EditCourse({ courseId }: EditCourseProps) {
       );
       setLevel(course.level || "beginner");
       setType(course.type || "theoretical");
-      setStatus(course.isPublished ? "published" : "draft");
+      setDescription(course.description || "");
+      setContent(course.content || "");
+      setExcerpt(course.excerpt || "");
+      setAircraftTypes(course.aircraftTypes || []);
+      setIsFeatured(course.isFeatured || false);
+      setProvidesCertificate(course.providesCertificate || false);
+      setIsFree(course.isFree || course.price === 0);
+      setPrice(String(course.price || 0));
+      setOriginalPrice(
+        course.originalPrice ? String(course.originalPrice) : ""
+      );
+      setDuration(String(Math.max(course.duration || 1, 1)));
+      setPrerequisites(
+        Array.isArray(course.prerequisites)
+          ? course.prerequisites.join(", ")
+          : ""
+      );
+      setLearningObjectives(
+        Array.isArray(course.learningObjectives)
+          ? course.learningObjectives.join(", ")
+          : ""
+      );
+      setMoneyBackGuarantee(
+        course.moneyBackGuarantee ? String(course.moneyBackGuarantee) : "30"
+      );
+      setLanguage(course.language || "en");
     }
   }, [course]);
 
@@ -243,41 +294,50 @@ function EditCourse({ courseId }: EditCourseProps) {
           onSubmit={async (e) => {
             e.preventDefault();
             setIsSaving(true);
-            const fd = new FormData(e.currentTarget as HTMLFormElement);
-            const title = String(fd.get("title") || "").trim();
-            const description = String(fd.get("description") || "").trim();
-            const content = String(fd.get("content") || "").trim();
-            const level = String(fd.get("level") || "beginner");
-            const type = String(fd.get("type") || "theoretical");
-            const isFree = fd.get("isFree") === "on";
-            const price = isFree ? 0 : Number(fd.get("price") || 0);
-            const originalPriceRaw = fd.get("originalPrice");
-            const originalPrice =
-              originalPriceRaw && Number(originalPriceRaw) > 0
-                ? Number(originalPriceRaw)
+
+            // Use state values (all fields are now controlled components)
+            const titleValue = title.trim();
+            const descriptionValue = description.trim();
+            const contentValue = content.trim();
+            const priceValue = isFree ? 0 : Number(price);
+            const originalPriceValue =
+              originalPrice && Number(originalPrice) > 0
+                ? Number(originalPrice)
                 : undefined;
-            const duration = Number(fd.get("duration") || 1);
-            const maxStudentsValue = Number(fd.get("maxStudents") || 999999);
-            const status = String(fd.get("status") || "draft");
-            const instructor = String(fd.get("instructor") || "").trim();
-            const prerequisitesInput = String(fd.get("prerequisites") || "");
-            const learningObjectivesInput = String(
-              fd.get("learningObjectives") || ""
-            );
+            const durationValue = Number(duration) || 1;
+            const maxStudentsValue =
+              maxStudents === "unlimited" ? 999999 : Number(maxStudents);
+            const instructor = selectedInstructor || undefined;
 
             const tags = selectedTags.length > 0 ? selectedTags : undefined;
-            const prerequisites = prerequisitesInput
-              ? prerequisitesInput
+            const prerequisitesArray = prerequisites
+              ? prerequisites
                   .split(",")
                   .map((t) => t.trim())
                   .filter(Boolean)
               : undefined;
-            const learningObjectives = learningObjectivesInput
-              ? learningObjectivesInput
+            const learningObjectivesArray = learningObjectives
+              ? learningObjectives
                   .split(",")
                   .map((t) => t.trim())
                   .filter(Boolean)
               : undefined;
+
+            // Validate required fields
+            if (!titleValue) {
+              push({ type: "error", message: "Course title is required" });
+              setIsSaving(false);
+              return;
+            }
+
+            if (!descriptionValue) {
+              push({
+                type: "error",
+                message: "Course description is required",
+              });
+              setIsSaving(false);
+              return;
+            }
 
             try {
               let thumbnailUrl = course.thumbnail || "";
@@ -296,42 +356,65 @@ function EditCourse({ courseId }: EditCourseProps) {
                       },
                     }
                   );
-                  thumbnailUrl = uploadResult.url;
+                  if (uploadResult?.url) {
+                    thumbnailUrl = uploadResult.url;
+                  } else {
+                    throw new Error("Upload failed: No URL returned");
+                  }
                   setIsUploading(false);
                 } catch (uploadError) {
                   setIsUploading(false);
+                  setIsSaving(false);
                   console.error("Thumbnail upload failed:", uploadError);
                   push({
                     type: "error",
                     message:
-                      "Failed to upload thumbnail. Saving course without image.",
+                      uploadError instanceof Error
+                        ? uploadError.message
+                        : "Failed to upload thumbnail. Please try again.",
                   });
+                  return; // Stop submission if thumbnail upload fails
                 }
               }
 
               const updatePayload: any = {
-                title,
-                description,
-                content: content || undefined,
-                level: level as any,
-                type: type as any,
-                price,
-                originalPrice,
+                title: titleValue,
+                description: descriptionValue,
+                content: contentValue || undefined,
+                excerpt: excerpt?.trim() || undefined,
+                level: level,
+                type: type,
+                price: Number(priceValue),
+                originalPrice: originalPriceValue,
                 isFree,
-                duration: Math.max(duration, 1),
-                durationHours: Math.max(duration, 1),
-                maxStudents: maxStudentsValue,
-                isPublished: status === "published",
-                tags,
-                categories: selectedCats.length ? selectedCats : undefined,
-                prerequisites,
-                learningObjectives,
+                duration: Math.max(durationValue, 1),
+                durationHours: Math.max(durationValue, 1),
+                maxStudents: Math.max(maxStudentsValue, 1),
+                isPublished: true,
+                tags: tags && tags.length > 0 ? tags : undefined,
+                categories: selectedCats.length > 0 ? selectedCats : undefined,
+                prerequisites:
+                  prerequisitesArray && prerequisitesArray.length > 0
+                    ? prerequisitesArray
+                    : undefined,
+                learningObjectives:
+                  learningObjectivesArray && learningObjectivesArray.length > 0
+                    ? learningObjectivesArray
+                    : undefined,
                 instructor: instructor || undefined,
+                aircraftTypes:
+                  aircraftTypes.length > 0 ? aircraftTypes : undefined,
+                isFeatured: Boolean(isFeatured),
+                providesCertificate: Boolean(providesCertificate),
+                moneyBackGuarantee: Number(moneyBackGuarantee) || 30,
+                language: language || "en",
               };
 
               if (thumbnailUrl) {
                 updatePayload.thumbnail = thumbnailUrl;
               }
+
+              console.log("📤 Sending update payload:", updatePayload);
 
               await coursesService.updateCourse(courseId, updatePayload);
 
@@ -391,7 +474,8 @@ function EditCourse({ courseId }: EditCourseProps) {
                     </label>
                     <input
                       name="title"
-                      defaultValue={course.title}
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
                       placeholder="e.g., Citation Jet Pro Line 21 Training"
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                       required
@@ -441,13 +525,29 @@ function EditCourse({ courseId }: EditCourseProps) {
 
                   <div>
                     <label className="text-sm font-medium text-secondary block mb-2">
-                      Brief Description
+                      Short Excerpt
                     </label>
                     <textarea
-                      name="description"
-                      defaultValue={course.description}
-                      rows={4}
+                      value={excerpt}
+                      onChange={(e) => setExcerpt(e.target.value)}
+                      rows={3}
+                      placeholder="A brief one or two sentence description for previews..."
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                    />
+                    <input type="hidden" name="excerpt" value={excerpt} />
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Short description that appears in course cards and
+                      previews
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-secondary block mb-4">
+                      Brief Description
+                    </label>
+                    <RichTextEditor
+                      content={description}
+                      onChange={setDescription}
                       placeholder="Brief course description that will appear in course listings"
                     />
                   </div>
@@ -487,6 +587,32 @@ function EditCourse({ courseId }: EditCourseProps) {
                     </p>
                   </div>
 
+                  <div>
+                    <label className="text-sm font-medium text-secondary block mb-2">
+                      Aircraft Types
+                    </label>
+                    <input
+                      value={aircraftTypes.join(", ")}
+                      onChange={(e) => {
+                        const types = e.target.value
+                          .split(",")
+                          .map((t) => t.trim())
+                          .filter(Boolean);
+                        setAircraftTypes(types);
+                      }}
+                      placeholder="e.g., Boeing 737, Airbus A320, Citation CJ3+"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    />
+                    <input
+                      type="hidden"
+                      name="aircraftTypes"
+                      value={JSON.stringify(aircraftTypes)}
+                    />
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Comma-separated list of aircraft covered in this course
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium text-secondary block mb-2">
@@ -497,7 +623,8 @@ function EditCourse({ courseId }: EditCourseProps) {
                         type="number"
                         min={1}
                         step="0.5"
-                        defaultValue={Math.max(course.duration || 1, 1)}
+                        value={duration}
+                        onChange={(e) => setDuration(e.target.value)}
                         placeholder="10"
                         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                         required
@@ -542,22 +669,6 @@ function EditCourse({ courseId }: EditCourseProps) {
                       />
                     </div>
                   </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-secondary block mb-2">
-                      Status *
-                    </label>
-                    <Select value={status} onValueChange={setStatus}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="published">Published</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <input type="hidden" name="status" value={status} />
-                  </div>
                 </div>
               </div>
             </TabsContent>
@@ -576,19 +687,14 @@ function EditCourse({ courseId }: EditCourseProps) {
                           <input
                             type="checkbox"
                             name="isFree"
-                            defaultChecked={course.isFree || course.price === 0}
-                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            checked={isFree}
                             onChange={(e) => {
-                              const priceInput = document.querySelector(
-                                'input[name="price"]'
-                              ) as HTMLInputElement;
+                              setIsFree(e.target.checked);
                               if (e.target.checked) {
-                                if (priceInput) priceInput.value = "0";
-                                priceInput?.setAttribute("disabled", "true");
-                              } else {
-                                priceInput?.removeAttribute("disabled");
+                                setPrice("0");
                               }
                             }}
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
                           />
                           <span className="text-sm font-medium text-secondary">
                             Free Course
@@ -608,10 +714,11 @@ function EditCourse({ courseId }: EditCourseProps) {
                           type="number"
                           step="0.01"
                           min="0"
-                          defaultValue={course.price}
+                          value={price}
+                          onChange={(e) => setPrice(e.target.value)}
                           placeholder="99.99"
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                          disabled={course.isFree || course.price === 0}
+                          disabled={isFree}
                           required
                         />
                       </div>
@@ -624,7 +731,8 @@ function EditCourse({ courseId }: EditCourseProps) {
                           type="number"
                           step="0.01"
                           min="0"
-                          defaultValue={course.originalPrice || ""}
+                          value={originalPrice}
+                          onChange={(e) => setOriginalPrice(e.target.value)}
                           placeholder="149.99"
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                         />
@@ -711,6 +819,99 @@ function EditCourse({ courseId }: EditCourseProps) {
                           <span className="text-2xl font-bold text-secondary">
                             {course.rating ? course.rating.toFixed(1) : "N/A"}
                           </span>
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-4 space-y-4 mt-4">
+                        <h4 className="text-sm font-semibold text-secondary mb-3">
+                          Additional Options
+                        </h4>
+
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isFeatured}
+                            onChange={(e) => setIsFeatured(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm font-medium text-secondary flex items-center gap-1.5">
+                            <Star className="w-4 h-4" /> Featured Course
+                          </span>
+                        </label>
+                        <input
+                          type="hidden"
+                          name="isFeatured"
+                          value={isFeatured.toString()}
+                        />
+
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={providesCertificate}
+                            onChange={(e) =>
+                              setProvidesCertificate(e.target.checked)
+                            }
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm font-medium text-secondary flex items-center gap-1.5">
+                            <Award className="w-4 h-4" /> Provides Certificate
+                          </span>
+                        </label>
+                        <input
+                          type="hidden"
+                          name="providesCertificate"
+                          value={providesCertificate.toString()}
+                        />
+
+                        <div>
+                          <label className="text-sm font-medium text-secondary block mb-2">
+                            Money Back Guarantee (days)
+                          </label>
+                          <Select
+                            value={moneyBackGuarantee}
+                            onValueChange={setMoneyBackGuarantee}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">No Guarantee</SelectItem>
+                              <SelectItem value="7">7 Days</SelectItem>
+                              <SelectItem value="14">14 Days</SelectItem>
+                              <SelectItem value="30">30 Days</SelectItem>
+                              <SelectItem value="60">60 Days</SelectItem>
+                              <SelectItem value="90">90 Days</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <input
+                            type="hidden"
+                            name="moneyBackGuarantee"
+                            value={moneyBackGuarantee}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-medium text-secondary block mb-2">
+                            Primary Language
+                          </label>
+                          <Select value={language} onValueChange={setLanguage}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="en">English</SelectItem>
+                              <SelectItem value="es">Spanish</SelectItem>
+                              <SelectItem value="fr">French</SelectItem>
+                              <SelectItem value="de">German</SelectItem>
+                              <SelectItem value="pt">Portuguese</SelectItem>
+                              <SelectItem value="zh">Chinese</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <input
+                            type="hidden"
+                            name="language"
+                            value={language}
+                          />
                         </div>
                       </div>
                     </div>
@@ -1017,20 +1218,14 @@ function EditCourse({ courseId }: EditCourseProps) {
             <TabsContent value="content" className="p-8 space-y-6">
               <div className="space-y-6">
                 <div>
-                  <label className="text-sm font-medium text-secondary block mb-2">
+                  <label className="text-sm font-medium text-secondary block mb-4">
                     Detailed Content
                   </label>
-                  <textarea
-                    name="content"
-                    defaultValue={course.content || ""}
-                    rows={8}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-y font-mono text-sm"
+                  <RichTextEditor
+                    content={content}
+                    onChange={setContent}
                     placeholder="Detailed course content and curriculum description..."
                   />
-                  <p className="text-xs text-gray-500 mt-1.5">
-                    Rich text editor support coming soon. Use markdown for
-                    formatting.
-                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1040,7 +1235,8 @@ function EditCourse({ courseId }: EditCourseProps) {
                     </label>
                     <textarea
                       name="prerequisites"
-                      defaultValue={course.prerequisites?.join(", ") || ""}
+                      value={prerequisites}
+                      onChange={(e) => setPrerequisites(e.target.value)}
                       rows={4}
                       placeholder="Comma-separated (e.g., Private Pilot License, Medical Certificate, Minimum 200 flight hours)"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
@@ -1056,7 +1252,8 @@ function EditCourse({ courseId }: EditCourseProps) {
                     </label>
                     <textarea
                       name="learningObjectives"
-                      defaultValue={course.learningObjectives?.join(", ") || ""}
+                      value={learningObjectives}
+                      onChange={(e) => setLearningObjectives(e.target.value)}
                       rows={4}
                       placeholder="Comma-separated (e.g., Master Pro Line 21 systems, Perform emergency procedures)"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"

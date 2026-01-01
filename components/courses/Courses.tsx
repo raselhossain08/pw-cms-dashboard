@@ -81,6 +81,7 @@ export default function Courses() {
   const [search, setSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] =
     React.useState<string>("All Categories");
+  // Status filter - defaulted to "All Status" to show all courses
   const [statusFilter, setStatusFilter] = React.useState<string>("All Status");
   const [sortBy, setSortBy] = React.useState<string>("Newest");
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
@@ -101,10 +102,9 @@ export default function Courses() {
   React.useEffect(() => {
     const params: any = { page: 1, limit: 100 };
     if (search) params.search = search;
-    if (statusFilter === "Published") params.status = "published";
-    if (statusFilter === "Draft") params.status = "draft";
+    // Status filter removed - all courses shown regardless of status
     fetchCourses(params);
-  }, [search, statusFilter]);
+  }, [search]);
 
   // Fetch stats on mount
   React.useEffect(() => {
@@ -634,16 +634,7 @@ export default function Courses() {
               </SelectContent>
             </Select>
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All Status">All Status</SelectItem>
-              <SelectItem value="Published">Published</SelectItem>
-              <SelectItem value="Draft">Draft</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Status filter removed - courses automatically published */}
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-40">
               <SelectValue />

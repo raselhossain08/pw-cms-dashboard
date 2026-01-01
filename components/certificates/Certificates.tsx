@@ -150,8 +150,13 @@ export default function Certificates() {
 
   // Revoke certificate mutation (admin only)
   const revokeMutation = useMutation({
-    mutationFn: ({ certificateId, reason }: { certificateId: string; reason?: string }) =>
-      certificatesService.revokeCertificate(certificateId, reason),
+    mutationFn: ({
+      certificateId,
+      reason,
+    }: {
+      certificateId: string;
+      reason?: string;
+    }) => certificatesService.revokeCertificate(certificateId, reason),
     onMutate() {
       push({ type: "loading", message: "Revoking certificate..." });
     },
@@ -275,17 +280,7 @@ export default function Certificates() {
       : Array.isArray(raw?.certificates)
       ? raw.certificates
       : [];
-    
-    // Debug: Log first certificate to see structure
-    if (list.length > 0) {
-      console.log("Certificate data sample:", {
-        issuedAt: list[0].issuedAt,
-        createdAt: list[0].createdAt,
-        updatedAt: list[0].updatedAt,
-        fullObject: list[0]
-      });
-    }
-    
+
     return list.map((c: any) => {
       const studentName =
         typeof c.student === "object" && c.student
@@ -295,51 +290,44 @@ export default function Certificates() {
         typeof c.course === "object" && c.course
           ? c.course.title || ""
           : String(c.course || "");
-      
+
       // Determine status based on backend flags
       let status: "issued" | "pending" | "draft" | "revoked" = "issued";
       if (c.isRevoked) {
         status = "revoked";
       }
 
-      // Format issued date safely with multiple fallbacks
-      let issuedText = "N/A";
-      let rawIssuedAt = c.issuedAt;
+      // Get the raw date from backend - try multiple sources
+      let rawIssuedAt = c.issuedAt || c.createdAt || c.updatedAt;
 
-      // Try to get a valid date from multiple sources
-      if (!rawIssuedAt || rawIssuedAt === "Invalid Date" || rawIssuedAt === "") {
-        // Try createdAt
-        if ((c as any).createdAt) {
-          rawIssuedAt = (c as any).createdAt;
-        }
-        // Try updatedAt as last resort
-        else if ((c as any).updatedAt) {
-          rawIssuedAt = (c as any).updatedAt;
+      // Handle case where date might be an object instead of string
+      if (rawIssuedAt && typeof rawIssuedAt === "object") {
+        // If it's a Date object, convert to ISO string
+        if (rawIssuedAt instanceof Date) {
+          rawIssuedAt = rawIssuedAt.toISOString();
+        } else if (rawIssuedAt.$date) {
+          // MongoDB extended JSON format
+          rawIssuedAt = rawIssuedAt.$date;
+        } else {
+          rawIssuedAt = null;
         }
       }
 
-      if (rawIssuedAt && rawIssuedAt !== "Invalid Date" && rawIssuedAt !== "") {
+      // Format issued date
+      let issuedText = "Not Available";
+      if (rawIssuedAt && typeof rawIssuedAt === "string") {
         try {
           const date = new Date(rawIssuedAt);
-          const timestamp = date.getTime();
-          
-          // Check if date is valid and reasonable (after year 2000, before year 2100)
-          if (!isNaN(timestamp) && 
-              date.getFullYear() >= 2000 && 
-              date.getFullYear() < 2100) {
-            issuedText = date.toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric'
+          if (!isNaN(date.getTime()) && date.getTime() > 0) {
+            issuedText = date.toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
             });
-          } else {
-            console.warn("Invalid date range for certificate:", c.certificateId, "Date:", rawIssuedAt);
           }
         } catch (error) {
-          console.error("Error parsing date for certificate:", c.certificateId, rawIssuedAt, error);
+          console.error("Error parsing certificate date:", error);
         }
-      } else {
-        console.warn("No valid date found for certificate:", c.certificateId, "issuedAt:", c.issuedAt, "createdAt:", (c as any).createdAt);
       }
 
       return {
@@ -351,7 +339,10 @@ export default function Certificates() {
         certificateId: c.certificateId,
         status,
         issuedText,
-        issuedAt: rawIssuedAt && rawIssuedAt !== "Invalid Date" ? rawIssuedAt : undefined, // Keep raw date for calculations
+        issuedAt:
+          rawIssuedAt && rawIssuedAt !== "Invalid Date"
+            ? rawIssuedAt
+            : undefined, // Keep raw date for calculations
         avatarUrl: "",
       } as CertificateItem;
     });
@@ -502,7 +493,9 @@ export default function Certificates() {
             <Award className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600 font-medium">No certificates found</p>
             <p className="text-sm text-gray-500 mt-1">
-              {search ? "Try adjusting your search" : "Start earning certificates by completing courses"}
+              {search
+                ? "Try adjusting your search"
+                : "Start earning certificates by completing courses"}
             </p>
           </div>
         ) : (
@@ -606,7 +599,8 @@ export default function Certificates() {
                           <DropdownMenuItem
                             onClick={() => handleShareCertificate(it)}
                           >
-                            <Share2 className="w-4 h-4 mr-2" /> Share Certificate
+                            <Share2 className="w-4 h-4 mr-2" /> Share
+                            Certificate
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => copyVerificationLink(it)}
@@ -642,7 +636,8 @@ export default function Certificates() {
                                     }
                                   }}
                                 >
-                                  <Undo2 className="w-4 h-4 mr-2" /> Restore Certificate
+                                  <Undo2 className="w-4 h-4 mr-2" /> Restore
+                                  Certificate
                                 </DropdownMenuItem>
                               ) : (
                                 <DropdownMenuItem
@@ -653,7 +648,8 @@ export default function Certificates() {
                                     setRevocationReason("");
                                   }}
                                 >
-                                  <Ban className="w-4 h-4 mr-2" /> Revoke Certificate
+                                  <Ban className="w-4 h-4 mr-2" /> Revoke
+                                  Certificate
                                 </DropdownMenuItem>
                               )}
                             </>

@@ -228,3 +228,333 @@ h1, h2, h3, h4, h5, h6 {
   );
   background-size: 1000px 100%;
 }
+
+/* Enhanced Lesson Card Styles */
+.lesson-card {
+  @apply relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-300;
+}
+
+.lesson-card:hover {
+  @apply shadow-lg border-primary/30 transform -translate-y-1;
+}
+
+.lesson-card-dragging {
+  @apply opacity-50 scale-95 rotate-2 shadow-2xl ring-4 ring-primary/30;
+}
+
+.lesson-card-drop-target {
+  @apply border-2 border-primary shadow-lg scale-105 bg-primary/5;
+}
+
+/* Module Card Enhanced */
+.module-card {
+  @apply relative overflow-hidden rounded-xl bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-md transition-all duration-300;
+}
+
+.module-card:hover {
+  @apply shadow-xl border-primary/40;
+}
+
+.module-card-expanded {
+  @apply bg-gradient-to-br from-blue-50/50 to-indigo-50/30 border-primary/30;
+}
+
+/* Stats Card Animation */
+.stats-card {
+  @apply relative overflow-hidden rounded-xl bg-white border border-gray-100 shadow-md transition-all duration-300;
+}
+
+.stats-card:hover {
+  @apply shadow-xl border-primary/30 transform -translate-y-1;
+}
+
+.stats-card::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 transition-opacity duration-500;
+  transform: translateX(-100%);
+}
+
+.stats-card:hover::before {
+  @apply opacity-30;
+  animation: shimmerEffect 1.5s ease-in-out;
+}
+
+@keyframes shimmerEffect {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Progress Bar Animation */
+.progress-bar {
+  @apply relative h-2 bg-gray-200 rounded-full overflow-hidden;
+}
+
+.progress-bar-fill {
+  @apply h-full bg-gradient-to-r from-primary to-primary/80 rounded-full transition-all duration-500;
+  animation: progressPulse 2s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Badge Styles */
+.badge-success {
+  @apply bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 border border-green-200;
+}
+
+.badge-warning {
+  @apply bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-700 border border-amber-200;
+}
+
+.badge-info {
+  @apply bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-700 border border-blue-200;
+}
+
+/* Drag & Drop Visual Feedback */
+.drop-zone {
+  @apply transition-all duration-200;
+}
+
+.drop-zone-active {
+  @apply bg-primary/10 border-2 border-dashed border-primary rounded-lg;
+  animation: dropZonePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes dropZonePulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.9;
+  }
+}
+
+/* Lesson Type Icons */
+.lesson-icon-wrapper {
+  @apply w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-300;
+}
+
+.lesson-icon-video {
+  @apply bg-gradient-to-br from-red-100 to-pink-100 text-red-600;
+}
+
+.lesson-icon-text {
+  @apply bg-gradient-to-br from-blue-100 to-cyan-100 text-blue-600;
+}
+
+.lesson-icon-quiz {
+  @apply bg-gradient-to-br from-purple-100 to-violet-100 text-purple-600;
+}
+
+.lesson-icon-assignment {
+  @apply bg-gradient-to-br from-orange-100 to-amber-100 text-orange-600;
+}
+
+.lesson-icon-download {
+  @apply bg-gradient-to-br from-green-100 to-emerald-100 text-green-600;
+}
+
+/* Enhanced Tooltips */
+.tooltip {
+  @apply absolute z-50 px-3 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg shadow-lg opacity-0 transition-opacity duration-300;
+  animation: tooltipFadeIn 0.2s ease-out forwards;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Empty State Illustration */
+.empty-state {
+  @apply flex flex-col items-center justify-center py-16 text-center;
+}
+
+.empty-state-icon {
+  @apply w-24 h-24 text-gray-300 mb-4;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* Loading Skeleton */
+.skeleton {
+  @apply animate-pulse bg-gray-200 rounded;
+}
+
+.skeleton-text {
+  @apply h-4 bg-gray-200 rounded w-full;
+}
+
+.skeleton-circle {
+  @apply rounded-full bg-gray-200;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded-full;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full hover:bg-gray-400 transition-colors;
+}
+
+/* Glassmorphism Effect */
+.glass-effect {
+  @apply backdrop-blur-lg bg-white/80 border border-white/20 shadow-lg;
+}
+
+/* Floating Animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-15px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Slide Animations */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideInUp 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Pulse Animation for Badges */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(var(--primary), 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(var(--primary), 0);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+/* Hover Lift Effect */
+.hover-lift {
+  @apply transition-all duration-300;
+}
+
+.hover-lift:hover {
+  @apply -translate-y-2 shadow-xl;
+}
+
+/* Card Hover Glow */
+.card-glow {
+  @apply relative overflow-hidden;
+}
+
+.card-glow::after {
+  content: '';
+  @apply absolute inset-0 opacity-0 transition-opacity duration-500 pointer-events-none;
+  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+}
+
+.card-glow:hover::after {
+  @apply opacity-100;
+}
+
+/* Success/Error States */
+.state-success {
+  @apply border-green-500 bg-green-50;
+  animation: successPulse 0.5s ease-out;
+}
+
+.state-error {
+  @apply border-red-500 bg-red-50;
+  animation: errorShake 0.5s ease-out;
+}
+
+@keyframes successPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes errorShake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-10px);
+  }
+  75% {
+    transform: translateX(10px);
+  }
+}
+
+/* Gradient Text */
+.gradient-text {
+  @apply bg-clip-text text-transparent;
+  background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Focus Ring Enhancement */
+.focus-ring-enhanced {
+  @apply focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all;
+}
+
