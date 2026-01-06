@@ -78,24 +78,25 @@ export function useAiAssistant() {
     const socket = aiBotService.connect(user.id, sessionIdRef.current);
     socketRef.current = socket;
     
-    socket.on("connect", () => {
+    // Define event handlers
+    const handleConnect = () => {
       setConnectionStatus("connected");
-    });
+    };
     
-    socket.on("disconnect", () => {
+    const handleDisconnect = () => {
       setConnectionStatus("disconnected");
-    });
+    };
     
-    socket.on("connect_error", () => {
+    const handleConnectError = () => {
       setConnectionStatus("disconnected");
-    });
+    };
     
-    socket.on("bot-typing", ({ isTyping }) => {
+    const handleBotTyping = ({ isTyping }: { isTyping: boolean }) => {
       setTyping(!!isTyping);
       setCanStopGeneration(!!isTyping);
-    });
+    };
     
-    socket.on("bot-message", (resp: BotMessageResponse) => {
+    const handleBotMessage = (resp: BotMessageResponse) => {
       const reply = resp?.message || "";
       const qr = Array.isArray(resp?.quickReplies) ? resp.quickReplies : [];
       if (resp?.sessionId) sessionIdRef.current = resp.sessionId;
@@ -107,22 +108,42 @@ export function useAiAssistant() {
       setCanStopGeneration(false);
       setTyping(false);
       void loadRecentConversations();
-    });
+    };
     
-    socket.on("generation-stopped", () => {
+    const handleGenerationStopped = () => {
       setTyping(false);
       setCanStopGeneration(false);
-    });
+    };
     
-    socket.on("error", (error: any) => {
+    const handleError = (error: any) => {
       setError(error.message || "Connection error occurred");
       setTyping(false);
       setCanStopGeneration(false);
-    });
+    };
+    
+    // Attach event listeners
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
+    socket.on("bot-typing", handleBotTyping);
+    socket.on("bot-message", handleBotMessage);
+    socket.on("generation-stopped", handleGenerationStopped);
+    socket.on("error", handleError);
     
     void loadAiStatus();
     
+    // Cleanup function
     return () => {
+      // Remove all event listeners before disconnecting
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
+      socket.off("bot-typing", handleBotTyping);
+      socket.off("bot-message", handleBotMessage);
+      socket.off("generation-stopped", handleGenerationStopped);
+      socket.off("error", handleError);
+      
+      // Disconnect socket
       socket.disconnect();
       socketRef.current = null;
     };

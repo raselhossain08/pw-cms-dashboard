@@ -1072,7 +1072,7 @@ export function TopBarEditor({
                     <div className="flex flex-wrap gap-2">
                       {data.socialLinks.map((social, idx) => (
                         <Badge key={idx} variant="outline">
-                          {social.platform}: {social.url}
+                          {social.platform}: {social.href}
                         </Badge>
                       ))}
                     </div>

@@ -1,4 +1,4 @@
-import { cookieService } from "@/lib/cookie.service";
+import { getAccessToken } from "@/lib/cookies";
 
 export interface HeaderSection {
   title: string;
@@ -80,7 +80,7 @@ export class AboutUsService {
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
   private static getAuthHeader() {
-    const token = cookieService.get("token");
+    const token = getAccessToken();
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
@@ -218,22 +218,71 @@ export class AboutUsService {
 
   static async updateAboutUsWithUpload(
     id: string,
-    formData: FormData
+    formData: FormData,
+    onProgress?: (progress: number) => void
   ): Promise<AboutUsResponse> {
     try {
-      const token = cookieService.get("token");
-      const response = await fetch(
-        `${this.API_BASE_URL}/cms/about-us/${id}/upload`,
-        {
-          method: "PUT",
-          headers: {
-            ...(token && { Authorization: `Bearer ${token}` }),
-          },
-          body: formData,
+      const token = getAccessToken();
+
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        // Track upload progress
+        xhr.upload.addEventListener("progress", (event) => {
+          if (event.lengthComputable && onProgress) {
+            const percentComplete = Math.round((event.loaded / event.total) * 100);
+            onProgress(percentComplete);
+          }
+        });
+
+        // Handle completion
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const responseData = JSON.parse(xhr.responseText);
+              resolve(this.unwrapResponse(responseData));
+            } catch (error) {
+              reject(new Error("Invalid JSON response"));
+            }
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              resolve({
+                success: false,
+                message: errorData.message || "Failed to update About Us page with upload",
+              });
+            } catch {
+              resolve({
+                success: false,
+                message: `HTTP Error: ${xhr.status}`,
+              });
+            }
+          }
+        });
+
+        // Handle errors
+        xhr.addEventListener("error", () => {
+          resolve({
+            success: false,
+            message: "Network error occurred during upload",
+          });
+        });
+
+        // Handle abort
+        xhr.addEventListener("abort", () => {
+          resolve({
+            success: false,
+            message: "Upload was cancelled",
+          });
+        });
+
+        // Setup and send request
+        xhr.open("PUT", `${this.API_BASE_URL}/cms/about-us/${id}/upload`);
+        if (token) {
+          xhr.setRequestHeader("Authorization", `Bearer ${token}`);
         }
-      );
-      const responseData = await response.json();
-      return this.unwrapResponse(responseData);
+        xhr.send(formData);
+      });
     } catch (error: any) {
       return {
         success: false,
@@ -267,7 +316,7 @@ export class AboutUsService {
       const response = await fetch(
         `${this.API_BASE_URL}/cms/about-us/${id}/toggle-active`,
         {
-          method: "PATCH",
+          method: "POST",
           headers: this.getAuthHeader(),
         }
       );

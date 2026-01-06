@@ -152,19 +152,21 @@ export default function CoursesTable({
 
   return (
     <>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="courses-table">
             {(provided, snapshot) => (
               <div
                 ref={provided.innerRef}
                 {...provided.droppableProps}
-                className={snapshot.isDraggingOver ? "bg-primary/5" : ""}
+                className={`overflow-x-auto ${
+                  snapshot.isDraggingOver ? "bg-primary/5" : ""
+                }`}
               >
-                <Table>
+                <Table className="min-w-[1000px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">
+                      <TableHead className="w-10 sm:w-12">
                         <Checkbox
                           checked={
                             selectedIds.length === localCourses.length &&
@@ -173,21 +175,31 @@ export default function CoursesTable({
                           onCheckedChange={handleSelectAll}
                         />
                       </TableHead>
-                      <TableHead className="w-12">
+                      <TableHead className="w-10 sm:w-12">
                         <GripVertical className="w-4 h-4 text-gray-400" />
                       </TableHead>
-                      <TableHead className="w-20">Thumbnail</TableHead>
-                      <TableHead>Course Title</TableHead>
-                      <TableHead>Instructor</TableHead>
-                      <TableHead>Categories</TableHead>
+                      <TableHead className="w-16 sm:w-20">Thumbnail</TableHead>
+                      <TableHead className="min-w-[200px]">
+                        Course Title
+                      </TableHead>
+                      <TableHead className="hidden lg:table-cell">
+                        Instructor
+                      </TableHead>
+                      <TableHead className="hidden md:table-cell">
+                        Categories
+                      </TableHead>
                       <TableHead className="text-center">Students</TableHead>
-                      <TableHead className="text-center">Rating</TableHead>
-                      <TableHead className="w-[200px]">
+                      <TableHead className="text-center hidden xl:table-cell">
+                        Rating
+                      </TableHead>
+                      <TableHead className="w-[150px] sm:w-[200px] hidden lg:table-cell">
                         Sales Progress
                       </TableHead>
                       <TableHead className="text-center">Price</TableHead>
                       <TableHead className="text-center">Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="text-right w-[100px]">
+                        Actions
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -298,7 +310,7 @@ export default function CoursesTable({
                                   </div>
                                 </TableCell>
 
-                                <TableCell>
+                                <TableCell className="hidden lg:table-cell">
                                   {instructor ? (
                                     <div className="flex items-center gap-2">
                                       {instructor.avatar && (
@@ -330,7 +342,7 @@ export default function CoursesTable({
                                   )}
                                 </TableCell>
 
-                                <TableCell>
+                                <TableCell className="hidden md:table-cell">
                                   <div className="flex flex-wrap gap-1 max-w-xs">
                                     {course.categories &&
                                     course.categories.length > 0 ? (
@@ -371,7 +383,7 @@ export default function CoursesTable({
                                   </div>
                                 </TableCell>
 
-                                <TableCell className="text-center">
+                                <TableCell className="text-center hidden xl:table-cell">
                                   <div className="flex items-center justify-center gap-1">
                                     <span className="text-yellow-500">★</span>
                                     <span className="font-semibold">
@@ -385,7 +397,7 @@ export default function CoursesTable({
                                   </div>
                                 </TableCell>
 
-                                <TableCell>
+                                <TableCell className="hidden lg:table-cell">
                                   <div className="space-y-1">
                                     <div className="flex justify-between text-xs text-gray-600">
                                       <span>Enrollment</span>

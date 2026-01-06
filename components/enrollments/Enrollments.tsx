@@ -97,6 +97,11 @@ export default function Enrollments() {
     approveEnrollment,
     cancelEnrollment,
     exportEnrollments,
+    bulkUpdateStatus,
+    sendMessage,
+    generateCertificate,
+    getAuditTrail,
+    getPaymentDetails,
   } = useEnrollments();
 
   const { push } = useToast();
@@ -360,18 +365,12 @@ export default function Enrollments() {
 
     setFormLoading(true);
     try {
-      // Call API to generate certificate
-      push({
-        type: "success",
-        message: "Certificate generated successfully!",
-      });
+      await generateCertificate(selectedEnrollment._id);
       setCertificateOpen(false);
+      setSelectedEnrollment(null);
       loadData();
     } catch (error) {
-      push({
-        type: "error",
-        message: "Failed to generate certificate",
-      });
+      // Error handled by hook
     } finally {
       setFormLoading(false);
     }
@@ -382,18 +381,16 @@ export default function Enrollments() {
 
     setFormLoading(true);
     try {
-      // Call API to send email
-      push({
-        type: "success",
-        message: "Message sent successfully!",
-      });
+      await sendMessage(
+        selectedEnrollment._id,
+        messageForm.subject,
+        messageForm.message
+      );
       setMessageOpen(false);
+      setSelectedEnrollment(null);
       setMessageForm({ subject: "", message: "" });
     } catch (error) {
-      push({
-        type: "error",
-        message: "Failed to send message",
-      });
+      // Error handled by hook
     } finally {
       setFormLoading(false);
     }
@@ -402,19 +399,12 @@ export default function Enrollments() {
   const handleBulkStatusChange = async () => {
     setFormLoading(true);
     try {
-      // Call API to change status for selected enrollments
-      push({
-        type: "success",
-        message: `Updated ${selectedIds.length} enrollment(s) successfully!`,
-      });
+      await bulkUpdateStatus(selectedIds, bulkStatus);
       setBulkStatusOpen(false);
       setSelectedIds([]);
       loadData();
     } catch (error) {
-      push({
-        type: "error",
-        message: "Failed to update enrollments",
-      });
+      // Error handled by hook
     } finally {
       setFormLoading(false);
     }
@@ -424,62 +414,25 @@ export default function Enrollments() {
     setFormLoading(true);
     setSelectedEnrollment(enrollment);
     try {
-      // Fetch audit logs from API
-      const mockLogs = [
-        {
-          action: "Enrollment Created",
-          timestamp: enrollment.createdAt,
-          user: "System",
-          details: "Student enrolled in course",
-        },
-        {
-          action: "Status Changed",
-          timestamp: enrollment.updatedAt,
-          user: "Admin",
-          details: `Status updated to ${enrollment.status}`,
-        },
-      ];
-      setAuditLogs(mockLogs);
+      const logs = await getAuditTrail(enrollment._id);
+      setAuditLogs(logs as any);
       setAuditOpen(true);
     } catch (error) {
-      push({
-        type: "error",
-        message: "Failed to fetch audit trail",
-      });
+      // Error handled by hook
     } finally {
       setFormLoading(false);
     }
   };
 
   const handleViewPaymentDetails = async (enrollment: Enrollment) => {
-    if (!enrollment.order) {
-      push({
-        type: "info",
-        message: "No payment details available for this enrollment",
-      });
-      return;
-    }
-
     setFormLoading(true);
     setSelectedEnrollment(enrollment);
     try {
-      // Fetch payment details from API
-      const mockPayment = {
-        orderId: enrollment.order,
-        amount: 99.99,
-        currency: "USD",
-        status: "completed",
-        paymentMethod: "Credit Card",
-        transactionId: "TXN123456",
-        paymentDate: enrollment.createdAt,
-      };
-      setPaymentDetails(mockPayment);
+      const details = await getPaymentDetails(enrollment._id);
+      setPaymentDetails(details);
       setPaymentOpen(true);
     } catch (error) {
-      push({
-        type: "error",
-        message: "Failed to fetch payment details",
-      });
+      // Error handled by hook
     } finally {
       setFormLoading(false);
     }

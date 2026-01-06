@@ -1,33 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usersService, User, CreateUserDto, UpdateUserDto } from "@/services/users.service";
+import { studentsService, Student as StudentType, CreateStudentDto as CreateDto, UpdateStudentDto as UpdateDto, StudentStats as StatsType } from "@/services/students.service";
 import { useToast } from "@/context/ToastContext";
 
-export interface Student extends User {
-    progressPercent?: number;
-    scorePercent?: number;
-    enrolledText?: string;
-    joinedDate?: string;
-    rating?: number;
-    location?: string;
-    courseCount?: number;
-    avatarUrl?: string;
-    course?: string;
-    courseDetail?: string;
-}
-
-export interface StudentStats {
-    totalStudents: number;
-    activeStudents: number;
-    avgCompletion: number;
-    avgScore: number;
-}
-
-export interface StudentsResponse {
-    users: Student[];
-    total: number;
-}
+// Re-export types from service
+export type Student = StudentType;
+export type StudentStats = StatsType;
+export type CreateStudentDto = CreateDto;
+export type UpdateStudentDto = UpdateDto;
 
 export function useStudents() {
     const [students, setStudents] = useState<Student[]>([]);
@@ -47,24 +28,21 @@ export function useStudents() {
     } = {}) => {
         setLoading(true);
         try {
-            const data = await usersService.getAllUsers({
-                ...params,
-                role: "student",
-            }) as StudentsResponse;
+            const data = await studentsService.getAllStudents(params);
 
             // Transform data to match Student interface
-            const transformedStudents = data.users.map((user) => ({
+            const transformedStudents = data.students.map((user: any) => ({
                 ...user,
-                avatarUrl: user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random&color=fff&size=128`,
-                progressPercent: 0, // Will be calculated from enrollments API
-                scorePercent: 0, // Will be calculated from quiz results API
+                avatarUrl: user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.email)}&background=random&color=fff&size=128`,
+                progressPercent: user.progressPercent || 0,
+                scorePercent: user.scorePercent || 0,
                 enrolledText: `Enrolled: ${new Date(user.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
                 joinedDate: new Date(user.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
-                rating: 0, // Will be calculated from reviews API
-                location: "", // Will be fetched from user profile
+                rating: user.rating || 0,
+                location: user.country || "",
                 courseCount: user.enrolledCourses || 0,
-                course: "", // Will be fetched from enrollments API
-                courseDetail: "", // Will be fetched from enrollments API
+                course: user.course || "",
+                courseDetail: user.courseDetail || "",
             }));
 
             setStudents(transformedStudents);
@@ -85,13 +63,8 @@ export function useStudents() {
     const fetchStats = async () => {
         setStatsLoading(true);
         try {
-            const data = await usersService.getUserStats() as any;
-            setStats({
-                totalStudents: data.students || 0,
-                activeStudents: data.activeUsers || 0,
-                avgCompletion: 0, // Will be calculated from enrollments API
-                avgScore: 0, // Will be calculated from quiz results API
-            });
+            const data = await studentsService.getStats();
+            setStats(data);
             return data;
         } catch (error: any) {
             push({
@@ -105,13 +78,10 @@ export function useStudents() {
     };
 
     // Create student
-    const createStudent = async (studentData: CreateUserDto) => {
+    const createStudent = async (studentData: CreateDto) => {
         setLoading(true);
         try {
-            const newStudent = await usersService.createUser({
-                ...studentData,
-                role: "student",
-            }) as any;
+            const newStudent = await studentsService.createStudent(studentData) as any;
 
             const transformedStudent: Student = {
                 ...newStudent,
@@ -146,10 +116,10 @@ export function useStudents() {
     };
 
     // Update student
-    const updateStudent = async (id: string, studentData: UpdateUserDto) => {
+    const updateStudent = async (id: string, studentData: UpdateDto) => {
         setLoading(true);
         try {
-            const updatedStudent = await usersService.updateUser(id, studentData) as any;
+            const updatedStudent = await studentsService.updateStudent(id, studentData) as any;
             setStudents((prev) =>
                 prev.map((student) => (student._id === id ? { ...student, ...updatedStudent } : student))
             );
@@ -173,7 +143,7 @@ export function useStudents() {
     const deleteStudent = async (id: string) => {
         setLoading(true);
         try {
-            await usersService.deleteUser(id);
+            await studentsService.deleteStudent(id);
             setStudents((prev) => prev.filter((student) => student._id !== id));
             setTotal((prev) => prev - 1);
             push({
@@ -195,7 +165,7 @@ export function useStudents() {
     const updateStudentStatus = async (id: string, status: "active" | "inactive" | "suspended" | "pending") => {
         setLoading(true);
         try {
-            const updatedStudent = await usersService.updateStatus(id, status);
+            const updatedStudent = await studentsService.updateStatus(id, status);
             setStudents((prev) =>
                 prev.map((student) => (student._id === id ? { ...student, status } : student))
             );
@@ -219,7 +189,7 @@ export function useStudents() {
     const bulkDeleteStudents = async (ids: string[]) => {
         setLoading(true);
         try {
-            await Promise.all(ids.map((id) => usersService.deleteUser(id)));
+            await studentsService.bulkDeleteStudents(ids);
             setStudents((prev) => prev.filter((student) => !ids.includes(student._id)));
             setTotal((prev) => prev - ids.length);
             push({
@@ -245,24 +215,25 @@ export function useStudents() {
                 message: "Preparing export...",
             });
 
-            const data = await usersService.getAllUsers({
-                limit: 10000,
-                role: "student"
-            }) as StudentsResponse;
+            const data = await studentsService.exportStudents();
 
-            const headers = ["ID", "Name", "Email", "Status", "Enrolled Courses", "Created At"];
-            const rows = data.users.map((student) => [
-                student._id,
-                student.name,
+            const headers = ["ID", "First Name", "Last Name", "Email", "Status", "Country", "Enrolled Courses", "Completed Courses", "Avg Progress", "Joined Date"];
+            const rows = data.students.map((student: any) => [
+                student.id,
+                student.firstName,
+                student.lastName,
                 student.email,
                 student.status,
-                student.enrolledCourses || 0,
-                new Date(student.createdAt).toLocaleDateString(),
+                student.country,
+                student.enrolledCourses,
+                student.completedCourses,
+                student.avgProgress,
+                new Date(student.joinedDate).toLocaleDateString(),
             ]);
 
             const csvContent = [
                 headers.join(","),
-                ...rows.map((row) => row.join(",")),
+                ...rows.map((row: any[]) => row.join(",")),
             ].join("\n");
 
             const blob = new Blob([csvContent], { type: "text/csv" });
@@ -302,7 +273,7 @@ export function useStudents() {
     const getStudentProgress = async (studentId: string) => {
         setLoading(true);
         try {
-            const data = await usersService.getStudentProgress(studentId);
+            const data = await studentsService.getStudentProgress(studentId);
             push({
                 type: "success",
                 message: "Student progress loaded successfully",
@@ -325,7 +296,7 @@ export function useStudents() {
     const importStudents = async (students: any[], sendWelcomeEmail: boolean = false) => {
         setLoading(true);
         try {
-            const result = await usersService.importStudents(students, sendWelcomeEmail) as any;
+            const result = await studentsService.importStudents(students, sendWelcomeEmail) as any;
 
             // Refresh students list after import
             await fetchStudents();
@@ -358,7 +329,7 @@ export function useStudents() {
     }) => {
         setLoading(true);
         try {
-            const result = await usersService.sendBroadcastToStudents(params) as any;
+            const result = await studentsService.sendBroadcastToStudents(params) as any;
             push({
                 type: "success",
                 message: `Broadcast email sent to ${result.queued || 0} students`,
@@ -386,7 +357,7 @@ export function useStudents() {
     ) => {
         setLoading(true);
         try {
-            const result = await usersService.sendMessageToStudent(studentId, subject, message, type) as any;
+            const result = await studentsService.sendMessageToStudent(studentId, subject, message, type) as any;
             push({
                 type: "success",
                 message: result.message || "Message sent successfully",
@@ -409,10 +380,10 @@ export function useStudents() {
     const bulkActivateStudents = async (ids: string[]) => {
         setLoading(true);
         try {
-            await usersService.bulkActivateUsers(ids);
+            await studentsService.bulkActivateStudents(ids);
             setStudents((prev) =>
                 prev.map((student) =>
-                    ids.includes(student._id) ? { ...student, status: "active", isActive: true } : student
+                    ids.includes(student._id) ? { ...student, status: "active" as const, isActive: true } : student
                 )
             );
             push({
@@ -436,10 +407,10 @@ export function useStudents() {
     const bulkDeactivateStudents = async (ids: string[]) => {
         setLoading(true);
         try {
-            await usersService.bulkDeactivateUsers(ids);
+            await studentsService.bulkDeactivateStudents(ids);
             setStudents((prev) =>
                 prev.map((student) =>
-                    ids.includes(student._id) ? { ...student, status: "inactive", isActive: false } : student
+                    ids.includes(student._id) ? { ...student, status: "inactive" as const, isActive: false } : student
                 )
             );
             push({

@@ -2,7 +2,10 @@
 
 import AppLayout from "@/components/layout/AppLayout";
 import { AboutUsEditor } from "@/components/cms/AboutUsEditor";
-import { Users } from "lucide-react";
+import { ErrorBoundary } from "@/components/error/ErrorBoundary";
+import { Users, AlertTriangle } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default function AboutUsPage() {
   return (
@@ -26,8 +29,37 @@ export default function AboutUsPage() {
             </p>
           </div>
 
-          {/* About Us Editor Component */}
-          <AboutUsEditor />
+          {/* About Us Editor Component with Error Boundary */}
+          <ErrorBoundary
+            fallback={
+              <Card className="max-w-2xl mx-auto">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg">
+                      <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div>
+                      <CardTitle>Failed to Load About Us Editor</CardTitle>
+                      <CardDescription>
+                        There was an error loading the About Us page editor. Please try refreshing the page.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Button onClick={() => window.location.reload()}>
+                    Reload Page
+                  </Button>
+                </CardContent>
+              </Card>
+            }
+            onError={(error, errorInfo) => {
+              console.error("About Us Editor Error:", error, errorInfo);
+              // TODO: Send to error tracking service
+            }}
+          >
+            <AboutUsEditor />
+          </ErrorBoundary>
         </div>
       </div>
     </AppLayout>

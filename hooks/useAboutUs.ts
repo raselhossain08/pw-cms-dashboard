@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { AboutUsService, AboutUs } from "@/lib/services/about-us.service";
 import { useToast } from "@/context/ToastContext";
+import { cacheService, CacheKeys } from "@/lib/cache.service";
 
 interface UseAboutUsResult {
   aboutUs: AboutUs | null;
@@ -30,6 +31,16 @@ export function useAboutUs(): UseAboutUsResult {
   const [error, setError] = useState<string | null>(null);
 
   const fetchAboutUs = useCallback(async () => {
+    // Check cache first
+    const cacheKey = CacheKeys.aboutUs();
+    const cached = cacheService.get<AboutUs>(cacheKey);
+    
+    if (cached) {
+      setAboutUs(cached);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -39,6 +50,8 @@ export function useAboutUs(): UseAboutUsResult {
           ? response.data[0]
           : response.data;
         setAboutUs(data);
+        // Cache the result for 5 minutes
+        cacheService.set(cacheKey, data, 5 * 60 * 1000);
       } else {
         // Create default if none exists
         const createResponse = await AboutUsService.createAboutUs({
@@ -62,6 +75,8 @@ export function useAboutUs(): UseAboutUsResult {
             ? createResponse.data[0]
             : createResponse.data;
           setAboutUs(data);
+          // Cache the newly created data
+          cacheService.set(cacheKey, data, 5 * 60 * 1000);
         }
       }
     } catch (err: any) {
@@ -112,6 +127,14 @@ export function useAboutUs(): UseAboutUsResult {
   const updateAboutUs = useCallback(
     async (id: string, data: Partial<AboutUs>): Promise<AboutUs | null> => {
       setSaving(true);
+      
+      // Optimistic update
+      const previousData = aboutUs;
+      if (aboutUs) {
+        const optimisticUpdate = { ...aboutUs, ...data };
+        setAboutUs(optimisticUpdate);
+      }
+
       try {
         const response = await AboutUsService.updateAboutUs(id, data);
         if (response.success && response.data) {
@@ -119,6 +142,11 @@ export function useAboutUs(): UseAboutUsResult {
             ? response.data[0]
             : response.data;
           setAboutUs(updated);
+          
+          // Update cache
+          const cacheKey = CacheKeys.aboutUs(id);
+          cacheService.set(cacheKey, updated, 5 * 60 * 1000);
+          
           push({
             message: "About Us page updated successfully!",
             type: "success",
@@ -127,6 +155,11 @@ export function useAboutUs(): UseAboutUsResult {
         }
         throw new Error(response.message || "Failed to update About Us page");
       } catch (err: any) {
+        // Revert optimistic update on error
+        if (previousData) {
+          setAboutUs(previousData);
+        }
+        
         const errorMessage =
           err?.response?.data?.message || err?.message || "Failed to update About Us page";
         push({
@@ -138,7 +171,7 @@ export function useAboutUs(): UseAboutUsResult {
         setSaving(false);
       }
     },
-    [push]
+    [push, aboutUs]
   );
 
   const updateAboutUsWithUpload = useCallback(
@@ -146,7 +179,14 @@ export function useAboutUs(): UseAboutUsResult {
       setSaving(true);
       setUploadProgress(0);
       try {
-        const response = await AboutUsService.updateAboutUsWithUpload(id, formData);
+        const response = await AboutUsService.updateAboutUsWithUpload(
+          id, 
+          formData,
+          (progress) => {
+            // Update progress in real-time
+            setUploadProgress(progress);
+          }
+        );
         if (response.success && response.data) {
           const updated = Array.isArray(response.data)
             ? response.data[0]
@@ -156,7 +196,9 @@ export function useAboutUs(): UseAboutUsResult {
             message: "About Us page updated successfully!",
             type: "success",
           });
-          setUploadProgress(0);
+          // Keep progress at 100% briefly before resetting
+          setUploadProgress(100);
+          setTimeout(() => setUploadProgress(0), 1000);
           return updated;
         }
         throw new Error(response.message || "Failed to update About Us page");
@@ -291,6 +333,9 @@ export function useAboutUs(): UseAboutUsResult {
   );
 
   const refreshAboutUs = useCallback(async () => {
+    // Clear cache before fetching fresh data
+    const cacheKey = CacheKeys.aboutUs();
+    cacheService.delete(cacheKey);
     await fetchAboutUs();
   }, [fetchAboutUs]);
 

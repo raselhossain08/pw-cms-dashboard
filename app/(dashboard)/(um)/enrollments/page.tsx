@@ -6,14 +6,16 @@ import RequireAuth from "@/components/RequireAuth";
 export const metadata: Metadata = {
   title: "Enrollments Management | Dashboard",
   description:
-    "Manage student enrollments, track progress, and handle course registrations",
+    "Comprehensive enrollment management system for tracking student progress, course registrations, and learning analytics",
 };
 
 export default function EnrollmentsPage() {
   return (
     <RequireAuth roles={["admin", "super_admin", "instructor"]}>
       <AppLayout>
-        <Enrollments />
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+          <Enrollments />
+        </div>
       </AppLayout>
     </RequireAuth>
   );

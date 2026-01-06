@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import AppLayout from "@/components/layout/AppLayout";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 import {
   Brain,
   History,
@@ -17,6 +19,26 @@ import {
   Lightbulb,
   Shield,
   Settings,
+  FileText,
+  Image as ImageIcon,
+  File,
+  Download,
+  Loader2,
+  TrendingUp,
+  MessageSquare,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Users,
+  Database,
+  Code,
+  Zap,
+  Lock,
+  Key,
+  ShoppingCart,
+  GraduationCap,
+  FileCode,
+  Terminal,
 } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import { useAiAssistant } from "@/hooks/useAiAssistant";
@@ -26,6 +48,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   ThumbsUp,
@@ -37,9 +60,26 @@ import {
   Search,
   Wifi,
   WifiOff,
+  BarChart3,
+  Activity,
 } from "lucide-react";
 
 export default function AIAssistantPage() {
+  const { user } = useAuth();
+  const router = useRouter();
+
+  // Check if user is Super Admin
+  React.useEffect(() => {
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    if (user.role !== "super_admin") {
+      router.push("/");
+      return;
+    }
+  }, [user, router]);
   const { push } = useToast();
   const {
     messages,
@@ -76,6 +116,11 @@ export default function AIAssistantPage() {
     regenerateLastResponse,
   } = useAiAssistant();
 
+  // Local error state for custom errors
+  const [localError, setLocalError] = React.useState<string | undefined>(
+    undefined
+  );
+
   const typingTimeoutRef = React.useRef<number | null>(null);
   const canSend = (input || "").trim().length > 0;
   const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -84,6 +129,7 @@ export default function AIAssistantPage() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [ratingValue, setRatingValue] = React.useState(0);
   const [feedbackText, setFeedbackText] = React.useState("");
+  const [showAnalytics, setShowAnalytics] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const recognitionRef = React.useRef<any>(null);
 
@@ -351,6 +397,21 @@ export default function AIAssistantPage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function getFileIcon(type?: string) {
+    if (!type) return <File className="w-4 h-4" />;
+    if (type.startsWith("image/")) return <ImageIcon className="w-4 h-4" />;
+    if (type.includes("pdf")) return <FileText className="w-4 h-4" />;
+    return <File className="w-4 h-4" />;
+  }
+
+  function formatFileSize(bytes?: number) {
+    if (!bytes) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  }
+
   // socket connection handled by useAiAssistant
 
   // typing indicator via hook
@@ -361,18 +422,30 @@ export default function AIAssistantPage() {
         <div className=" mx-auto px-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-secondary mb-2">
-                Personal Wings AI Assistant
-              </h1>
-              <p className="text-gray-600">Professional support and guidance</p>
+              <div className="flex items-center gap-3 mb-2">
+                <h1 className="text-3xl font-bold text-secondary">
+                  Super Admin AI Assistant
+                </h1>
+                <div className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                  <Shield className="w-4 h-4" />
+                  <span>Full System Access</span>
+                </div>
+              </div>
+              <p className="text-gray-600">
+                Complete platform control through natural language commands
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                ✨ Type commands in plain English to manage users, courses,
+                content, orders, and more
+              </p>
             </div>
             <div className="flex items-center gap-4 flex-wrap">
               <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100">
                 <div className="flex items-center space-x-3">
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
                       connectionStatus === "connected"
-                        ? "bg-green-100"
+                        ? "bg-green-100 animate-pulse"
                         : connectionStatus === "connecting"
                         ? "bg-yellow-100"
                         : "bg-red-100"
@@ -380,6 +453,8 @@ export default function AIAssistantPage() {
                   >
                     {connectionStatus === "connected" ? (
                       <Wifi className="text-green-600 w-5 h-5" />
+                    ) : connectionStatus === "connecting" ? (
+                      <Loader2 className="text-yellow-600 w-5 h-5 animate-spin" />
                     ) : (
                       <WifiOff className="text-red-600 w-5 h-5" />
                     )}
@@ -392,19 +467,41 @@ export default function AIAssistantPage() {
                         ? "Connecting..."
                         : "Disconnected"}
                     </p>
-                    <p className="text-xs text-accent">
-                      {aiStatus?.aiEnabled ? "AI Enabled" : "AI Disabled"}
+                    <p className="text-xs text-accent flex items-center gap-1">
+                      {aiStatus?.aiEnabled ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3 text-green-600" />
+                          AI Enabled
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-3 h-3 text-yellow-600" />
+                          AI Disabled
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>
               </div>
+              <button
+                onClick={() => setShowAnalytics(!showAnalytics)}
+                className={`${
+                  showAnalytics
+                    ? "bg-primary text-white"
+                    : "bg-white text-secondary border border-gray-200"
+                } px-4 py-2 rounded-lg hover:opacity-90 transition-all flex items-center space-x-2`}
+                aria-label="Toggle analytics"
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>Analytics</span>
+              </button>
               <button
                 onClick={() => setHistoryOpen(true)}
                 className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center space-x-2"
                 aria-label="Open chat history"
               >
                 <History className="w-4 h-4" />
-                <span>Chat History</span>
+                <span>History</span>
               </button>
               <button
                 onClick={() => setSettingsOpen(true)}
@@ -417,80 +514,324 @@ export default function AIAssistantPage() {
             </div>
           </div>
 
+          {/* Analytics Panel */}
+          {showAnalytics && (
+            <div className="mb-8 animate-in slide-in-from-top duration-300">
+              <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-secondary flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-primary" />
+                    AI Assistant Analytics
+                  </h2>
+                  <button
+                    onClick={() => setShowAnalytics(false)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                        <MessageSquare className="w-5 h-5 text-white" />
+                      </div>
+                      <TrendingUp className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <p className="text-2xl font-bold text-blue-900">
+                      {messages.length}
+                    </p>
+                    <p className="text-sm text-blue-700">Total Messages</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
+                        <History className="w-5 h-5 text-white" />
+                      </div>
+                      <TrendingUp className="w-4 h-4 text-green-600" />
+                    </div>
+                    <p className="text-2xl font-bold text-green-900">
+                      {conversations.length}
+                    </p>
+                    <p className="text-sm text-green-700">Conversations</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center">
+                        <Paperclip className="w-5 h-5 text-white" />
+                      </div>
+                      <TrendingUp className="w-4 h-4 text-purple-600" />
+                    </div>
+                    <p className="text-2xl font-bold text-purple-900">
+                      {attachments.length}
+                    </p>
+                    <p className="text-sm text-purple-700">Attachments</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 border border-orange-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
+                        <Clock className="w-5 h-5 text-white" />
+                      </div>
+                      <Activity className="w-4 h-4 text-orange-600" />
+                    </div>
+                    <p className="text-2xl font-bold text-orange-900">
+                      {connectionStatus === "connected" ? "Online" : "Offline"}
+                    </p>
+                    <p className="text-sm text-orange-700">Status</p>
+                  </div>
+                </div>
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <h3 className="font-semibold text-secondary mb-3 flex items-center gap-2">
+                      <Brain className="w-4 h-4 text-primary" />
+                      AI Configuration
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">OpenAI:</span>
+                        <span
+                          className={`font-medium ${
+                            aiStatus?.openAIEnabled
+                              ? "text-green-600"
+                              : "text-gray-400"
+                          }`}
+                        >
+                          {aiStatus?.openAIEnabled ? "Enabled" : "Disabled"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Gemini:</span>
+                        <span
+                          className={`font-medium ${
+                            aiStatus?.geminiEnabled
+                              ? "text-green-600"
+                              : "text-gray-400"
+                          }`}
+                        >
+                          {aiStatus?.geminiEnabled ? "Enabled" : "Disabled"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">WebSocket:</span>
+                        <span
+                          className={`font-medium ${
+                            connectionStatus === "connected"
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {connectionStatus === "connected"
+                            ? "Connected"
+                            : "Disconnected"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <h3 className="font-semibold text-secondary mb-3 flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-primary" />
+                      Session Info
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Current Messages:</span>
+                        <span className="font-medium text-secondary">
+                          {messages.filter((m) => m.from === "user").length}{" "}
+                          sent
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">AI Responses:</span>
+                        <span className="font-medium text-secondary">
+                          {messages.filter((m) => m.from === "ai").length}{" "}
+                          received
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Quick Replies:</span>
+                        <span className="font-medium text-secondary">
+                          {quickReplies.length} available
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8">
             <div className="order-2 lg:order-1 lg:col-span-1 space-y-6">
               <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="font-semibold text-secondary mb-4">
-                  AI Capabilities
+                <h3 className="font-semibold text-secondary mb-4 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-purple-600" />
+                  Super Admin Capabilities
                 </h3>
                 <div className="space-y-3">
-                  <div className="flex items-center space-x-3 p-3 bg-primary/5 rounded-lg">
-                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                      <Book className="text-white w-4 h-4" />
+                  <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                      <Users className="text-white w-4 h-4" />
                     </div>
-                    <span className="text-sm font-medium text-secondary">
-                      Course Guidance
-                    </span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-secondary block">
+                        User Management
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        Create, update, delete users
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-3 p-3 bg-accent/5 rounded-lg">
-                    <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-                      <Plane className="text-white w-4 h-4" />
+                  <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200">
+                    <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
+                      <GraduationCap className="text-white w-4 h-4" />
                     </div>
-                    <span className="text-sm font-medium text-secondary">
-                      Aircraft Knowledge
-                    </span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-secondary block">
+                        Course Management
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        Full course CRUD operations
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-3 p-3 bg-purple-100 rounded-lg">
-                    <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
-                      <LineChart className="text-white w-4 h-4" />
+                  <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200">
+                    <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
+                      <FileCode className="text-white w-4 h-4" />
                     </div>
-                    <span className="text-sm font-medium text-secondary">
-                      Progress Analysis
-                    </span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-secondary block">
+                        Content Management
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        Blogs, pages, media
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-3 p-3 bg-yellow-100 rounded-lg">
-                    <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center">
-                      <HelpCircle className="text-white w-4 h-4" />
+                  <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg border border-orange-200">
+                    <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center">
+                      <ShoppingCart className="text-white w-4 h-4" />
                     </div>
-                    <span className="text-sm font-medium text-secondary">
-                      Technical Support
-                    </span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-secondary block">
+                        Order Management
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        View, process, refund
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-red-50 to-red-100 rounded-lg border border-red-200">
+                    <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center">
+                      <Database className="text-white w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-secondary block">
+                        Database Access
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        Read/write all data
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-pink-50 to-pink-100 rounded-lg border border-pink-200">
+                    <div className="w-8 h-8 bg-pink-600 rounded-lg flex items-center justify-center">
+                      <BarChart3 className="text-white w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-secondary block">
+                        Analytics & Reports
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        All system metrics
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="font-semibold text-secondary mb-4">
-                  Quick Actions
+                <h3 className="font-semibold text-secondary mb-4 flex items-center gap-2">
+                  <Terminal className="w-5 h-5 text-purple-600" />
+                  Admin Command Examples
                 </h3>
                 <div className="space-y-2">
                   <button
-                    className="w-full text-left p-3 bg-gray-50 hover:bg-primary/5 rounded-lg transition-colors text-sm font-medium text-secondary"
-                    onClick={() => sendMessage("Explain Training Module")}
+                    className="w-full text-left p-3 bg-gradient-to-r from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 rounded-lg transition-all text-sm font-medium text-secondary border border-blue-200"
+                    onClick={() =>
+                      sendMessage("Show me all users registered today")
+                    }
                   >
-                    <Bot className="w-4 h-4 mr-2 inline text-primary" />
-                    Explain Training Module
+                    <Users className="w-4 h-4 mr-2 inline text-blue-600" />
+                    <span className="block">
+                      Show all users registered today
+                    </span>
+                    <span className="text-xs text-gray-600 block mt-1">
+                      User data retrieval
+                    </span>
                   </button>
                   <button
-                    className="w-full text-left p-3 bg-gray-50 hover:bg-primary/5 rounded-lg transition-colors text-sm font-medium text-secondary"
-                    onClick={() => sendMessage("Find Aircraft Specifications")}
+                    className="w-full text-left p-3 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 rounded-lg transition-all text-sm font-medium text-secondary border border-green-200"
+                    onClick={() =>
+                      sendMessage(
+                        "Create a new course about React Development with price $99"
+                      )
+                    }
                   >
-                    <SearchIcon className="w-4 h-4 mr-2 inline text-primary" />
-                    Find Aircraft Specifications
+                    <GraduationCap className="w-4 h-4 mr-2 inline text-green-600" />
+                    <span className="block">Create new course</span>
+                    <span className="text-xs text-gray-600 block mt-1">
+                      Course creation
+                    </span>
                   </button>
                   <button
-                    className="w-full text-left p-3 bg-gray-50 hover:bg-primary/5 rounded-lg transition-colors text-sm font-medium text-secondary"
-                    onClick={() => sendMessage("Analyze Progress Report")}
+                    className="w-full text-left p-3 bg-gradient-to-r from-purple-50 to-purple-100 hover:from-purple-100 hover:to-purple-200 rounded-lg transition-all text-sm font-medium text-secondary border border-purple-200"
+                    onClick={() =>
+                      sendMessage("Write a blog post about aviation safety")
+                    }
                   >
-                    <BarChart2 className="w-4 h-4 mr-2 inline text-primary" />
-                    Analyze Progress Report
+                    <FileCode className="w-4 h-4 mr-2 inline text-purple-600" />
+                    <span className="block">Create blog post</span>
+                    <span className="text-xs text-gray-600 block mt-1">
+                      Content generation
+                    </span>
                   </button>
                   <button
-                    className="w-full text-left p-3 bg-gray-50 hover:bg-primary/5 rounded-lg transition-colors text-sm font-medium text-secondary"
-                    onClick={() => sendMessage("Platform Help")}
+                    className="w-full text-left p-3 bg-gradient-to-r from-orange-50 to-orange-100 hover:from-orange-100 hover:to-orange-200 rounded-lg transition-all text-sm font-medium text-secondary border border-orange-200"
+                    onClick={() =>
+                      sendMessage("Show me all pending orders from this week")
+                    }
                   >
-                    <Settings className="w-4 h-4 mr-2 inline text-primary" />
-                    Platform Help
+                    <ShoppingCart className="w-4 h-4 mr-2 inline text-orange-600" />
+                    <span className="block">View pending orders</span>
+                    <span className="text-xs text-gray-600 block mt-1">
+                      Order management
+                    </span>
+                  </button>
+                  <button
+                    className="w-full text-left p-3 bg-gradient-to-r from-pink-50 to-pink-100 hover:from-pink-100 hover:to-pink-200 rounded-lg transition-all text-sm font-medium text-secondary border border-pink-200"
+                    onClick={() =>
+                      sendMessage("Give me analytics for last month")
+                    }
+                  >
+                    <BarChart3 className="w-4 h-4 mr-2 inline text-pink-600" />
+                    <span className="block">Get analytics report</span>
+                    <span className="text-xs text-gray-600 block mt-1">
+                      Data analysis
+                    </span>
+                  </button>
+                  <button
+                    className="w-full text-left p-3 bg-gradient-to-r from-red-50 to-red-100 hover:from-red-100 hover:to-red-200 rounded-lg transition-all text-sm font-medium text-secondary border border-red-200"
+                    onClick={() =>
+                      sendMessage(
+                        "Update course ID 123 and set status to published"
+                      )
+                    }
+                  >
+                    <Code className="w-4 h-4 mr-2 inline text-red-600" />
+                    <span className="block">Update database records</span>
+                    <span className="text-xs text-gray-600 block mt-1">
+                      Direct modifications
+                    </span>
                   </button>
                 </div>
               </div>
@@ -530,11 +871,15 @@ export default function AIAssistantPage() {
                           ? c.messages[c.messages.length - 1]
                           : null;
                       const title = lastMsg?.content || "Conversation";
-                      const time = c.lastActiveAt
-                        ? formatDistanceToNow(new Date(c.lastActiveAt), {
-                            addSuffix: true,
-                          })
-                        : "";
+
+                      // Safely format date
+                      let time = "";
+                      if (c.lastActiveAt) {
+                        const date = new Date(c.lastActiveAt);
+                        if (!isNaN(date.getTime())) {
+                          time = formatDistanceToNow(date, { addSuffix: true });
+                        }
+                      }
                       return (
                         <div key={c.sessionId} className="group relative">
                           <button
@@ -590,11 +935,16 @@ export default function AIAssistantPage() {
                         ? c.messages[c.messages.length - 1]
                         : null;
                     const title = lastMsg?.content || "Conversation";
-                    const time = c.lastActiveAt
-                      ? formatDistanceToNow(new Date(c.lastActiveAt), {
-                          addSuffix: true,
-                        })
-                      : "";
+
+                    // Safely format date
+                    let time = "";
+                    if (c.lastActiveAt) {
+                      const date = new Date(c.lastActiveAt);
+                      if (!isNaN(date.getTime())) {
+                        time = formatDistanceToNow(date, { addSuffix: true });
+                      }
+                    }
+
                     return (
                       <button
                         key={c.sessionId}
@@ -645,6 +995,68 @@ export default function AIAssistantPage() {
                   ref={containerRef}
                   className="flex-1 p-4 sm:p-6 overflow-y-auto bg-gray-50"
                 >
+                  {messages.length === 0 && !typing && (
+                    <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                      <div className="w-24 h-24 bg-gradient-to-br from-purple-600 via-pink-600 to-red-600 rounded-full flex items-center justify-center mb-4 animate-pulse shadow-lg">
+                        <Shield className="w-12 h-12 text-white" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-secondary mb-2">
+                        Welcome, Super Admin!
+                      </h3>
+                      <p className="text-gray-600 mb-3 max-w-2xl">
+                        I'm your AI-powered admin assistant with{" "}
+                        <span className="font-semibold text-purple-600">
+                          full system access
+                        </span>
+                        . I can help you manage users, courses, content, orders,
+                        and everything else on the platform.
+                      </p>
+                      <p className="text-sm text-gray-500 mb-6 max-w-2xl">
+                        💡{" "}
+                        <span className="font-medium">
+                          Just type what you want to do in plain English!
+                        </span>
+                        <br />
+                        Examples: "Show me all users", "Create a course",
+                        "Update blog post", "Get analytics report"
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-3xl w-full">
+                        <button
+                          onClick={() =>
+                            sendMessage(
+                              "Show me all users registered this month"
+                            )
+                          }
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-3 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all text-sm font-medium shadow-md"
+                        >
+                          <Users className="w-5 h-5 mx-auto mb-1" />
+                          User Management
+                        </button>
+                        <button
+                          onClick={() =>
+                            sendMessage(
+                              "Create a new course about Web Development"
+                            )
+                          }
+                          className="bg-gradient-to-r from-green-500 to-green-600 text-white px-4 py-3 rounded-lg hover:from-green-600 hover:to-green-700 transition-all text-sm font-medium shadow-md"
+                        >
+                          <GraduationCap className="w-5 h-5 mx-auto mb-1" />
+                          Course Creation
+                        </button>
+                        <button
+                          onClick={() =>
+                            sendMessage(
+                              "Give me analytics dashboard for this week"
+                            )
+                          }
+                          className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-4 py-3 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all text-sm font-medium shadow-md"
+                        >
+                          <BarChart3 className="w-5 h-5 mx-auto mb-1" />
+                          Analytics Report
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {messages.map((m, idx) => (
                     <div
                       key={idx}
@@ -781,36 +1193,74 @@ export default function AIAssistantPage() {
                 </div>
 
                 <div className="border-t border-gray-200 p-3 sm:p-4 bg-white">
-                  <div className="flex flex-wrap gap-2">
-                    {(quickReplies.length ? quickReplies : []).map((s) => (
-                      <button
-                        key={s}
-                        className="suggestion-chip bg-gray-100 text-secondary px-3 py-2 rounded-full text-xs sm:text-sm hover:bg-gray-200"
-                        onClick={() => sendMessage(s)}
-                        aria-label={`Send quick reply ${s}`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                    {attachments.map((a) => (
-                      <span
-                        key={a.name}
-                        className="inline-flex items-center gap-2 bg-gray-100 text-secondary px-3 py-2 rounded-full text-xs"
-                      >
-                        {a.name}{" "}
-                        {typeof a.progress === "number" && !a.uploaded
-                          ? `${a.progress}%`
-                          : ""}
-                        <button
-                          aria-label={`Remove ${a.name}`}
-                          onClick={() => removeAttachment(a.name)}
-                          className="text-gray-500 hover:text-red-600"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+                  {/* Quick Replies */}
+                  {quickReplies.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-xs text-gray-500 mb-2 font-medium">
+                        Quick Replies:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {quickReplies.map((s) => (
+                          <button
+                            key={s}
+                            className="suggestion-chip bg-gradient-to-r from-primary/10 to-accent/10 text-secondary px-3 py-2 rounded-full text-xs sm:text-sm hover:from-primary/20 hover:to-accent/20 border border-primary/20 transition-all"
+                            onClick={() => sendMessage(s)}
+                            aria-label={`Send quick reply ${s}`}
+                          >
+                            <Lightbulb className="w-3 h-3 inline mr-1" />
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Attachments */}
+                  {attachments.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-xs text-gray-500 mb-2 font-medium flex items-center gap-1">
+                        <Paperclip className="w-3 h-3" />
+                        Attachments ({attachments.length}):
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {attachments.map((a) => (
+                          <div
+                            key={a.name}
+                            className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3 hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                              {getFileIcon(a.type)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-secondary truncate">
+                                {a.name}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {formatFileSize(a.size)}
+                                {typeof a.progress === "number" &&
+                                  !a.uploaded && (
+                                    <span className="ml-2 text-primary">
+                                      • {a.progress}% uploading...
+                                    </span>
+                                  )}
+                                {a.uploaded && (
+                                  <span className="ml-2 text-green-600">
+                                    • Uploaded
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <button
+                              aria-label={`Remove ${a.name}`}
+                              onClick={() => removeAttachment(a.name)}
+                              className="shrink-0 text-gray-400 hover:text-red-600 transition-colors p-1"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-gray-200 p-3 sm:p-4 bg-white rounded-b-xl">
@@ -877,18 +1327,48 @@ export default function AIAssistantPage() {
                     </div>
                     <button
                       onClick={() => sendMessage()}
-                      disabled={!canSend || sending}
-                      className="bg-primary text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg hover:bg-primary/90 transition-colors flex items-center space-x-2 text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!canSend || sending || typing}
+                      className="bg-primary text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg hover:bg-primary/90 transition-all flex items-center space-x-2 text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
                       aria-label="Send message"
                     >
-                      <Send className="w-4 h-4" />
-                      <span>Send</span>
+                      {sending || typing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Sending...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Send</span>
+                        </>
+                      )}
                     </button>
                   </div>
-                  {error && (
-                    <p className="text-xs text-red-600 mt-2" role="alert">
-                      {error}
-                    </p>
+                  {(error || localError) && (
+                    <div
+                      className="mt-2 flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2"
+                      role="alert"
+                    >
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{error || localError}</span>
+                      <button
+                        onClick={() => setLocalError(undefined)}
+                        className="ml-auto text-red-400 hover:text-red-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  {connectionStatus === "disconnected" && (
+                    <div
+                      className="mt-2 flex items-center gap-2 text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg p-2"
+                      role="alert"
+                    >
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>
+                        Connection lost. Messages will be sent via REST API.
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -896,69 +1376,92 @@ export default function AIAssistantPage() {
 
             <div className="order-3 lg:order-3 lg:col-span-1 space-y-6">
               <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="font-semibold text-secondary mb-4">
-                  Learning Resources
+                <h3 className="font-semibold text-secondary mb-4 flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-purple-600" />
+                  Quick Admin Tasks
                 </h3>
                 <div className="space-y-3">
                   <div
-                    className="p-3 bg-blue-50 rounded-lg border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors"
+                    className="p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 cursor-pointer hover:from-blue-100 hover:to-blue-200 transition-all"
                     onClick={() =>
-                      sendMessage("Show me aviation regulations guide")
+                      sendMessage(
+                        "Show me all active users and their last login"
+                      )
                     }
                   >
-                    <p className="text-sm font-medium text-secondary">
-                      Aviation Regulations Guide
-                    </p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Users className="w-4 h-4 text-blue-600" />
+                      <p className="text-sm font-medium text-secondary">
+                        User Activity Report
+                      </p>
+                    </div>
                     <p className="text-xs text-gray-600">
-                      FAA & EASA compliance
+                      View all active users with last login
                     </p>
                   </div>
                   <div
-                    className="p-3 bg-green-50 rounded-lg border border-green-200 cursor-pointer hover:bg-green-100 transition-colors"
-                    onClick={() => sendMessage("Open training manuals")}
+                    className="p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 cursor-pointer hover:from-green-100 hover:to-green-200 transition-all"
+                    onClick={() =>
+                      sendMessage("Show me revenue report for last 30 days")
+                    }
                   >
-                    <p className="text-sm font-medium text-secondary">
-                      Training Manuals
-                    </p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <ShoppingCart className="w-4 h-4 text-green-600" />
+                      <p className="text-sm font-medium text-secondary">
+                        Revenue Analytics
+                      </p>
+                    </div>
                     <p className="text-xs text-gray-600">
-                      Complete course materials
+                      30-day revenue and sales data
                     </p>
                   </div>
                   <div
-                    className="p-3 bg-purple-50 rounded-lg border border-purple-200 cursor-pointer hover:bg-purple-100 transition-colors"
-                    onClick={() => sendMessage("Browse aircraft database")}
+                    className="p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200 cursor-pointer hover:from-purple-100 hover:to-purple-200 transition-all"
+                    onClick={() =>
+                      sendMessage(
+                        "Show me all published courses with enrollment count"
+                      )
+                    }
                   >
-                    <p className="text-sm font-medium text-secondary">
-                      Aircraft Databases
-                    </p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <GraduationCap className="w-4 h-4 text-purple-600" />
+                      <p className="text-sm font-medium text-secondary">
+                        Course Performance
+                      </p>
+                    </div>
                     <p className="text-xs text-gray-600">
-                      Specifications & manuals
+                      All courses with enrollment stats
+                    </p>
+                  </div>
+                  <div
+                    className="p-3 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg border border-orange-200 cursor-pointer hover:from-orange-100 hover:to-orange-200 transition-all"
+                    onClick={() =>
+                      sendMessage("Show me system status and database health")
+                    }
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Activity className="w-4 h-4 text-orange-600" />
+                      <p className="text-sm font-medium text-secondary">
+                        System Health Check
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Platform status and metrics
                     </p>
                   </div>
                 </div>
               </div>
 
               <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="font-semibold text-secondary mb-4">
-                  Voice Control
+                <h3 className="font-semibold text-secondary mb-4 flex items-center gap-2">
+                  <Mic className="w-5 h-5 text-purple-600" />
+                  Voice Commands
                 </h3>
                 <div className="text-center">
                   <button
-                    className="pulse-glow w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-3"
+                    className="pulse-glow w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg"
                     onClick={() => {
-                      setListening((v) => {
-                        const next = !v;
-                        if (next) {
-                          setTimeout(() => {
-                            const voiceText =
-                              "What are the requirements for commercial pilot training?";
-                            setInput(voiceText);
-                            sendMessage(voiceText);
-                            setListening(false);
-                          }, 3000);
-                        }
-                        return next;
-                      });
+                      setListening((v) => !v);
                     }}
                   >
                     {listening ? (
@@ -967,12 +1470,52 @@ export default function AIAssistantPage() {
                       <Mic className="text-white w-6 h-6" />
                     )}
                   </button>
-                  <p className="text-sm text-gray-600">
-                    Click to speak with AI Assistant
+                  <p className="text-sm font-medium text-secondary">
+                    Speak admin commands
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Supports natural language queries
+                  <p className="text-xs text-gray-500 mt-2">
+                    Say things like: "Show me all users" or "Create a course
+                    about AI"
                   </p>
+                </div>
+              </div>
+
+              {/* Admin Info Panel */}
+              <div className="bg-gradient-to-r from-purple-50 via-pink-50 to-red-50 rounded-xl p-6 shadow-sm border-2 border-purple-200">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-lg flex items-center justify-center shrink-0">
+                    <Key className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-secondary mb-2">
+                      Full Access Granted
+                    </h4>
+                    <p className="text-xs text-gray-600 mb-3">
+                      As a super admin, this AI can:
+                    </p>
+                    <ul className="text-xs text-gray-600 space-y-1">
+                      <li className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-green-600" />
+                        Read all database records
+                      </li>
+                      <li className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-green-600" />
+                        Create & modify content
+                      </li>
+                      <li className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-green-600" />
+                        Manage users & permissions
+                      </li>
+                      <li className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-green-600" />
+                        Process orders & payments
+                      </li>
+                      <li className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-green-600" />
+                        Generate reports & analytics
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             </div>

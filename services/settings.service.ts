@@ -378,7 +378,7 @@ export const settingsService = {
 
         Object.entries(settings).forEach(([key, value]) => {
             let configKey: string | null = null;
-            let configValue: string;
+            let configValue: string = String(value);
 
             if (value === undefined || value === null) return;
 

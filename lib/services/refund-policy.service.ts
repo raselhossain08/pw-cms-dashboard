@@ -60,9 +60,9 @@ export interface RefundPolicyResponse {
 }
 
 export class RefundPolicyService {
-  private static async getAuthHeader() {
+  private static async getAuthHeader(): Promise<string | undefined> {
     const token = cookieService.get("token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return token ? `Bearer ${token}` : undefined;
   }
 
   private static async request<T>(
@@ -70,11 +70,11 @@ export class RefundPolicyService {
     url: string,
     body?: unknown
   ): Promise<T> {
-    const authHeader = await this.getAuthHeader();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...authHeader,
     };
+    const auth = await this.getAuthHeader();
+    if (auth) headers.Authorization = auth;
 
     const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
     if (isFormData) {

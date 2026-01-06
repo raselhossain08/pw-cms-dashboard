@@ -772,6 +772,7 @@ export function useChat() {
     setNewChatOpen,
     setDeleteDialogOpen,
     setConversationToDelete,
+    setError,
     clearError,
     messagesEndRef,
   };

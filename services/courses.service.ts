@@ -426,6 +426,60 @@ class CoursesService {
         }
     }
 
+    async getRecommendations(limit = 10) {
+        try {
+            const response = await apiClient.get<any>("/courses/recommendations", { params: { limit } });
+            return (response.data as any)?.data || [];
+        } catch (error) {
+            console.error("Failed to fetch recommendations:", error);
+            return [];
+        }
+    }
+
+    async compareCourses(ids: string[]) {
+        try {
+            const response = await apiClient.get<any>("/courses/compare", {
+                params: { ids: ids.join(',') }
+            });
+            return (response.data as any)?.data || [];
+        } catch (error) {
+            console.error("Failed to compare courses:", error);
+            throw error;
+        }
+    }
+
+    async getInstructorCourses(page = 1, limit = 10) {
+        try {
+            const response = await apiClient.get<any>("/courses/instructor/my-courses", {
+                params: { page, limit }
+            });
+            return (response.data as any)?.data || { courses: [], total: 0 };
+        } catch (error) {
+            console.error("Failed to fetch instructor courses:", error);
+            return { courses: [], total: 0 };
+        }
+    }
+
+    async getCourseAnalytics(id: string) {
+        try {
+            const response = await apiClient.get<any>(`/courses/${id}/analytics`);
+            return (response.data as any)?.data || null;
+        } catch (error) {
+            console.error(`Failed to fetch course analytics for ${id}:`, error);
+            throw error;
+        }
+    }
+
+    async previewCourse(id: string) {
+        try {
+            const response = await apiClient.get<any>(`/courses/${id}/preview`);
+            return (response.data as any)?.data || null;
+        } catch (error) {
+            console.error(`Failed to preview course ${id}:`, error);
+            throw error;
+        }
+    }
+
     // Calculate dashboard overview statistics
     calculateDashboardStats(courses: Course[]) {
         const totalCourses = courses.length;

@@ -13,7 +13,9 @@ export default function InstructorsPage() {
   return (
     <RequireAuth roles={["admin", "super_admin", "instructor"]}>
       <AppLayout>
-        <Instructors />
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+          <Instructors />
+        </div>
       </AppLayout>
     </RequireAuth>
   );

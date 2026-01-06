@@ -3,20 +3,20 @@ import type { Blog, UpdateBlogDto } from '@/lib/types/blog';
 
 export const blogService = {
     async getBlog() {
-        const res = await axios.get<{ success: boolean; data: { success: boolean; data: Blog } }>('/cms/home/blog');
-        return res.data.data.data;
+        const res = await axios.get<{ data: Blog }>('/cms/home/blog');
+        return res.data.data;
     },
 
     async updateBlog(data: UpdateBlogDto) {
-        const res = await axios.patch<{ success: boolean; data: { success: boolean; data: Blog } }>('/cms/home/blog', data);
-        return res.data.data.data;
+        const res = await axios.patch<{ data: Blog }>('/cms/home/blog', data);
+        return res.data.data;
     },
 
     async updateBlogWithMedia(
         formData: FormData,
         onUploadProgress?: (progress: number) => void
     ) {
-        const res = await axios.patch<{ success: boolean; data: { success: boolean; data: Blog }; message: string }>(
+        const res = await axios.patch<{ data: Blog; message?: string }>(
             '/cms/home/blog',
             formData,
             {
@@ -31,17 +31,17 @@ export const blogService = {
                 },
             }
         );
-        return res.data.data.data;
+        return res.data.data;
     },
 
     async toggleActive() {
-        const res = await axios.patch<{ success: boolean; data: { success: boolean; data: Blog } }>('/cms/home/blog/toggle-active');
-        return res.data.data.data;
+        const res = await axios.patch<{ data: Blog }>('/cms/home/blog/toggle-active');
+        return res.data.data;
     },
 
     async duplicateBlogPost(slug: string) {
-        const res = await axios.post<{ success: boolean; data: { success: boolean; data: Blog } }>(`/cms/home/blog/${slug}/duplicate`);
-        return res.data.data.data;
+        const res = await axios.post<{ data: Blog }>(`/cms/home/blog/${slug}/duplicate`);
+        return res.data.data;
     },
 
     async exportBlog(format: "json" | "pdf") {

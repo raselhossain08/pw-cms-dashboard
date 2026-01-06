@@ -88,14 +88,24 @@ function EditCourse({ courseId }: EditCourseProps) {
             process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
           }/users/instructors`
         );
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
-        setInstructors(data.data || []);
+        if (data && Array.isArray(data.data)) {
+          setInstructors(data.data);
+        } else {
+          setInstructors([]);
+          console.warn("Instructors data format unexpected:", data);
+        }
       } catch (error) {
         console.error("Failed to fetch instructors:", error);
+        setInstructors([]);
+        push({ type: "error", message: "Failed to load instructors" });
       }
     };
     fetchInstructors();
-  }, []);
+  }, [push]);
 
   // Fetch categories from API
   const { data: categoriesData } = useQuery({
@@ -203,6 +213,10 @@ function EditCourse({ courseId }: EditCourseProps) {
     reader.onloadend = () => {
       setThumbnailPreview(reader.result as string);
     };
+    reader.onerror = () => {
+      push({ type: "error", message: "Failed to read image file" });
+      setThumbnailFile(null);
+    };
     reader.readAsDataURL(file);
   };
 
@@ -239,6 +253,10 @@ function EditCourse({ courseId }: EditCourseProps) {
     const reader = new FileReader();
     reader.onloadend = () => {
       setThumbnailPreview(reader.result as string);
+    };
+    reader.onerror = () => {
+      push({ type: "error", message: "Failed to read dropped image" });
+      setThumbnailFile(null);
     };
     reader.readAsDataURL(file);
   };
@@ -677,7 +695,7 @@ function EditCourse({ courseId }: EditCourseProps) {
             <TabsContent value="pricing" className="p-8 space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
-                  <div className="bg-gradient-to-br from-primary/5 to-primary/10 rounded-lg p-6 border border-primary/20">
+                  <div className="bg-linear-to-br from-primary/5 to-primary/10 rounded-lg p-6 border border-primary/20">
                     <h3 className="text-lg font-semibold text-secondary mb-4">
                       Pricing Information
                     </h3>

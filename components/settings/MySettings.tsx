@@ -3327,13 +3327,138 @@ export default function MySettings({
       )}
 
       {activeTab === "Advanced" && (
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-          <h4 className="text-lg font-semibold text-secondary mb-2">
-            Advanced Settings
-          </h4>
-          <p className="text-sm text-gray-600">
-            Configure experimental and low-level options.
-          </p>
+        <div className="space-y-6">
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            <h4 className="text-lg font-semibold text-secondary mb-2">
+              Advanced Settings
+            </h4>
+            <p className="text-sm text-gray-600 mb-6">
+              Configure experimental and low-level system options. Use with caution.
+            </p>
+
+            <div className="space-y-4">
+              <div className="p-4 border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="font-medium text-secondary">Debug Mode</div>
+                    <div className="text-sm text-gray-500">
+                      Enable detailed logging and error reporting
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={false}
+                    onChange={(v) => markAsChanged("debugMode", v)}
+                  />
+                </div>
+              </div>
+
+              <div className="p-4 border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="font-medium text-secondary">
+                      Maintenance Mode
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Put the platform in maintenance mode for updates
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={false}
+                    onChange={(v) => markAsChanged("maintenanceMode", v)}
+                  />
+                </div>
+              </div>
+
+              <div className="p-4 border border-gray-200 rounded-lg">
+                <div>
+                  <div className="font-medium text-secondary mb-2">
+                    API Key Management
+                  </div>
+                  <div className="text-sm text-gray-500 mb-4">
+                    Generate and manage API keys for external integrations
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // This would generate an API key
+                      push({
+                        message: "API key generation feature coming soon",
+                        type: "info",
+                      });
+                    }}
+                  >
+                    <Key className="w-4 h-4 mr-2" />
+                    Generate New API Key
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-4 border border-gray-200 rounded-lg">
+                <div>
+                  <div className="font-medium text-secondary mb-2">
+                    Export System Configuration
+                  </div>
+                  <div className="text-sm text-gray-500 mb-4">
+                    Download all system settings as a JSON file for backup
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportSettings}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export Configuration
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
+                <div>
+                  <div className="font-medium text-red-700 mb-2">
+                    Danger Zone
+                  </div>
+                  <div className="text-sm text-red-600 mb-4">
+                    These actions can cause data loss and should be used with extreme caution
+                  </div>
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-red-300 text-red-700 hover:bg-red-100"
+                      onClick={() => {
+                        push({
+                          message: "Clear cache feature available in production",
+                          type: "info",
+                        });
+                      }}
+                    >
+                      Clear System Cache
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-red-300 text-red-700 hover:bg-red-100 ml-2"
+                      onClick={() => {
+                        if (
+                          confirm(
+                            "Are you sure you want to reset all settings to default? This action cannot be undone."
+                          )
+                        ) {
+                          push({
+                            message: "Reset functionality will be implemented",
+                            type: "info",
+                          });
+                        }
+                      }}
+                    >
+                      Reset All to Default
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

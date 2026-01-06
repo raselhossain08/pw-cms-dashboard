@@ -9,6 +9,21 @@ export interface CertificateDto {
     certificateUrl?: string;
     emailSent?: boolean;
     emailSentAt?: string;
+    isRevoked?: boolean;
+    revokedAt?: string;
+    revokedBy?: string;
+    revocationReason?: string;
+    expiryDate?: string;
+}
+
+export interface CertificateTemplateDto {
+    _id: string;
+    name: string;
+    config: any;
+    isDefault?: boolean;
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
 }
 
 class CertificatesService {
@@ -114,6 +129,27 @@ class CertificatesService {
     // Resend certificate email (user-facing)
     async resendCertificateEmail(certificateId: string) {
         const { data } = await apiClient.post(`/certificates/resend-email/${certificateId}`);
+        return data;
+    }
+
+    // Template Management
+    async getTemplates() {
+        const { data } = await apiClient.get<CertificateTemplateDto[]>('/certificates/templates');
+        return data;
+    }
+
+    async createTemplate(template: { name: string; config: any }) {
+        const { data } = await apiClient.post<CertificateTemplateDto>('/certificates/templates', template);
+        return data;
+    }
+
+    async updateTemplate(templateId: string, template: { name?: string; config?: any }) {
+        const { data } = await apiClient.put<CertificateTemplateDto>(`/certificates/templates/${templateId}`, template);
+        return data;
+    }
+
+    async deleteTemplate(templateId: string) {
+        const { data } = await apiClient.delete(`/certificates/templates/${templateId}`);
         return data;
     }
 }

@@ -58,6 +58,11 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  BarChart3,
+  TrendingUp,
+  Heart,
+  MessageSquare,
+  Check,
 } from "lucide-react";
 import { useBlog } from "@/hooks/useBlog";
 import Image from "next/image";
@@ -71,6 +76,7 @@ import {
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
+import { useAuth } from "@/context/AuthContext";
 
 export function BlogEditor() {
   const {
@@ -85,6 +91,8 @@ export function BlogEditor() {
     exportBlog,
     refreshBlog,
   } = useBlog();
+
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState("content");
   const [imageFiles, setImageFiles] = useState<{ [key: number]: File }>({});
@@ -112,6 +120,7 @@ export function BlogEditor() {
   const [newCategory, setNewCategory] = useState("");
   const [previewPost, setPreviewPost] = useState<BlogPost | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   const [formData, setFormData] = useState<UpdateBlogDto>({
     title: "",
@@ -223,6 +232,11 @@ export function BlogEditor() {
       // Convert boolean to actual boolean (not string)
       submitFormData.append("isActive", formData.isActive ? "true" : "false");
 
+      // Add SEO data
+      if (formData.seo) {
+        submitFormData.append("seo", JSON.stringify(formData.seo));
+      }
+
       // Add blogs as proper JSON string (will be parsed on backend)
       if (formData.blogs && formData.blogs.length > 0) {
         // Create a blogs array with proper structure
@@ -312,6 +326,14 @@ export function BlogEditor() {
   };
 
   const addBlogPost = () => {
+    // Get author info from logged-in user
+    const authorName = user ? `${user.firstName} ${user.lastName}`.trim() : "";
+    const authorAvatar = user?.avatar || "";
+    const authorRole =
+      user?.role === "admin" || user?.role === "instructor"
+        ? "Aviation Expert"
+        : "Contributor";
+
     setFormData({
       ...formData,
       blogs: [
@@ -324,9 +346,9 @@ export function BlogEditor() {
           featured: false,
           content: "",
           author: {
-            name: "",
-            role: "",
-            avatar: "",
+            name: authorName,
+            role: authorRole,
+            avatar: authorAvatar,
             bio: "",
             socialLinks: {
               facebook: "",
@@ -417,6 +439,28 @@ export function BlogEditor() {
     setCurrentPage(1);
   }, [searchQuery]);
 
+  // Calculate blog statistics
+  const blogStats = {
+    totalPosts: formData.blogs?.length || 0,
+    featuredPosts: formData.blogs?.filter((p) => p.featured).length || 0,
+    totalViews:
+      formData.blogs?.reduce((acc, p) => acc + (p.views || 0), 0) || 0,
+    totalLikes:
+      formData.blogs?.reduce((acc, p) => acc + (p.likes || 0), 0) || 0,
+    totalComments:
+      formData.blogs?.reduce((acc, p) => acc + (p.commentsCount || 0), 0) || 0,
+    categoriesUsed: new Set(
+      formData.blogs?.map((p) => p.category).filter(Boolean)
+    ).size,
+    avgViewsPerPost:
+      formData.blogs && formData.blogs.length > 0
+        ? Math.round(
+            formData.blogs.reduce((acc, p) => acc + (p.views || 0), 0) /
+              formData.blogs.length
+          )
+        : 0,
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -427,6 +471,149 @@ export function BlogEditor() {
 
   return (
     <div className="space-y-6">
+      {/* Analytics Dashboard */}
+      {showAnalytics && (
+        <Card className="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-800">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-blue-600" />
+                <CardTitle>Blog Analytics</CardTitle>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAnalytics(false)}
+              >
+                ×
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                  <TrendingUp className="w-4 h-4 text-green-500" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {blogStats.totalPosts}
+                </p>
+                <p className="text-xs text-gray-500">Total Posts</p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <Star className="w-5 h-5 text-yellow-500" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {blogStats.featuredPosts}
+                </p>
+                <p className="text-xs text-gray-500">Featured</p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <Eye className="w-5 h-5 text-purple-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {blogStats.totalViews.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500">Total Views</p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <Heart className="w-5 h-5 text-red-500" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {blogStats.totalLikes.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500">Total Likes</p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <MessageSquare className="w-5 h-5 text-green-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {blogStats.totalComments.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500">Comments</p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <FileText className="w-5 h-5 text-orange-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {blogStats.categoriesUsed}
+                </p>
+                <p className="text-xs text-gray-500">Categories</p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <TrendingUp className="w-5 h-5 text-indigo-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {blogStats.avgViewsPerPost}
+                </p>
+                <p className="text-xs text-gray-500">Avg Views/Post</p>
+              </div>
+            </div>
+
+            {/* Top Performing Posts */}
+            {formData.blogs && formData.blogs.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4" />
+                  Top Performing Posts
+                </h3>
+                <div className="space-y-2">
+                  {formData.blogs
+                    .slice()
+                    .sort((a, b) => (b.views || 0) - (a.views || 0))
+                    .slice(0, 5)
+                    .map((post, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm"
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <Badge
+                            variant="outline"
+                            className="flex-shrink-0 text-xs"
+                          >
+                            #{idx + 1}
+                          </Badge>
+                          <span className="text-sm truncate font-medium">
+                            {post.title || "Untitled"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 flex-shrink-0 text-xs text-gray-600 dark:text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <Eye className="w-3 h-3" />
+                            {post.views || 0}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Heart className="w-3 h-3" />
+                            {post.likes || 0}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" />
+                            {post.commentsCount || 0}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header Actions */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-2">
@@ -441,6 +628,14 @@ export function BlogEditor() {
               </>
             )}
           </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAnalytics(!showAnalytics)}
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            {showAnalytics ? "Hide" : "Show"} Analytics
+          </Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button
@@ -576,6 +771,13 @@ export function BlogEditor() {
                 >
                   <FileText className="w-4 h-4" />
                   <span>Categories ({categories.length})</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="seo"
+                  className="flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white min-w-20 sm:min-w-0 px-2 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+                >
+                  <Search className="w-4 h-4" />
+                  <span>SEO</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -1106,9 +1308,76 @@ export function BlogEditor() {
                                           </div>
 
                                           <div className="border-t pt-4 space-y-4">
-                                            <h4 className="font-semibold">
-                                              Author Information
-                                            </h4>
+                                            <div className="flex items-center justify-between">
+                                              <h4 className="font-semibold">
+                                                Author Information
+                                              </h4>
+                                              {user && (
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() => {
+                                                    const authorName =
+                                                      `${user.firstName} ${user.lastName}`.trim();
+                                                    const authorAvatar =
+                                                      user.avatar || "";
+                                                    const authorRole =
+                                                      user.role === "admin" ||
+                                                      user.role === "instructor"
+                                                        ? "Aviation Expert"
+                                                        : "Contributor";
+
+                                                    updateBlogPost(
+                                                      index,
+                                                      "author",
+                                                      {
+                                                        ...post.author,
+                                                        name: authorName,
+                                                        role: authorRole,
+                                                        avatar: authorAvatar,
+                                                      }
+                                                    );
+                                                  }}
+                                                  className="text-xs"
+                                                >
+                                                  <Check className="w-3 h-3 mr-1" />
+                                                  Use My Info
+                                                </Button>
+                                              )}
+                                            </div>
+
+                                            {user && (
+                                              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm">
+                                                <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                                                  <div className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-blue-300">
+                                                    {user.avatar ? (
+                                                      <Image
+                                                        src={user.avatar}
+                                                        alt={`${user.firstName} ${user.lastName}`}
+                                                        fill
+                                                        className="object-cover"
+                                                      />
+                                                    ) : (
+                                                      <div className="w-full h-full bg-blue-200 flex items-center justify-center text-blue-600 font-semibold">
+                                                        {user.firstName?.[0]}
+                                                        {user.lastName?.[0]}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                  <div>
+                                                    <p className="font-medium">
+                                                      Logged in as:{" "}
+                                                      {user.firstName}{" "}
+                                                      {user.lastName}
+                                                    </p>
+                                                    <p className="text-xs text-blue-600 dark:text-blue-400">
+                                                      {user.email} • {user.role}
+                                                    </p>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
 
                                             <div className="grid grid-cols-2 gap-4">
                                               <div>
@@ -1549,6 +1818,175 @@ export function BlogEditor() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              {/* SEO Tab */}
+              <TabsContent value="seo" className="space-y-6 mt-4">
+                <Card className="shadow-xl border-0 bg-white dark:bg-gray-800">
+                  <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-t-lg py-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-xl">SEO Settings</CardTitle>
+                        <CardDescription className="text-purple-100">
+                          Optimize your blog section for search engines
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-6 space-y-6">
+                    <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                      <div className="flex items-start gap-3">
+                        <Search className="w-5 h-5 text-purple-600 dark:text-purple-400 mt-0.5" />
+                        <div>
+                          <h4 className="font-semibold text-purple-900 dark:text-purple-100">
+                            SEO Best Practices
+                          </h4>
+                          <p className="text-sm text-purple-700 dark:text-purple-300 mt-1">
+                            Fill in all SEO fields to improve your blog&apos;s
+                            visibility in search engine results.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="seo-title">Meta Title</Label>
+                      <Input
+                        id="seo-title"
+                        value={formData.seo?.title || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            seo: {
+                              title: e.target.value,
+                              description: formData.seo?.description || "",
+                              keywords: formData.seo?.keywords || "",
+                              ogImage: formData.seo?.ogImage || "",
+                              ...formData.seo,
+                            },
+                          })
+                        }
+                        placeholder="Aviation Blog - Latest News & Insights"
+                        maxLength={60}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {formData.seo?.title?.length || 0}/60 characters
+                        (Recommended: 50-60)
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="seo-description">Meta Description</Label>
+                      <Textarea
+                        id="seo-description"
+                        value={formData.seo?.description || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            seo: {
+                              title: formData.seo?.title || "",
+                              description: e.target.value,
+                              keywords: formData.seo?.keywords || "",
+                              ogImage: formData.seo?.ogImage || "",
+                              ...formData.seo,
+                            },
+                          })
+                        }
+                        placeholder="Read the latest aviation news, pilot resources, and flight training insights from our expert team."
+                        rows={4}
+                        maxLength={160}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {formData.seo?.description?.length || 0}/160 characters
+                        (Recommended: 150-160)
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="seo-keywords">Keywords</Label>
+                      <Input
+                        id="seo-keywords"
+                        value={formData.seo?.keywords || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            seo: {
+                              title: formData.seo?.title || "",
+                              description: formData.seo?.description || "",
+                              keywords: e.target.value,
+                              ogImage: formData.seo?.ogImage || "",
+                              ...formData.seo,
+                            },
+                          })
+                        }
+                        placeholder="aviation, flight training, pilot resources, aircraft"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Separate keywords with commas
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="seo-og-image">Open Graph Image URL</Label>
+                      <Input
+                        id="seo-og-image"
+                        value={formData.seo?.ogImage || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            seo: {
+                              title: formData.seo?.title || "",
+                              description: formData.seo?.description || "",
+                              keywords: formData.seo?.keywords || "",
+                              ogImage: e.target.value,
+                              ...formData.seo,
+                            },
+                          })
+                        }
+                        placeholder="https://example.com/images/blog-og-image.jpg"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Image that appears when sharing on social media
+                        (Recommended: 1200x630px)
+                      </p>
+                      {formData.seo?.ogImage && (
+                        <div className="mt-3 relative w-full max-w-md h-48 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600">
+                          <Image
+                            src={formData.seo.ogImage}
+                            alt="OG Image Preview"
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SEO Preview */}
+                    <div className="border-t pt-6">
+                      <h3 className="text-lg font-semibold mb-4">
+                        Search Engine Preview
+                      </h3>
+                      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg p-4 max-w-2xl">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                            <div className="w-4 h-4 rounded-full bg-gray-300" />
+                            <span>yourwebsite.com › blog</span>
+                          </div>
+                          <h3 className="text-xl text-blue-600 dark:text-blue-400 hover:underline cursor-pointer">
+                            {formData.seo?.title ||
+                              formData.title ||
+                              "Blog Title"}
+                          </h3>
+                          <p className="text-sm text-gray-700 dark:text-gray-300">
+                            {formData.seo?.description ||
+                              formData.description ||
+                              "Blog description will appear here..."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
@@ -1556,17 +1994,66 @@ export function BlogEditor() {
 
       {/* Upload Progress Indicator */}
       {uploadProgress > 0 && uploadProgress < 100 && (
-        <div className="fixed bottom-4 right-4 z-50 w-80">
-          <Card>
+        <div className="fixed bottom-4 right-4 z-50 w-96 animate-in slide-in-from-bottom-5">
+          <Card className="border-2 border-blue-500 shadow-2xl bg-white dark:bg-gray-800">
             <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">Uploading media...</span>
-                  <span className="text-muted-foreground">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Upload className="w-5 h-5 text-blue-600 animate-bounce" />
+                    </div>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      Uploading media...
+                    </span>
+                  </div>
+                  <Badge
+                    variant="secondary"
+                    className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-bold"
+                  >
                     {uploadProgress}%
+                  </Badge>
+                </div>
+                <Progress
+                  value={uploadProgress}
+                  className="h-3 bg-gray-200 dark:bg-gray-700"
+                />
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <span>
+                    {uploadProgress < 30
+                      ? "Preparing files..."
+                      : uploadProgress < 70
+                      ? "Uploading to cloud..."
+                      : "Almost done..."}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Processing
                   </span>
                 </div>
-                <Progress value={uploadProgress} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Success Notification */}
+      {uploadProgress === 100 && (
+        <div className="fixed bottom-4 right-4 z-50 w-96 animate-in slide-in-from-bottom-5">
+          <Card className="border-2 border-green-500 shadow-2xl bg-white dark:bg-gray-800">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 dark:bg-green-900">
+                  <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900 dark:text-white">
+                    Upload Complete!
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Your media has been uploaded successfully
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>

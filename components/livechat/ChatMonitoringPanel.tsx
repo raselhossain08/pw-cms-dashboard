@@ -84,7 +84,49 @@ export default function ChatMonitoringPanel({
         apiClient.get("/chat/monitoring/sessions"),
       ]);
 
-      setStats(statsResponse.data as ChatMonitoringStats);
+      // Map the backend response to our expected format
+      const backendStats = statsResponse.data;
+
+      // Type-safe extraction with proper type checking
+      const getSafeNumber = (obj: any, key: string): number => {
+        return obj &&
+          typeof obj === "object" &&
+          key in obj &&
+          typeof obj[key] === "number"
+          ? obj[key]
+          : 0;
+      };
+
+      const getSafeObject = (obj: any, key: string, defaultValue: any): any => {
+        return obj &&
+          typeof obj === "object" &&
+          key in obj &&
+          typeof obj[key] === "object"
+          ? obj[key]
+          : defaultValue;
+      };
+
+      const mappedStats: ChatMonitoringStats = {
+        activeConversations: getSafeNumber(backendStats, "activeConversations"),
+        waitingUsers: getSafeNumber(backendStats, "waitingUsers"),
+        onlineAgents: getSafeNumber(backendStats, "onlineAgents"),
+        queueLength: getSafeNumber(backendStats, "queueLength"),
+        averageWaitTime: getSafeNumber(backendStats, "averageWaitTime"),
+        responseTimes: getSafeObject(backendStats, "responseTimes", {
+          immediate: 0,
+          within1Min: 0,
+          within5Min: 0,
+          within30Min: 0,
+          over30Min: 0,
+        }),
+        performanceMetrics: getSafeObject(backendStats, "performanceMetrics", {
+          firstResponseTime: 0,
+          resolutionTime: 0,
+          agentPerformance: [],
+        }),
+      };
+
+      setStats(mappedStats);
       setActiveSessions(sessionsResponse.data as ActiveSession[]);
       setLastUpdated(new Date());
     } catch (error) {

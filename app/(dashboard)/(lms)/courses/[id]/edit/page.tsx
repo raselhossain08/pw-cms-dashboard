@@ -1,6 +1,7 @@
 import AppLayout from "@/components/layout/AppLayout";
 import EditCourse from "../../../../../../components/courses/EditCourse";
 import RequireAuth from "@/components/RequireAuth";
+import CourseErrorBoundary from "@/components/courses/CourseErrorBoundary";
 
 export default async function EditCoursePage({
   params,
@@ -12,7 +13,9 @@ export default async function EditCoursePage({
   return (
     <RequireAuth roles={["admin", "super_admin", "instructor"]}>
       <AppLayout>
-        <EditCourse courseId={id} />
+        <CourseErrorBoundary>
+          <EditCourse courseId={id} />
+        </CourseErrorBoundary>
       </AppLayout>
     </RequireAuth>
   );

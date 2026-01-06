@@ -246,6 +246,82 @@ class EnrollmentsService {
         const response = await apiClient.get<any>("/enrollments/my-stats");
         return response.data;
     }
+
+    // ==================== Enhanced Admin Operations ====================
+
+    // Bulk update enrollment status
+    async bulkUpdateStatus(ids: string[], status: string): Promise<{ modifiedCount: number }> {
+        const response = await apiClient.post<{ modifiedCount: number }>(
+            "/enrollments/admin/bulk-update-status",
+            { ids, status }
+        );
+        return response.data;
+    }
+
+    // Send message to student
+    async sendMessage(enrollmentId: string, subject: string, message: string): Promise<any> {
+        const response = await apiClient.post<any>(
+            `/enrollments/admin/${enrollmentId}/send-message`,
+            { subject, message }
+        );
+        return response.data;
+    }
+
+    // Generate certificate
+    async generateCertificate(enrollmentId: string): Promise<{
+        success: boolean;
+        certificateId?: string;
+        certificateUrl?: string;
+    }> {
+        const response = await apiClient.post<{
+            success: boolean;
+            certificateId?: string;
+            certificateUrl?: string;
+        }>(`/enrollments/admin/${enrollmentId}/generate-certificate`);
+        return response.data;
+    }
+
+    // Get audit trail
+    async getAuditTrail(enrollmentId: string): Promise<Array<{
+        action: string;
+        timestamp: string;
+        user: string;
+        details: string;
+        changes?: any;
+    }>> {
+        const response = await apiClient.get<Array<{
+            action: string;
+            timestamp: string;
+            user: string;
+            details: string;
+            changes?: any;
+        }>>(`/enrollments/admin/${enrollmentId}/audit-trail`);
+        return response.data;
+    }
+
+    // Get payment details
+    async getPaymentDetails(enrollmentId: string): Promise<{
+        orderId?: string;
+        amount: number;
+        currency: string;
+        status: string;
+        paymentMethod?: string;
+        transactionId?: string;
+        paymentDate?: string;
+        accessType: string;
+    }> {
+        const response = await apiClient.get<{
+            orderId?: string;
+            amount: number;
+            currency: string;
+            status: string;
+            paymentMethod?: string;
+            transactionId?: string;
+            paymentDate?: string;
+            accessType: string;
+        }>(`/enrollments/admin/${enrollmentId}/payment-details`);
+        return response.data;
+    }
 }
 
 export const enrollmentsService = new EnrollmentsService();

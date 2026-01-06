@@ -77,6 +77,93 @@ type StudentItem = {
   avatarUrl?: string;
 };
 
+// Performance Analytics Component
+function PerformanceAnalytics() {
+  const [performanceData, setPerformanceData] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchPerformanceData = async () => {
+      try {
+        const { apiClient } = await import("@/lib/api-client");
+        const response = await apiClient.get("/admin/students/performance-tiers");
+        setPerformanceData(response.data);
+      } catch (error) {
+        console.error("Failed to fetch performance data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPerformanceData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+        <h3 className="text-lg font-semibold text-secondary mb-4">
+          Student Performance Analytics
+        </h3>
+        <div className="flex justify-center items-center py-8">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!performanceData) {
+    return null;
+  }
+
+  const { summary } = performanceData;
+
+  return (
+    <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+      <h3 className="text-lg font-semibold text-secondary mb-4">
+        Student Performance Analytics
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="text-center p-4 bg-blue-50 rounded-lg">
+          <div className="text-2xl font-bold text-blue-600 mb-2">
+            {summary.excellentPercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Excellent Performance</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.excellentCount} students
+          </div>
+        </div>
+        <div className="text-center p-4 bg-green-50 rounded-lg">
+          <div className="text-2xl font-bold text-green-600 mb-2">
+            {summary.goodPercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Good Performance</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.goodCount} students
+          </div>
+        </div>
+        <div className="text-center p-4 bg-yellow-50 rounded-lg">
+          <div className="text-2xl font-bold text-yellow-600 mb-2">
+            {summary.averagePercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Average Performance</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.averageCount} students
+          </div>
+        </div>
+        <div className="text-center p-4 bg-red-50 rounded-lg">
+          <div className="text-2xl font-bold text-red-600 mb-2">
+            {summary.needsImprovementPercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Needs Improvement</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.needsImprovementCount} students
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Students() {
   const {
     students,
@@ -1079,33 +1166,8 @@ export default function Students() {
         </div>
       )}
 
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
-        <h3 className="text-lg font-semibold text-secondary mb-4">
-          Student Performance Analytics
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600 mb-2">24%</div>
-            <div className="text-sm text-gray-600">Excellent Performance</div>
-            <div className="text-xs text-gray-500 mt-1">564 students</div>
-          </div>
-          <div className="text-center p-4 bg-green-50 rounded-lg">
-            <div className="text-2xl font-bold text-green-600 mb-2">45%</div>
-            <div className="text-sm text-gray-600">Good Performance</div>
-            <div className="text-xs text-gray-500 mt-1">1,281 students</div>
-          </div>
-          <div className="text-center p-4 bg-yellow-50 rounded-lg">
-            <div className="text-2xl font-bold text-yellow-600 mb-2">21%</div>
-            <div className="text-sm text-gray-600">Average Performance</div>
-            <div className="text-xs text-gray-500 mt-1">598 students</div>
-          </div>
-          <div className="text-center p-4 bg-red-50 rounded-lg">
-            <div className="text-2xl font-bold text-red-600 mb-2">10%</div>
-            <div className="text-sm text-gray-600">Needs Improvement</div>
-            <div className="text-xs text-gray-500 mt-1">284 students</div>
-          </div>
-        </div>
-      </div>
+      {/* Performance Analytics - Now with Real Data */}
+      <PerformanceAnalytics />
 
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-secondary mb-4">

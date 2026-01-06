@@ -46,6 +46,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePayments, Transaction, Invoice, Payout } from "@/hooks/usePayments";
+import { RevenueChart } from "@/components/analytics/charts/RevenueChart";
 
 export default function Payments() {
   const {
@@ -576,7 +577,7 @@ export default function Payments() {
         </div>
       ) : null}
 
-      {/* Revenue Chart Placeholder */}
+      {/* Revenue Chart */}
       <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-semibold text-secondary">
@@ -599,15 +600,19 @@ export default function Payments() {
             </Select>
           </div>
         </div>
-        <div className="h-64 flex items-center justify-center bg-gray-50 rounded-lg">
-          <div className="text-center text-gray-500">
-            <TrendingUp className="w-10 h-10 mx-auto mb-2" />
-            <p>Revenue chart visualization would appear here</p>
-            <p className="text-sm">
-              Showing monthly revenue trends and projections
-            </p>
-          </div>
-        </div>
+        <RevenueChart
+          data={
+            analytics?.revenueByDay?.map((item) => ({
+              label: new Date(item.date).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              }),
+              value: item.revenue,
+              date: item.date,
+            })) || []
+          }
+          isLoading={loading && !analytics}
+        />
       </div>
 
       {/* Filters and Search */}

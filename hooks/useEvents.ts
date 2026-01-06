@@ -71,10 +71,11 @@ export function useEvents(): UseEventsResult {
                 formData,
                 (progress) => setUploadProgress(progress)
             )
-            setEvents(response.data)
-            push({ message: 'Events updated successfully with media', type: 'success' })
+            const eventsData = response?.data || response
+            setEvents(eventsData)
+            push({ message: response?.message || 'Events updated successfully with media', type: 'success' })
             setUploadProgress(0)
-            return response.data
+            return eventsData
         } catch (err: any) {
             const errorMessage = err?.response?.data?.message || err?.message || 'Failed to update events with media'
             push({ message: errorMessage, type: 'error' })

@@ -60,7 +60,7 @@ class AssignmentsService {
   }
 
   async getAssignmentSubmissions(id: string, params: { page?: number; limit?: number } = {}) {
-    const { data } = await apiClient.get(`/assignments/${id}/submissions`, { params });
+    const { data } = await apiClient.get<any>(`/assignments/${id}/submissions`, { params });
     return data;
   }
 
@@ -70,7 +70,7 @@ class AssignmentsService {
   }
 
   async getAssignmentStats(id: string) {
-    const { data } = await apiClient.get(`/assignments/${id}/stats`);
+    const { data } = await apiClient.get<any>(`/assignments/${id}/stats`);
     return data;
   }
 

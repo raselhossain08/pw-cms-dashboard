@@ -39,10 +39,13 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  FileText,
+  Settings,
 } from "lucide-react";
 import { useEvents } from "@/hooks/useEvents";
 import Image from "next/image";
 import { uploadService } from "@/services/upload.service";
+import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import type {
   Events,
   UpdateEventsDto,
@@ -312,9 +315,7 @@ function EventsForm({
   loading: boolean;
   fetchEvents: () => Promise<void>;
   updateEvents: (dto: Partial<UpdateEventsDto>) => Promise<Events | null>;
-  updateEventsWithMedia: (
-    fd: FormData
-  ) => Promise<{ data: Events; message: string } | null>;
+  updateEventsWithMedia: (fd: FormData) => Promise<Events | null>;
   toggleActive: () => Promise<Events | null>;
   duplicateEvent: (slug: string) => Promise<Events | null>;
   exportEvents: (format: "json" | "pdf") => Promise<void>;
@@ -338,6 +339,9 @@ function EventsForm({
   }>({});
   const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedDescIndex, setSelectedDescIndex] = useState<number | null>(
+    null
+  );
 
   const [formData, setFormData] = useState<UpdateEventsDto>(() => ({
     title: initialEvents?.title || "",
@@ -385,6 +389,18 @@ function EventsForm({
       const submitFormData = new FormData();
       submitFormData.append("title", formData.title || "");
       submitFormData.append("subtitle", formData.subtitle || "");
+
+      // Add SEO data
+      if (formData.seo) {
+        submitFormData.append("seo[title]", formData.seo.title || "");
+        submitFormData.append(
+          "seo[description]",
+          formData.seo.description || ""
+        );
+        submitFormData.append("seo[keywords]", formData.seo.keywords || "");
+        submitFormData.append("seo[ogImage]", formData.seo.ogImage || "");
+      }
+
       formData.events?.forEach((event, index) => {
         if (eventImageFiles[index]) {
           submitFormData.append(
@@ -411,6 +427,50 @@ function EventsForm({
           `events[${index}][description]`,
           event.description || ""
         );
+        submitFormData.append(
+          `events[${index}][price]`,
+          String(event.price || 0)
+        );
+        submitFormData.append(
+          `events[${index}][videoUrl]`,
+          event.videoUrl || ""
+        );
+
+        // Add nested data as JSON strings
+        if (event.trainingContent && event.trainingContent.length > 0) {
+          submitFormData.append(
+            `events[${index}][trainingContent]`,
+            JSON.stringify(event.trainingContent)
+          );
+        }
+
+        if (event.learningPoints && event.learningPoints.length > 0) {
+          submitFormData.append(
+            `events[${index}][learningPoints]`,
+            JSON.stringify(event.learningPoints)
+          );
+        }
+
+        if (event.faqs && event.faqs.length > 0) {
+          submitFormData.append(
+            `events[${index}][faqs]`,
+            JSON.stringify(event.faqs)
+          );
+        }
+
+        if (event.instructors && event.instructors.length > 0) {
+          submitFormData.append(
+            `events[${index}][instructors]`,
+            JSON.stringify(event.instructors)
+          );
+        }
+
+        if (event.relatedEvents && event.relatedEvents.length > 0) {
+          submitFormData.append(
+            `events[${index}][relatedEvents]`,
+            JSON.stringify(event.relatedEvents)
+          );
+        }
       });
 
       submitFormData.append("isActive", String(formData.isActive ?? true));
@@ -467,6 +527,26 @@ function EventsForm({
     const newEvents = [...(formData.events || [])];
     newEvents[index] = { ...newEvents[index], [field]: value };
     setFormData({ ...formData, events: newEvents });
+  };
+
+  const handleExport = async (format: "json" | "pdf") => {
+    setIsExporting(true);
+    try {
+      await exportEvents(format);
+    } catch (error) {
+      console.error("Export failed:", error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDuplicate = async (slug: string) => {
+    try {
+      await duplicateEvent(slug);
+      await refreshEvents();
+    } catch (error) {
+      console.error("Duplication failed:", error);
+    }
   };
 
   return (
@@ -559,6 +639,13 @@ function EventsForm({
           >
             <MapPin className="w-4 h-4" />
             <span>Events</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="seo"
+            className="flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white min-w-20 sm:min-w-0 px-2 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+          >
+            <Settings className="w-4 h-4" />
+            <span>SEO</span>
           </TabsTrigger>
         </TabsList>
 
@@ -869,19 +956,14 @@ function EventsForm({
 
                           <div className="space-y-2">
                             <Label className="text-sm font-semibold">
-                              Description (Optional)
+                              Description (Rich Text)
                             </Label>
-                            <Textarea
-                              value={event.description || ""}
-                              onChange={(e) =>
-                                updateEvent(
-                                  index,
-                                  "description",
-                                  e.target.value
-                                )
+                            <RichTextEditor
+                              content={event.description || ""}
+                              onChange={(content) =>
+                                updateEvent(index, "description", content)
                               }
-                              placeholder="Event description"
-                              rows={3}
+                              placeholder="Write event description with rich formatting..."
                             />
                           </div>
 
@@ -1148,10 +1230,18 @@ function EventsForm({
                               </Button>
                             </div>
                             {event.faqs?.map((faq, faqIndex) => (
-                              <Card key={faqIndex} className="p-4 bg-gray-50">
+                              <Card
+                                key={faqIndex}
+                                className="p-4 bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 border-2 border-gray-200 dark:border-gray-700 shadow-sm"
+                              >
                                 <div className="space-y-3">
                                   <div className="flex items-start justify-between">
-                                    <Label className="text-sm">Question</Label>
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                                    >
+                                      FAQ {faqIndex + 1}
+                                    </Badge>
                                     <Button
                                       type="button"
                                       size="sm"
@@ -1169,45 +1259,65 @@ function EventsForm({
                                           events: updated,
                                         });
                                       }}
+                                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </Button>
                                   </div>
-                                  <Input
-                                    value={faq.question}
-                                    onChange={(e) => {
-                                      const updated = [
-                                        ...(formData.events || []),
-                                      ];
-                                      updated[index].faqs![faqIndex].question =
-                                        e.target.value;
-                                      setFormData({
-                                        ...formData,
-                                        events: updated,
-                                      });
-                                    }}
-                                    placeholder="FAQ question"
-                                  />
-                                  <Label className="text-sm">Answer</Label>
-                                  <Textarea
-                                    value={faq.answer}
-                                    onChange={(e) => {
-                                      const updated = [
-                                        ...(formData.events || []),
-                                      ];
-                                      updated[index].faqs![faqIndex].answer =
-                                        e.target.value;
-                                      setFormData({
-                                        ...formData,
-                                        events: updated,
-                                      });
-                                    }}
-                                    placeholder="FAQ answer"
-                                    rows={3}
-                                  />
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold">
+                                      Question
+                                    </Label>
+                                    <Input
+                                      value={faq.question}
+                                      onChange={(e) => {
+                                        const updated = [
+                                          ...(formData.events || []),
+                                        ];
+                                        updated[index].faqs![
+                                          faqIndex
+                                        ].question = e.target.value;
+                                        setFormData({
+                                          ...formData,
+                                          events: updated,
+                                        });
+                                      }}
+                                      placeholder="What is included in this event?"
+                                      className="font-medium"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold">
+                                      Answer (Rich Text)
+                                    </Label>
+                                    <RichTextEditor
+                                      content={faq.answer}
+                                      onChange={(content) => {
+                                        const updated = [
+                                          ...(formData.events || []),
+                                        ];
+                                        updated[index].faqs![faqIndex].answer =
+                                          content;
+                                        setFormData({
+                                          ...formData,
+                                          events: updated,
+                                        });
+                                      }}
+                                      placeholder="Provide a detailed answer with formatting..."
+                                    />
+                                  </div>
                                 </div>
                               </Card>
                             ))}
+                            {(!event.faqs || event.faqs.length === 0) && (
+                              <div className="text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                                <FileText className="w-12 h-12 mx-auto text-gray-400 mb-2" />
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  No FAQs added yet. Click "Add FAQ" to get
+                                  started.
+                                </p>
+                              </div>
+                            )}
                           </div>
 
                           {/* Instructors Section */}
@@ -1243,13 +1353,16 @@ function EventsForm({
                               (instructor, instrIndex) => (
                                 <Card
                                   key={instrIndex}
-                                  className="p-4 bg-gray-50"
+                                  className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 border-2 border-blue-200 dark:border-blue-800 shadow-sm"
                                 >
                                   <div className="space-y-3">
                                     <div className="flex items-start justify-between">
-                                      <Label className="text-sm font-bold">
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                                      >
                                         Instructor {instrIndex + 1}
-                                      </Label>
+                                      </Badge>
                                       <Button
                                         type="button"
                                         size="sm"
@@ -1267,13 +1380,16 @@ function EventsForm({
                                             events: updated,
                                           });
                                         }}
+                                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </Button>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                       <div>
-                                        <Label className="text-xs">Name</Label>
+                                        <Label className="text-xs font-semibold">
+                                          Name
+                                        </Label>
                                         <Input
                                           value={instructor.name}
                                           onChange={(e) => {
@@ -1292,7 +1408,9 @@ function EventsForm({
                                         />
                                       </div>
                                       <div>
-                                        <Label className="text-xs">Title</Label>
+                                        <Label className="text-xs font-semibold">
+                                          Title
+                                        </Label>
                                         <Input
                                           value={instructor.title}
                                           onChange={(e) => {
@@ -1312,7 +1430,7 @@ function EventsForm({
                                       </div>
                                     </div>
                                     <div>
-                                      <Label className="text-xs">
+                                      <Label className="text-xs font-semibold">
                                         Image URL
                                       </Label>
                                       <Input
@@ -1331,25 +1449,40 @@ function EventsForm({
                                         }}
                                         placeholder="https://..."
                                       />
+                                      {instructor.image && (
+                                        <div className="mt-2">
+                                          <div className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-blue-300">
+                                            <Image
+                                              src={instructor.image}
+                                              alt={
+                                                instructor.name || "Instructor"
+                                              }
+                                              fill
+                                              className="object-cover"
+                                            />
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                     <div>
-                                      <Label className="text-xs">Bio</Label>
-                                      <Textarea
-                                        value={instructor.bio}
-                                        onChange={(e) => {
+                                      <Label className="text-xs font-semibold">
+                                        Bio (Rich Text)
+                                      </Label>
+                                      <RichTextEditor
+                                        content={instructor.bio}
+                                        onChange={(content) => {
                                           const updated = [
                                             ...(formData.events || []),
                                           ];
                                           updated[index].instructors![
                                             instrIndex
-                                          ].bio = e.target.value;
+                                          ].bio = content;
                                           setFormData({
                                             ...formData,
                                             events: updated,
                                           });
                                         }}
-                                        placeholder="Brief bio"
-                                        rows={2}
+                                        placeholder="Enter instructor biography with formatting..."
                                       />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
@@ -1486,6 +1619,16 @@ function EventsForm({
                                   </div>
                                 </Card>
                               )
+                            )}
+                            {(!event.instructors ||
+                              event.instructors.length === 0) && (
+                              <div className="text-center py-8 bg-blue-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-blue-300 dark:border-blue-600">
+                                <ImageIcon className="w-12 h-12 mx-auto text-blue-400 mb-2" />
+                                <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                                  No instructors added yet. Click "Add
+                                  Instructor" to get started.
+                                </p>
+                              </div>
                             )}
                           </div>
 
@@ -1644,6 +1787,170 @@ function EventsForm({
                     </p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="seo" className="space-y-6">
+            <Card className="border-0 shadow-lg bg-white dark:bg-gray-800">
+              <CardHeader className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-t-lg py-3">
+                <CardTitle className="text-xl">SEO Settings</CardTitle>
+                <CardDescription className="text-purple-100">
+                  Configure meta tags and search engine optimization settings
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6 space-y-6">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="seo-title"
+                    className="text-base font-semibold"
+                  >
+                    SEO Title
+                  </Label>
+                  <Input
+                    id="seo-title"
+                    value={formData.seo?.title || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        seo: {
+                          ...formData.seo,
+                          title: e.target.value,
+                          description: formData.seo?.description || "",
+                          keywords: formData.seo?.keywords || "",
+                          ogImage: formData.seo?.ogImage || "",
+                        },
+                      })
+                    }
+                    placeholder="Events - Aviation Training"
+                    className="text-base h-10"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Recommended: 50-60 characters
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="seo-description"
+                    className="text-base font-semibold"
+                  >
+                    SEO Description
+                  </Label>
+                  <Textarea
+                    id="seo-description"
+                    value={formData.seo?.description || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        seo: {
+                          ...formData.seo,
+                          title: formData.seo?.title || "",
+                          description: e.target.value,
+                          keywords: formData.seo?.keywords || "",
+                          ogImage: formData.seo?.ogImage || "",
+                        },
+                      })
+                    }
+                    placeholder="Discover upcoming aviation training events and workshops..."
+                    rows={4}
+                    className="text-base resize-none"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Recommended: 150-160 characters
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="seo-keywords"
+                    className="text-base font-semibold"
+                  >
+                    SEO Keywords
+                  </Label>
+                  <Input
+                    id="seo-keywords"
+                    value={formData.seo?.keywords || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        seo: {
+                          ...formData.seo,
+                          title: formData.seo?.title || "",
+                          description: formData.seo?.description || "",
+                          keywords: e.target.value,
+                          ogImage: formData.seo?.ogImage || "",
+                        },
+                      })
+                    }
+                    placeholder="aviation events, pilot training, workshops"
+                    className="text-base h-10"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Separate keywords with commas
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="seo-og-image"
+                    className="text-base font-semibold"
+                  >
+                    Open Graph Image URL
+                  </Label>
+                  <Input
+                    id="seo-og-image"
+                    value={formData.seo?.ogImage || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        seo: {
+                          ...formData.seo,
+                          title: formData.seo?.title || "",
+                          description: formData.seo?.description || "",
+                          keywords: formData.seo?.keywords || "",
+                          ogImage: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="https://example.com/og-image.jpg"
+                    className="text-base h-10"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Image displayed when shared on social media (1200x630px
+                    recommended)
+                  </p>
+                  {formData.seo?.ogImage && (
+                    <div className="mt-3">
+                      <div className="relative w-full max-w-md h-40 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700">
+                        <Image
+                          src={formData.seo.ogImage}
+                          alt="OG Image Preview"
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">
+                    SEO Preview
+                  </h4>
+                  <div className="space-y-1">
+                    <div className="text-blue-600 dark:text-blue-400 text-lg font-medium">
+                      {formData.seo?.title || "Events - Aviation Training"}
+                    </div>
+                    <div className="text-green-700 dark:text-green-400 text-xs">
+                      www.example.com › events
+                    </div>
+                    <div className="text-gray-700 dark:text-gray-300 text-sm">
+                      {formData.seo?.description ||
+                        "Discover upcoming aviation training events..."}
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

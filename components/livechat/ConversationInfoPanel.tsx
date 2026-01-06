@@ -17,11 +17,28 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Conversation } from "@/store/chatStore";
+import type { Conversation, Message } from "@/store/chatStore";
+import { useChatStore } from "@/store/chatStore";
 
 interface ConversationInfoPanelProps {
   conversation: Conversation;
   onClose: () => void;
+}
+
+interface SharedFile {
+  id: string;
+  name: string;
+  url: string;
+  size?: string;
+  uploadedBy?: string;
+  uploadedAt: string;
+}
+
+interface SharedLink {
+  id: string;
+  url: string;
+  title: string;
+  sharedAt: string;
 }
 
 export default function ConversationInfoPanel({
@@ -29,6 +46,7 @@ export default function ConversationInfoPanel({
   onClose,
 }: ConversationInfoPanelProps) {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+  const messages = useChatStore((state) => state.messages[conversation.id] || []);
 
   // Get all participants
   const participants = React.useMemo(() => {
@@ -41,49 +59,63 @@ export default function ConversationInfoPanel({
           firstName: conversation.name || "Unknown",
           lastName: "",
           avatar: "",
-          email: "",
+          email: conversation.userEmail || "",
         };
       }
       return p;
     });
-  }, [conversation.participants, conversation.name]);
+  }, [conversation.participants, conversation.name, conversation.userEmail]);
 
-  // Mock data for shared files and links
-  const sharedFiles = [
-    {
-      id: "1",
-      name: "Project Presentation.pdf",
-      size: "2.4 MB",
-      uploadedBy: "John Doe",
-      uploadedAt: "2 days ago",
-    },
-    {
-      id: "2",
-      name: "Meeting Notes.docx",
-      size: "156 KB",
-      uploadedBy: "Jane Smith",
-      uploadedAt: "1 week ago",
-    },
-  ];
+  // Extract shared files from messages
+  const sharedFiles = React.useMemo(() => {
+    const files: SharedFile[] = [];
+    messages.forEach((msg: Message) => {
+      if (msg.type === "file" && msg.fileUrl) {
+        files.push({
+          id: msg.id,
+          name: msg.fileName || "Unnamed file",
+          url: msg.fileUrl,
+          size: "",
+          uploadedAt: msg.time,
+        });
+      }
+    });
+    return files;
+  }, [messages]);
 
-  const sharedImages = [
-    "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg",
-    "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg",
-    "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-3.jpg",
-  ];
+  // Extract shared images from messages
+  const sharedImages = React.useMemo(() => {
+    const images: string[] = [];
+    messages.forEach((msg: Message) => {
+      if (msg.type === "image" && msg.content) {
+        images.push(msg.content);
+      }
+    });
+    return images;
+  }, [messages]);
 
-  const sharedLinks = [
-    {
-      id: "1",
-      url: "https://example.com/article",
-      title: "Interesting Article",
-    },
-    {
-      id: "2",
-      url: "https://github.com/example/repo",
-      title: "GitHub Repository",
-    },
-  ];
+  // Extract shared links from messages
+  const sharedLinks = React.useMemo(() => {
+    const links: SharedLink[] = [];
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    
+    messages.forEach((msg: Message) => {
+      if (msg.type === "text") {
+        const matches = msg.content.match(urlRegex);
+        if (matches) {
+          matches.forEach((url) => {
+            links.push({
+              id: `${msg.id}-${url}`,
+              url,
+              title: url,
+              sharedAt: msg.time,
+            });
+          });
+        }
+      }
+    });
+    return links;
+  }, [messages]);
 
   return (
     <div className="w-80 bg-white border-l border-gray-200 flex flex-col h-full">
@@ -200,8 +232,11 @@ export default function ConversationInfoPanel({
                 </p>
               ) : (
                 sharedFiles.map((file) => (
-                  <div
+                  <a
                     key={file.id}
+                    href={file.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-start space-x-3 p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
                   >
                     <FileText className="w-8 h-8 text-primary shrink-0" />
@@ -210,10 +245,10 @@ export default function ConversationInfoPanel({
                         {file.name}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {file.size} • {file.uploadedAt}
+                        {file.uploadedAt}
                       </p>
                     </div>
-                  </div>
+                  </a>
                 ))
               )}
             </div>
@@ -271,10 +306,12 @@ export default function ConversationInfoPanel({
                     rel="noopener noreferrer"
                     className="block p-2 hover:bg-gray-50 rounded-lg transition-colors"
                   >
-                    <p className="text-sm font-medium text-primary truncate">
+                    <p className="text-sm font-medium text-primary truncate break-all">
                       {link.title}
                     </p>
-                    <p className="text-xs text-gray-500 truncate">{link.url}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Shared at {link.sharedAt}
+                    </p>
                   </a>
                 ))
               )}

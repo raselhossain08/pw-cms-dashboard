@@ -66,30 +66,44 @@ class QuizzesService {
     page?: number;
     limit?: number;
   } = {}) {
-    const { data } = await apiClient.get<{ quizzes: QuizDto[]; total: number }>(
+    const { data } = await apiClient.get<{ 
+      success: boolean;
+      quizzes: QuizDto[]; 
+      total: number;
+      pagination?: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+      };
+    }>(
       "/quizzes",
       { params }
     );
-    return data;
+    return {
+      quizzes: data.quizzes,
+      total: data.total,
+      pagination: data.pagination
+    };
   }
 
   async getQuiz(id: string) {
-    const { data } = await apiClient.get<QuizDto>(`/quizzes/${id}`);
-    return data;
+    const { data } = await apiClient.get<{ success: boolean; data: QuizDto }>(`/quizzes/${id}`);
+    return data.data || data;
   }
 
   async createQuiz(payload: CreateQuizPayload) {
-    const { data } = await apiClient.post<QuizDto>("/quizzes", payload);
-    return data;
+    const { data } = await apiClient.post<{ success: boolean; message: string; data: QuizDto }>("/quizzes", payload);
+    return data.data || data;
   }
 
   async updateQuiz(id: string, payload: UpdateQuizPayload) {
-    const { data } = await apiClient.patch<QuizDto>(`/quizzes/${id}`, payload);
-    return data;
+    const { data } = await apiClient.patch<{ success: boolean; message: string; data: QuizDto }>(`/quizzes/${id}`, payload);
+    return data.data || data;
   }
 
   async deleteQuiz(id: string) {
-    const { data } = await apiClient.delete<{ message: string }>(`/quizzes/${id}`);
+    const { data } = await apiClient.delete<{ success: boolean; message: string }>(`/quizzes/${id}`);
     return data;
   }
 

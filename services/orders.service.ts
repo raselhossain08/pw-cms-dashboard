@@ -132,13 +132,12 @@ class OrdersService {
 
     async exportOrders(format: "csv" | "excel" = "csv") {
         try {
-            const { data: response } = await apiClient.get("/orders/export", {
+            const { data } = await apiClient.get<Blob>("/orders/export", {
                 params: { format },
+                responseType: "blob",
             });
 
-            const csvData = response.data;
-            const blob = new Blob([csvData], { type: format === "csv" ? "text/csv" : "application/vnd.ms-excel" });
-            const url = window.URL.createObjectURL(blob);
+            const url = window.URL.createObjectURL(data);
             const link = document.createElement("a");
             link.href = url;
             link.setAttribute("download", `orders-${Date.now()}.${format === "csv" ? "csv" : "xlsx"}`);
@@ -147,7 +146,7 @@ class OrdersService {
             link.remove();
             window.URL.revokeObjectURL(url);
 
-            return response;
+            return { success: true };
         } catch (error) {
             console.error("Failed to export orders:", error);
             throw error;

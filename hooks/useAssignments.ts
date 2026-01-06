@@ -214,7 +214,7 @@ export function useAssignments(): UseAssignmentsResult {
         const updatedAssignment = await assignmentsService.toggleAssignmentStatus(id);
         setAssignments((prev) => prev.map((a) => (a._id === id ? updatedAssignment : a)));
         push({
-          message: `Assignment ${updatedAssignment.isActive ? "activated" : "deactivated"} successfully!`,
+          message: "Assignment status toggled successfully!",
           type: "success",
         });
         return updatedAssignment;
@@ -286,7 +286,7 @@ export function useAssignments(): UseAssignmentsResult {
       setSubmissionsLoading(true);
       try {
         const response = await assignmentsService.getAssignmentSubmissions(id, params);
-        setSubmissions(response.submissions || []);
+        setSubmissions((response as any)?.submissions || []);
       } catch (err: any) {
         const errorMessage =
           err?.response?.data?.message || err?.message || "Failed to fetch submissions";

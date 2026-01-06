@@ -8,12 +8,6 @@ import { useCourses } from "@/hooks/useCourses";
 import { coursesService, Course } from "@/services/courses.service";
 import { courseCategoriesService } from "@/services/course-categories.service";
 import {
-  Book,
-  Users,
-  Star,
-  ArrowUp,
-  CheckCircle,
-  ChartLine,
   Filter,
   Plus,
   Download,
@@ -24,8 +18,21 @@ import {
   PowerOff,
   CheckSquare,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Copy,
+  Edit,
+  MoreVertical,
+  Star,
+  Users,
+  Book,
 } from "lucide-react";
 import { Loader2 } from "lucide-react";
+import Image from "next/image";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import CourseStats from "./CourseStats";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -79,9 +86,9 @@ export default function Courses() {
     getCourseStats,
   } = useCourses();
   const [search, setSearch] = React.useState("");
+  const [debouncedSearch, setDebouncedSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] =
     React.useState<string>("All Categories");
-  // Status filter - defaulted to "All Status" to show all courses
   const [statusFilter, setStatusFilter] = React.useState<string>("All Status");
   const [sortBy, setSortBy] = React.useState<string>("Newest");
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
@@ -90,6 +97,8 @@ export default function Courses() {
   const [isExporting, setIsExporting] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [itemsPerPage] = React.useState(12);
 
   // Fetch categories from API
   const { data: categoriesData } = useQuery({
@@ -98,13 +107,26 @@ export default function Courses() {
     staleTime: 60000,
   });
 
+  // Debounce search input
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   // Fetch courses when filters change
   React.useEffect(() => {
-    const params: any = { page: 1, limit: 100 };
-    if (search) params.search = search;
-    // Status filter removed - all courses shown regardless of status
+    const params: any = { page: currentPage, limit: itemsPerPage };
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (statusFilter !== "All Status") {
+      params.status = statusFilter.toLowerCase();
+    }
+    if (categoryFilter !== "All Categories") {
+      params.category = categoryFilter;
+    }
     fetchCourses(params);
-  }, [search]);
+  }, [debouncedSearch, statusFilter, categoryFilter, currentPage, itemsPerPage]);
 
   // Fetch stats on mount
   React.useEffect(() => {
@@ -415,24 +437,25 @@ export default function Courses() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6 lg:mb-8">
         <div>
-          <h2 className="text-3xl font-bold text-secondary mb-2">
+          <h2 className="text-2xl sm:text-3xl font-bold text-secondary mb-2">
             Courses Management
           </h2>
-          <p className="text-gray-600">
+          <p className="text-sm sm:text-base text-gray-600">
             Manage your aviation training courses and enrollments
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* View Mode Toggle */}
           <div className="flex items-center bg-white border border-gray-200 rounded-lg p-1">
             <Button
               variant={viewMode === "table" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("table")}
-              className="px-3"
+              className="px-2 sm:px-3"
+              title="Table View"
             >
               <List className="w-4 h-4" />
             </Button>
@@ -440,7 +463,8 @@ export default function Courses() {
               variant={viewMode === "grid" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("grid")}
-              className="px-3"
+              className="px-2 sm:px-3"
+              title="Grid View"
             >
               <Grid3x3 className="w-4 h-4" />
             </Button>
@@ -451,14 +475,16 @@ export default function Courses() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
+                size="sm"
                 disabled={isExporting || filteredCourses.length === 0}
+                className="hidden sm:flex"
               >
                 {isExporting ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <Download className="w-4 h-4 mr-2" />
                 )}
-                Export
+                <span className="hidden md:inline">Export</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -477,8 +503,10 @@ export default function Courses() {
           {/* Refresh Button */}
           <Button
             variant="outline"
+            size="sm"
             onClick={() => refreshCourses()}
             disabled={coursesLoading}
+            title="Refresh"
           >
             <RefreshCw
               className={`w-4 h-4 ${coursesLoading ? "animate-spin" : ""}`}
@@ -489,128 +517,23 @@ export default function Courses() {
           {roleCanManage && (
             <Button
               onClick={() => router.push("/courses/create")}
+              size="sm"
               className="bg-primary hover:bg-primary/90 text-white"
             >
-              <Plus className="w-5 h-5 mr-2" />
-              Create Course
+              <Plus className="w-4 sm:w-5 h-4 sm:h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Create Course</span>
             </Button>
           )}
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-linear-to-br from-primary to-primary/80 rounded-xl p-6 text-white shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <div className="bg-white/20 p-3 rounded-lg">
-              <Book className="w-6 h-6" />
-            </div>
-            <div className="bg-white/20 px-3 py-1 rounded-full text-sm flex items-center gap-1">
-              <ArrowUp className="w-4 h-4" />
-              <span>12%</span>
-            </div>
-          </div>
-          <p className="text-sm opacity-90 mb-1">Total Courses</p>
-          <p className="text-3xl font-bold">{stats.totalCourses}</p>
-        </div>
-
-        <div className="bg-linear-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <div className="bg-white/20 p-3 rounded-lg">
-              <Users className="w-6 h-6" />
-            </div>
-            <div className="bg-white/20 px-3 py-1 rounded-full text-sm flex items-center gap-1">
-              <ArrowUp className="w-4 h-4" />
-              <span>8%</span>
-            </div>
-          </div>
-          <p className="text-sm opacity-90 mb-1">Total Students</p>
-          <p className="text-3xl font-bold">{stats.totalStudents}</p>
-        </div>
-
-        <div className="bg-linear-to-br from-yellow-500 to-yellow-600 rounded-xl p-6 text-white shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <div className="bg-white/20 p-3 rounded-lg">
-              <Star className="w-6 h-6" />
-            </div>
-            <div className="bg-white/20 px-3 py-1 rounded-full text-sm flex items-center gap-1">
-              <CheckCircle className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-sm opacity-90 mb-1">Average Rating</p>
-          <p className="text-3xl font-bold">{stats.avgRating.toFixed(1)}</p>
-        </div>
-
-        <div className="bg-linear-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <div className="bg-white/20 p-3 rounded-lg">
-              <ChartLine className="w-6 h-6" />
-            </div>
-            <div className="bg-white/20 px-3 py-1 rounded-full text-sm flex items-center gap-1">
-              <ArrowUp className="w-4 h-4" />
-              <span>15%</span>
-            </div>
-          </div>
-          <p className="text-sm opacity-90 mb-1">Published Courses</p>
-          <p className="text-3xl font-bold">{stats.published}</p>
-        </div>
-      </div>
-
-      {/* Discount Impact Stats */}
-      {stats.discountImpact.coursesWithDiscount > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-gray-600">Courses with Discount</p>
-              <div className="bg-green-100 p-2 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              </div>
-            </div>
-            <p className="text-2xl font-bold text-secondary mb-1">
-              {stats.discountImpact.coursesWithDiscount}
-            </p>
-            <p className="text-xs text-gray-500">
-              {(
-                (stats.discountImpact.coursesWithDiscount /
-                  stats.totalCourses) *
-                100
-              ).toFixed(1)}
-              % of total courses
-            </p>
-          </div>
-
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-gray-600">Average Discount</p>
-              <div className="bg-blue-100 p-2 rounded-lg">
-                <ChartLine className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-            <p className="text-2xl font-bold text-secondary mb-1">
-              {stats.discountImpact.averageDiscount.toFixed(1)}%
-            </p>
-            <p className="text-xs text-gray-500">Across discounted courses</p>
-          </div>
-
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-gray-600">Total Savings Offered</p>
-              <div className="bg-red-100 p-2 rounded-lg">
-                <Star className="w-5 h-5 text-red-600" />
-              </div>
-            </div>
-            <p className="text-2xl font-bold text-secondary mb-1">
-              ${stats.discountImpact.totalDiscount.toFixed(2)}
-            </p>
-            <p className="text-xs text-gray-500">Potential revenue impact</p>
-          </div>
-        </div>
-      )}
+      <CourseStats stats={stats} />
 
       {/* Filters */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px]">
+      <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-100 mb-6">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+          <div className="flex-1 min-w-0">
             <input
               type="text"
               placeholder="Search courses..."
@@ -619,10 +542,10 @@ export default function Courses() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-gray-400" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="w-5 h-5 text-gray-400 hidden sm:block" />
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -633,19 +556,29 @@ export default function Courses() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All Status">All Status</SelectItem>
+                <SelectItem value="Published">Published</SelectItem>
+                <SelectItem value="Draft">Draft</SelectItem>
+                <SelectItem value="Archived">Archived</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-full sm:w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Newest">Newest</SelectItem>
+                <SelectItem value="Oldest">Oldest</SelectItem>
+                <SelectItem value="Most Popular">Most Popular</SelectItem>
+                <SelectItem value="Highest Rated">Highest Rated</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          {/* Status filter removed - courses automatically published */}
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Newest">Newest</SelectItem>
-              <SelectItem value="Oldest">Oldest</SelectItem>
-              <SelectItem value="Most Popular">Most Popular</SelectItem>
-              <SelectItem value="Highest Rated">Highest Rated</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
@@ -707,22 +640,307 @@ export default function Courses() {
         </div>
       )}
 
-      {/* Data Table */}
-      <CoursesTable
-        courses={filteredCourses}
-        onEdit={handleEdit}
-        onDelete={(id) => setDeleteId(id)}
-        onDuplicate={handleDuplicate}
-        onPublish={handlePublish}
-        onUnpublish={handleUnpublish}
-        onToggleStatus={handleToggleStatus}
-        onReorder={handleReorder}
-        actionLoading={actionLoading ? "loading" : null}
-        viewMode={viewMode}
-        selectedIds={selectedIds}
-        onToggleSelection={toggleSelection}
-        onToggleSelectAll={toggleSelectAll}
-      />
+      {/* Empty State */}
+      {filteredCourses.length === 0 && !coursesLoading && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+          <div className="flex flex-col items-center justify-center">
+            <div className="bg-gray-100 rounded-full p-6 mb-4">
+              <Book className="w-12 h-12 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">
+              No Courses Found
+            </h3>
+            <p className="text-gray-500 mb-6 max-w-md">
+              {search || categoryFilter !== "All Categories" || statusFilter !== "All Status"
+                ? "No courses match your current filters. Try adjusting your search criteria."
+                : "Get started by creating your first course to begin teaching students."}
+            </p>
+            {roleCanManage && (
+              <Button
+                onClick={() => router.push("/courses/create")}
+                className="bg-primary hover:bg-primary/90 text-white"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Create Your First Course
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Data Display */}
+      {filteredCourses.length > 0 && (
+        viewMode === "table" ? (
+          <CoursesTable
+            courses={filteredCourses}
+            onEdit={handleEdit}
+            onDelete={(id) => setDeleteId(id)}
+            onDuplicate={handleDuplicate}
+            onPublish={handlePublish}
+            onUnpublish={handleUnpublish}
+            onToggleStatus={handleToggleStatus}
+            onReorder={handleReorder}
+            actionLoading={actionLoading ? "loading" : null}
+            viewMode={viewMode}
+            selectedIds={selectedIds}
+            onToggleSelection={toggleSelection}
+            onToggleSelectAll={toggleSelectAll}
+          />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 mb-6">
+            {filteredCourses.map((course) => {
+            const courseId = course.id || course._id;
+            const isSelected = selectedIds.includes(courseId);
+            const statusColor =
+              course.status === "published"
+                ? "bg-green-100 text-green-700"
+                : course.status === "draft"
+                ? "bg-yellow-100 text-yellow-700"
+                : "bg-gray-100 text-gray-700";
+
+            return (
+              <Card
+                key={courseId}
+                className="overflow-hidden hover:shadow-lg transition-shadow relative group"
+              >
+                {/* Selection Checkbox */}
+                <div className="absolute top-3 left-3 z-10">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelection(courseId)}
+                    className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                  />
+                </div>
+
+                {/* Course Thumbnail */}
+                <div className="relative h-40 sm:h-48 bg-gradient-to-br from-primary/20 to-purple-100">
+                  {course.thumbnail ? (
+                    <Image
+                      src={course.thumbnail}
+                      alt={course.title}
+                      fill
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <Book className="w-12 h-12 text-primary/30" />
+                    </div>
+                  )}
+                  <div className="absolute top-3 right-3">
+                    <Badge className={statusColor}>
+                      {course.status || (course.isPublished ? "published" : "draft")}
+                    </Badge>
+                  </div>
+                </div>
+
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold text-base sm:text-lg line-clamp-2 flex-1">
+                      {course.title}
+                    </h3>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => router.push(`/courses/${courseId}`)}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(course)}>
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDuplicate(courseId)}
+                        >
+                          <Copy className="w-4 h-4 mr-2" />
+                          Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {(course.status === "published" ||
+                          course.isPublished) && (
+                          <DropdownMenuItem
+                            onClick={() => handleUnpublish(courseId)}
+                          >
+                            <PowerOff className="w-4 h-4 mr-2" />
+                            Unpublish
+                          </DropdownMenuItem>
+                        )}
+                        {(course.status === "draft" || !course.isPublished) && (
+                          <DropdownMenuItem
+                            onClick={() => handlePublish(courseId)}
+                          >
+                            <Power className="w-4 h-4 mr-2" />
+                            Publish
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => setDeleteId(courseId)}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {course.excerpt && (
+                    <p className="text-sm text-gray-600 line-clamp-2 mt-2">
+                      {course.excerpt}
+                    </p>
+                  )}
+                </CardHeader>
+
+                <CardContent className="space-y-3 pb-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <Badge variant="outline" className="capitalize">
+                      {course.level}
+                    </Badge>
+                    <Badge variant="outline" className="capitalize">
+                      {course.type}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                      <span className="text-sm font-medium">
+                        {(course.rating || 0).toFixed(1)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        ({course.totalRatings || 0})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 text-sm text-gray-600">
+                      <Users className="w-4 h-4" />
+                      <span>{course.enrollmentCount || 0}</span>
+                    </div>
+                  </div>
+
+                  {course.categories && course.categories.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {course.categories.slice(0, 2).map((cat, idx) => (
+                        <Badge
+                          key={idx}
+                          variant="secondary"
+                          className="text-xs"
+                        >
+                          {cat}
+                        </Badge>
+                      ))}
+                      {course.categories.length > 2 && (
+                        <Badge variant="secondary" className="text-xs">
+                          +{course.categories.length - 2}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+
+                <CardFooter className="pt-3 border-t">
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      {course.originalPrice && course.originalPrice > course.price ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-primary">
+                            ${course.price}
+                          </span>
+                          <span className="text-sm text-gray-500 line-through">
+                            ${course.originalPrice}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-lg font-bold text-primary">
+                          ${course.price}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {course.duration || 0}h
+                    </div>
+                  </div>
+                </CardFooter>
+              </Card>
+            );
+          })}
+          </div>
+        )
+      )}
+
+      {/* Pagination */}
+      {filteredCourses.length > 0 && (
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-sm text-gray-600">
+            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredCourses.length)} to{" "}
+            {Math.min(currentPage * itemsPerPage, filteredCourses.length)} of{" "}
+            {filteredCourses.length} courses
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1">Previous</span>
+            </Button>
+            <div className="flex items-center gap-1">
+              {Array.from(
+                { length: Math.ceil(filteredCourses.length / itemsPerPage) },
+                (_, i) => i + 1
+              )
+                .filter(
+                  (page) =>
+                    page === 1 ||
+                    page === Math.ceil(filteredCourses.length / itemsPerPage) ||
+                    Math.abs(page - currentPage) <= 1
+                )
+                .map((page, idx, arr) => (
+                  <React.Fragment key={page}>
+                    {idx > 0 && arr[idx - 1] !== page - 1 && (
+                      <span className="px-2">...</span>
+                    )}
+                    <Button
+                      variant={currentPage === page ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCurrentPage(page)}
+                      className="w-8 h-8 p-0"
+                    >
+                      {page}
+                    </Button>
+                  </React.Fragment>
+                ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCurrentPage((p) =>
+                  Math.min(Math.ceil(filteredCourses.length / itemsPerPage), p + 1)
+                )
+              }
+              disabled={
+                currentPage >= Math.ceil(filteredCourses.length / itemsPerPage)
+              }
+            >
+              <span className="hidden sm:inline mr-1">Next</span>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>

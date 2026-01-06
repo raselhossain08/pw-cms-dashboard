@@ -25,9 +25,18 @@ export interface LessonDto {
     content?: string;
     duration: number; // in seconds
     isFree: boolean;
+    thumbnail?: string;
     quizQuestions?: string[];
     downloads?: string[];
-    course: string;
+    course: string | {
+        _id: string;
+        title: string;
+        instructor?: string;
+    };
+    module?: string | {
+        _id: string;
+        title: string;
+    };
     passingScore: number;
     completionCount: number;
     averageScore: number;
@@ -37,10 +46,14 @@ export interface LessonDto {
 
 export interface LessonAnalytics {
     lessonId: string;
+    title: string;
+    type: LessonType;
+    status: LessonStatus;
     views: number;
     completions: number;
     averageProgress: number;
     averageTimeSpent: number;
+    averageScore: number;
     lastAccessed?: string;
 }
 
@@ -74,8 +87,18 @@ export interface UpdateLessonPayload {
 
 class LessonsService {
     async getCourseLessons(courseId: string): Promise<LessonDto[]> {
-        const { data } = await apiClient.get<LessonDto[]>(`/courses/${courseId}/lessons`);
-        return data;
+        try {
+            const { data } = await apiClient.get<{ lessons?: LessonDto[] } | LessonDto[]>(`/courses/${courseId}/lessons`);
+            if (Array.isArray(data)) {
+                return data;
+            }
+            if (data && typeof data === 'object' && 'lessons' in data && Array.isArray((data as { lessons?: LessonDto[] }).lessons)) {
+                return (data as { lessons?: LessonDto[] }).lessons || [];
+            }
+            return [];
+        } catch (error) {
+            throw error;
+        }
     }
 
     async getLessonById(lessonId: string): Promise<LessonDto> {
@@ -107,54 +130,18 @@ class LessonsService {
     }
 
     async duplicateLesson(lessonId: string): Promise<LessonDto> {
-        const lesson = await this.getLessonById(lessonId);
-        const { data } = await apiClient.post<LessonDto>(`/courses/${lesson.course}/lessons`, {
-            ...lesson,
-            title: `${lesson.title} (Copy)`,
-            _id: undefined,
-            slug: undefined,
-        });
+        const { data } = await apiClient.post<LessonDto>(`/courses/lessons/${lessonId}/duplicate`);
         return data;
     }
 
     async getLessonAnalytics(lessonId: string): Promise<LessonAnalytics> {
-        try {
-            const { data } = await apiClient.get<LessonAnalytics>(`/analytics/lessons/${lessonId}`);
-            return data;
-        } catch (error) {
-            // Fallback to mock data if analytics endpoint doesn't exist
-            return {
-                lessonId,
-                views: Math.floor(Math.random() * 1000),
-                completions: Math.floor(Math.random() * 500),
-                averageProgress: Math.floor(Math.random() * 100),
-                averageTimeSpent: Math.floor(Math.random() * 3600),
-            };
-        }
+        const { data } = await apiClient.get<LessonAnalytics>(`/courses/lessons/${lessonId}/analytics`);
+        return data;
     }
 
-    async getCourseAnalytics(courseId: string): Promise<{
-        totalViews: number;
-        totalCompletions: number;
-        averageCompletion: number;
-        lessonsCount: number;
-    }> {
-        try {
-            const { data } = await apiClient.get<{
-                totalViews: number;
-                totalCompletions: number;
-                averageCompletion: number;
-                lessonsCount: number;
-            }>(`/analytics/courses/${courseId}/lessons`);
-            return data;
-        } catch (error) {
-            return {
-                totalViews: 0,
-                totalCompletions: 0,
-                averageCompletion: 0,
-                lessonsCount: 0,
-            };
-        }
+    async getCourseAnalytics(courseId: string): Promise<any> {
+        const { data } = await apiClient.get<any>(`/courses/${courseId}/analytics`);
+        return data;
     }
 
     async toggleLessonStatus(lessonId: string): Promise<LessonDto> {

@@ -89,6 +89,9 @@ import {
 import { AIAgentsLoadingSkeleton } from "./LoadingSkeletons";
 import { TestAgentPanel } from "./TestAgentPanel";
 import { AgentConfigPanel } from "./AgentConfigPanel";
+import { EnhancedAgentForm } from "./EnhancedAgentForm";
+import { AnalyticsDashboard } from "./AnalyticsDashboard";
+import { AgentPerformancePanel } from "./AgentPerformancePanel";
 
 const getIconStyles = (index: number) => {
   const styles = [
@@ -154,6 +157,12 @@ export default function AIAgents() {
   const [agentForConfig, setAgentForConfig] = React.useState<Agent | null>(
     null
   );
+  const [showAnalytics, setShowAnalytics] = React.useState(false);
+  const [enhancedFormOpen, setEnhancedFormOpen] = React.useState(false);
+  const [enhancedFormMode, setEnhancedFormMode] = React.useState<"create" | "edit">("create");
+  const [agentForEnhancedForm, setAgentForEnhancedForm] = React.useState<Agent | null>(null);
+  const [performancePanelOpen, setPerformancePanelOpen] = React.useState(false);
+  const [agentForPerformance, setAgentForPerformance] = React.useState<Agent | null>(null);
 
   // Form validation errors
   const [validationErrors, setValidationErrors] =
@@ -204,6 +213,37 @@ export default function AIAgents() {
     } catch (error) {
       console.error("Failed to create agent:", error);
     }
+  };
+
+  const handleEnhancedFormSubmit = async (data: CreateAgentDto | UpdateAgentDto) => {
+    try {
+      if (enhancedFormMode === "create") {
+        await createAgent(data as CreateAgentDto);
+      } else if (agentForEnhancedForm) {
+        await updateAgent(agentForEnhancedForm._id, data as UpdateAgentDto);
+      }
+      setEnhancedFormOpen(false);
+      setAgentForEnhancedForm(null);
+    } catch (error) {
+      console.error("Failed to save agent:", error);
+    }
+  };
+
+  const openEnhancedCreateForm = () => {
+    setEnhancedFormMode("create");
+    setAgentForEnhancedForm(null);
+    setEnhancedFormOpen(true);
+  };
+
+  const openEnhancedEditForm = (agent: Agent) => {
+    setEnhancedFormMode("edit");
+    setAgentForEnhancedForm(agent);
+    setEnhancedFormOpen(true);
+  };
+
+  const handleViewPerformance = (agent: Agent) => {
+    setAgentForPerformance(agent);
+    setPerformancePanelOpen(true);
   };
 
   const handleUpdateAgent = async () => {
@@ -473,12 +513,27 @@ export default function AIAgents() {
           </p>
         </div>
         <div className="flex space-x-3">
-          <Button onClick={() => setNewAgentOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => setShowAnalytics(!showAnalytics)}
+          >
+            <TrendingUp className="w-4 h-4 mr-2" />
+            {showAnalytics ? "Hide Analytics" : "View Analytics"}
+          </Button>
+          <Button onClick={openEnhancedCreateForm}>
             <Plus className="w-4 h-4 mr-2" /> Create New Agent
           </Button>
         </div>
       </div>
 
+      {/* Analytics Dashboard */}
+      {showAnalytics && (
+        <div className="mb-8">
+          <AnalyticsDashboard analytics={analytics} />
+        </div>
+      )}
+
+      {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
@@ -732,6 +787,10 @@ export default function AIAgents() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleViewPerformance(a)}>
+                        <TrendingUp className="w-4 h-4 mr-2" />
+                        View Performance
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleTestAgent(a)}>
                         <Logs className="w-4 h-4 mr-2" />
                         Test Agent
@@ -777,7 +836,7 @@ export default function AIAgents() {
                   </div>
                 </div>
                 <div className="flex space-x-2">
-                  <Button className="flex-1" onClick={() => openEditDialog(a)}>
+                  <Button className="flex-1" onClick={() => openEnhancedEditForm(a)}>
                     <Settings className="w-4 h-4 mr-2" /> Configure
                   </Button>
                   <Button
@@ -798,7 +857,7 @@ export default function AIAgents() {
           })}
           <button
             className="rounded-xl p-6 shadow-sm border border-dashed border-primary/30 bg-linear-to-br from-primary/5 to-accent/5 flex flex-col items-center justify-center text-center hover:from-primary/10 hover:to-accent/10 transition-all"
-            onClick={() => setNewAgentOpen(true)}
+            onClick={openEnhancedCreateForm}
           >
             <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mb-4">
               <Plus className="text-primary w-8 h-8" />
@@ -1480,6 +1539,25 @@ export default function AIAgents() {
             // Refetch agents to get updated data
             window.location.reload();
           }}
+        />
+      )}
+
+      {/* Enhanced Agent Form */}
+      <EnhancedAgentForm
+        open={enhancedFormOpen}
+        onOpenChange={setEnhancedFormOpen}
+        onSubmit={handleEnhancedFormSubmit}
+        initialData={agentForEnhancedForm}
+        mode={enhancedFormMode}
+        loading={creating || updating}
+      />
+
+      {/* Agent Performance Panel */}
+      {agentForPerformance && (
+        <AgentPerformancePanel
+          agent={agentForPerformance}
+          open={performancePanelOpen}
+          onOpenChange={setPerformancePanelOpen}
         />
       )}
     </main>

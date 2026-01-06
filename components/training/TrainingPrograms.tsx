@@ -92,7 +92,7 @@ export default function TrainingProgramsNew() {
     React.useState<ProgramItem | null>(null);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [formData, setFormData] = React.useState<CreateTrainingProgramDto>({
+  const [formData, setFormData] = React.useState({
     title: "",
     description: "",
     excerpt: "",
@@ -130,7 +130,7 @@ export default function TrainingProgramsNew() {
   });
 
   const programs: ProgramItem[] = React.useMemo(() => {
-    const programData = ((data as any)?.courses || []) as TrainingProgram[];
+    const programData = ((data as any)?.courses || []) as any[];
     return programData.map((p) => {
       const instructorName =
         typeof p.instructor === "object" && p.instructor
@@ -268,7 +268,24 @@ export default function TrainingProgramsNew() {
       return;
     }
 
-    createMutation.mutate(formData);
+    const payload: CreateTrainingProgramDto = {
+      title: formData.title,
+      description: formData.description,
+      instructor: "",
+      courses: [],
+      level: formData.level as "beginner" | "intermediate" | "advanced",
+      thumbnail: undefined,
+      tags: undefined,
+      isPublished: formData.isPublished,
+      completionCertificate: formData.certificateAvailable,
+      maxEnrollments: formData.maxStudents,
+      startDate: undefined,
+      endDate: undefined,
+      price: formData.price,
+      discountPrice: undefined,
+    };
+
+    createMutation.mutate(payload);
   };
 
   const getTypeBadge = (type: string) => {

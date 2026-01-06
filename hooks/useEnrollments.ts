@@ -300,6 +300,109 @@ export function useEnrollments() {
         [push]
     );
 
+    // Bulk update status
+    const bulkUpdateStatus = useCallback(
+        async (ids: string[], status: string) => {
+            try {
+                const result = await enrollmentsService.bulkUpdateStatus(ids, status);
+                push({
+                    type: "success",
+                    message: `${result.modifiedCount} enrollment(s) updated successfully`,
+                });
+                return result;
+            } catch (error: any) {
+                push({
+                    type: "error",
+                    message:
+                        error.response?.data?.message || "Failed to update enrollments",
+                });
+                throw error;
+            }
+        },
+        [push]
+    );
+
+    // Send message
+    const sendMessage = useCallback(
+        async (enrollmentId: string, subject: string, message: string) => {
+            try {
+                const result = await enrollmentsService.sendMessage(
+                    enrollmentId,
+                    subject,
+                    message
+                );
+                push({
+                    type: "success",
+                    message: "Message sent successfully",
+                });
+                return result;
+            } catch (error: any) {
+                push({
+                    type: "error",
+                    message: error.response?.data?.message || "Failed to send message",
+                });
+                throw error;
+            }
+        },
+        [push]
+    );
+
+    // Generate certificate
+    const generateCertificate = useCallback(
+        async (enrollmentId: string) => {
+            try {
+                const result = await enrollmentsService.generateCertificate(enrollmentId);
+                push({
+                    type: "success",
+                    message: "Certificate generated successfully",
+                });
+                return result;
+            } catch (error: any) {
+                push({
+                    type: "error",
+                    message:
+                        error.response?.data?.message || "Failed to generate certificate",
+                });
+                throw error;
+            }
+        },
+        [push]
+    );
+
+    // Get audit trail
+    const getAuditTrail = useCallback(
+        async (enrollmentId: string) => {
+            try {
+                return await enrollmentsService.getAuditTrail(enrollmentId);
+            } catch (error: any) {
+                push({
+                    type: "error",
+                    message:
+                        error.response?.data?.message || "Failed to fetch audit trail",
+                });
+                throw error;
+            }
+        },
+        [push]
+    );
+
+    // Get payment details
+    const getPaymentDetails = useCallback(
+        async (enrollmentId: string) => {
+            try {
+                return await enrollmentsService.getPaymentDetails(enrollmentId);
+            } catch (error: any) {
+                push({
+                    type: "error",
+                    message:
+                        error.response?.data?.message || "Failed to fetch payment details",
+                });
+                throw error;
+            }
+        },
+        [push]
+    );
+
     return {
         enrollments,
         stats,
@@ -322,5 +425,10 @@ export function useEnrollments() {
         approveEnrollment,
         cancelEnrollment,
         exportEnrollments,
+        bulkUpdateStatus,
+        sendMessage,
+        generateCertificate,
+        getAuditTrail,
+        getPaymentDetails,
     };
 }

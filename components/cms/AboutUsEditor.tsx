@@ -29,6 +29,7 @@ import {
   ChevronUp,
   ChevronDown,
   Image as ImageIcon,
+  AlertTriangle,
 } from "lucide-react";
 import Image from "next/image";
 import { useAboutUs } from "@/hooks/useAboutUs";
@@ -67,6 +68,7 @@ export function AboutUsEditor() {
     loading,
     saving,
     uploadProgress,
+    error,
     fetchAboutUs,
     updateAboutUs,
     updateAboutUsWithUpload,
@@ -402,9 +404,60 @@ export function AboutUsEditor() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
+      <Card>
+        <CardContent className="py-12">
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="relative">
+              <RefreshCw className="w-12 h-12 animate-spin text-primary" />
+              <div className="absolute inset-0 bg-primary/10 blur-xl animate-pulse" />
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Loading About Us Editor
+              </p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Please wait while we fetch the data...
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="border-red-200 dark:border-red-800">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg">
+              <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <CardTitle className="text-red-900 dark:text-red-100">Error Loading Data</CardTitle>
+              <CardDescription className="text-red-700 dark:text-red-300">
+                {error}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Button onClick={handleRefresh} variant="outline">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Try Again
+            </Button>
+            <Button onClick={() => window.location.href = '/dashboard'} variant="ghost">
+              Back to Dashboard
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 

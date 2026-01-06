@@ -37,6 +37,16 @@ import {
   Tag,
   ChevronLeft,
   ChevronRight,
+  Folder,
+  FolderPlus,
+  Link as LinkIcon,
+  Info,
+  Calendar,
+  User,
+  FileType,
+  Maximize2,
+  Image as ImageIconAlt,
+  Type,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +55,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -61,8 +72,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   uploadsService,
   type UploadFile as BaseUploadFile,
@@ -72,6 +87,16 @@ import { useToast } from "@/context/ToastContext";
 // Extend UploadFile to include provider field
 interface UploadFile extends BaseUploadFile {
   provider?: string;
+  altText?: string;
+  caption?: string;
+  folder?: string;
+}
+
+interface Folder {
+  name: string;
+  fileCount: number;
+  totalSize: number;
+  lastUpdated: string;
 }
 
 // File type helpers
@@ -86,7 +111,6 @@ const getFileIcon = (mimeType: string) => {
 
 // Generate video thumbnail URL (for Bunny.net)
 const getVideoThumbnail = (url: string) => {
-  // For Bunny.net iframe URLs: https://iframe.mediadelivery.net/embed/{libraryId}/{videoId}
   if (url.includes("iframe.mediadelivery.net/embed/")) {
     const match = url.match(/\/embed\/(\d+)\/([a-f0-9-]+)/);
     if (match) {
@@ -138,11 +162,12 @@ export default function MediaLibrary() {
   const [sortBy, setSortBy] = React.useState("newest");
   const [page, setPage] = React.useState(1);
   const [limit] = React.useState(20);
+  const [currentFolder, setCurrentFolder] = React.useState<string | null>(null);
 
   // Reset page when filters change
   React.useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, typeFilter, sortBy]);
+  }, [debouncedSearch, typeFilter, sortBy, currentFolder]);
 
   // Selection state
   const [selectedItems, setSelectedItems] = React.useState<
@@ -152,9 +177,12 @@ export default function MediaLibrary() {
 
   // Dialog state
   const [uploadOpen, setUploadOpen] = React.useState(false);
+  const [uploadFromUrlOpen, setUploadFromUrlOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [previewOpen, setPreviewOpen] = React.useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = React.useState(false);
+  const [moveFolderDialogOpen, setMoveFolderDialogOpen] = React.useState(false);
   const [currentFile, setCurrentFile] = React.useState<UploadFile | null>(null);
 
   // Upload state
@@ -162,11 +190,42 @@ export default function MediaLibrary() {
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [dragActive, setDragActive] = React.useState(false);
 
+  // Upload from URL state
+  const [uploadUrl, setUploadUrl] = React.useState("");
+  const [uploadUrlDescription, setUploadUrlDescription] = React.useState("");
+
   // Edit form state
   const [editForm, setEditForm] = React.useState({
     description: "",
     tags: "",
     visibility: "public",
+    altText: "",
+    caption: "",
+    folder: "",
+  });
+
+  // Folder state
+  const [newFolderName, setNewFolderName] = React.useState("");
+  const [targetFolder, setTargetFolder] = React.useState("");
+
+  // Fetch folders
+  const { data: folders = [] } = useQuery({
+    queryKey: ["media-folders"],
+    queryFn: async () => {
+      const response = await fetch(
+        `${
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+        }/uploads/folders`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.data || data || [];
+    },
   });
 
   // Fetch files
@@ -177,8 +236,33 @@ export default function MediaLibrary() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["media-files", debouncedSearch, typeFilter, sortBy, page],
+    queryKey: [
+      "media-files",
+      debouncedSearch,
+      typeFilter,
+      sortBy,
+      page,
+      currentFolder,
+    ],
     queryFn: async () => {
+      if (currentFolder) {
+        const response = await fetch(
+          `${
+            process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+          }/uploads/folder/${encodeURIComponent(
+            currentFolder
+          )}?page=${page}&limit=${limit}`,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        );
+        if (!response.ok) throw new Error("Failed to fetch folder files");
+        const data = await response.json();
+        return data.data || data;
+      }
+
       if (debouncedSearch) {
         const result = await uploadsService.searchFiles({
           q: debouncedSearch,
@@ -187,8 +271,6 @@ export default function MediaLibrary() {
           page,
           limit,
         });
-        console.log("🔍 Search Result:", result);
-        // Search returns array, wrapping it to match structure
         return { files: result, total: result.length, page: 1, pages: 1 };
       }
       const result = await uploadsService.getUserFiles({
@@ -197,26 +279,15 @@ export default function MediaLibrary() {
         type: typeFilter !== "all" ? typeFilter : undefined,
         sort: sortBy,
       });
-      console.log("📁 getUserFiles Result:", result);
-      console.log("📁 Files Array:", result?.files);
-      console.log("📁 Total:", result?.total);
       return result || { files: [], total: 0, page: 1, pages: 0 };
     },
   });
 
   // Fetch storage stats
-  const {
-    data: stats,
-    isLoading: isStatsLoading,
-    error: statsError,
-  } = useQuery({
+  const { data: stats, isLoading: isStatsLoading } = useQuery({
     queryKey: ["storage-stats"],
     queryFn: async () => {
       const result = await uploadsService.getStorageStats();
-      console.log("📊 Storage Stats Response:", result);
-      console.log("Total Files:", result?.total?.totalFiles);
-      console.log("Total Size:", result?.total?.totalSize);
-      console.log("By Type:", result?.byType);
       return result;
     },
   });
@@ -231,17 +302,16 @@ export default function MediaLibrary() {
         const result = await uploadsService.uploadFile(file, {
           entityType: "media-library",
           description: `Uploaded file: ${file.name}`,
+          folder: currentFolder || undefined,
         });
         results.push(result);
       }
       return results;
     },
-    onMutate: () => {
-      showToast({ message: "Uploading files...", type: "info" });
-    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["media-files"] });
       queryClient.invalidateQueries({ queryKey: ["storage-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["media-folders"] });
       showToast({
         message: `Successfully uploaded ${data.length} file(s)`,
         type: "success",
@@ -258,6 +328,35 @@ export default function MediaLibrary() {
     },
   });
 
+  // Upload from URL mutation
+  const uploadFromUrlMutation = useMutation({
+    mutationFn: async () => {
+      return await uploadsService.uploadFromUrl(uploadUrl, {
+        entityType: "media-library",
+        description: uploadUrlDescription || `Uploaded from URL: ${uploadUrl}`,
+        folder: currentFolder || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["media-files"] });
+      queryClient.invalidateQueries({ queryKey: ["storage-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["media-folders"] });
+      showToast({
+        message: "File uploaded successfully from URL",
+        type: "success",
+      });
+      setUploadFromUrlOpen(false);
+      setUploadUrl("");
+      setUploadUrlDescription("");
+    },
+    onError: (error: any) => {
+      showToast({
+        message: error.response?.data?.message || "Upload from URL failed",
+        type: "error",
+      });
+    },
+  });
+
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: (data: {
@@ -265,17 +364,21 @@ export default function MediaLibrary() {
       description?: string;
       tags?: string[];
       visibility?: string;
+      altText?: string;
+      caption?: string;
+      folder?: string;
     }) =>
       uploadsService.updateFile(data.id, {
         description: data.description,
         tags: data.tags,
         visibility: data.visibility,
-      }),
-    onMutate: () => {
-      showToast({ message: "Updating file...", type: "info" });
-    },
+        altText: data.altText,
+        caption: data.caption,
+        folder: data.folder,
+      } as any),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["media-files"] });
+      queryClient.invalidateQueries({ queryKey: ["media-folders"] });
       showToast({ message: "File updated successfully", type: "success" });
       setEditOpen(false);
       setCurrentFile(null);
@@ -291,12 +394,10 @@ export default function MediaLibrary() {
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: (id: string) => uploadsService.deleteFile(id),
-    onMutate: () => {
-      showToast({ message: "Deleting file...", type: "info" });
-    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["media-files"] });
       queryClient.invalidateQueries({ queryKey: ["storage-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["media-folders"] });
       showToast({ message: "File deleted successfully", type: "success" });
       setDeleteOpen(false);
       setCurrentFile(null);
@@ -312,12 +413,10 @@ export default function MediaLibrary() {
   // Bulk delete mutation
   const bulkDeleteMutation = useMutation({
     mutationFn: (fileIds: string[]) => uploadsService.bulkDeleteFiles(fileIds),
-    onMutate: () => {
-      showToast({ message: "Deleting selected files...", type: "info" });
-    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["media-files"] });
       queryClient.invalidateQueries({ queryKey: ["storage-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["media-folders"] });
       showToast({
         message: `Deleted ${data.deleted} file(s)`,
         type: "success",
@@ -332,10 +431,51 @@ export default function MediaLibrary() {
     },
   });
 
+  // Bulk move to folder mutation
+  const bulkMoveToFolderMutation = useMutation({
+    mutationFn: async ({
+      fileIds,
+      folder,
+    }: {
+      fileIds: string[];
+      folder: string;
+    }) => {
+      const response = await fetch(
+        `${
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+        }/uploads/bulk-move-to-folder`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({ fileIds, folder }),
+        }
+      );
+      if (!response.ok) throw new Error("Failed to move files");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["media-files"] });
+      queryClient.invalidateQueries({ queryKey: ["media-folders"] });
+      showToast({
+        message: "Files moved successfully",
+        type: "success",
+      });
+      setMoveFolderDialogOpen(false);
+      setSelectedItems({});
+      setTargetFolder("");
+    },
+    onError: (error: any) => {
+      showToast({
+        message: error.message || "Failed to move files",
+        type: "error",
+      });
+    },
+  });
+
   const files = Array.isArray(filesData) ? filesData : filesData?.files || [];
-  console.log("📋 filesData:", filesData);
-  console.log("📋 Extracted files:", files);
-  console.log("📋 Files length:", files?.length);
 
   // Drag and drop handlers
   const handleDrag = (e: React.DragEvent) => {
@@ -349,10 +489,10 @@ export default function MediaLibrary() {
   };
 
   const validateFile = (file: File) => {
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
     if (file.size > MAX_FILE_SIZE) {
       showToast({
-        message: `File ${file.name} exceeds 50MB limit`,
+        message: `File ${file.name} exceeds 100MB limit`,
         type: "error",
       });
       return false;
@@ -385,7 +525,7 @@ export default function MediaLibrary() {
       setSelectedItems({});
     } else {
       const newSelection: Record<string, boolean> = {};
-      files.forEach((file) => {
+      files.forEach((file: UploadFile) => {
         newSelection[file._id] = true;
       });
       setSelectedItems(newSelection);
@@ -402,6 +542,9 @@ export default function MediaLibrary() {
       description: file.description || "",
       tags: file.tags?.join(", ") || "",
       visibility: file.visibility || "public",
+      altText: file.altText || "",
+      caption: file.caption || "",
+      folder: file.folder || "",
     });
     setEditOpen(true);
   };
@@ -425,6 +568,18 @@ export default function MediaLibrary() {
     }
   };
 
+  const handleBulkMoveToFolder = () => {
+    const selectedIds = Object.keys(selectedItems).filter(
+      (id) => selectedItems[id]
+    );
+    if (selectedIds.length > 0 && targetFolder) {
+      bulkMoveToFolderMutation.mutate({
+        fileIds: selectedIds,
+        folder: targetFolder,
+      });
+    }
+  };
+
   const handleDownload = async (file: UploadFile) => {
     try {
       await uploadsService.incrementDownloadCount(file._id);
@@ -435,16 +590,24 @@ export default function MediaLibrary() {
     }
   };
 
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    showToast({
+      message: `${label} copied to clipboard`,
+      type: "success",
+    });
+  };
+
   return (
-    <main className="p-6 max-w-[1600px] mx-auto">
+    <main className="p-6 max-w-[1800px] mx-auto">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-start mb-8">
         <div>
           <h1 className="text-3xl font-bold text-secondary mb-2">
             Media Library
           </h1>
           <p className="text-gray-600">
-            Manage your files with Bunny.net and Cloudinary integration
+            WordPress-style media management with folders and metadata
           </p>
         </div>
         <div className="flex items-center space-x-3 flex-wrap gap-2">
@@ -453,6 +616,7 @@ export default function MediaLibrary() {
             onClick={() => {
               queryClient.invalidateQueries({ queryKey: ["media-files"] });
               queryClient.invalidateQueries({ queryKey: ["storage-stats"] });
+              queryClient.invalidateQueries({ queryKey: ["media-folders"] });
             }}
             disabled={isLoading || isStatsLoading}
           >
@@ -509,6 +673,10 @@ export default function MediaLibrary() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button variant="outline" onClick={() => setUploadFromUrlOpen(true)}>
+            <LinkIcon className="w-4 h-4 mr-2" />
+            Upload from URL
+          </Button>
           <Button onClick={() => setUploadOpen(true)}>
             <UploadIcon className="w-4 h-4 mr-2" />
             Upload Files
@@ -516,282 +684,506 @@ export default function MediaLibrary() {
         </div>
       </div>
 
-      {/* Storage Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">Total Files</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {isStatsLoading ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  stats?.total?.totalFiles || 0
-                )}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <File className="text-blue-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">Storage Used</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {isStatsLoading ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  uploadsService.formatFileSize(stats?.total?.totalSize || 0)
-                )}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <HardDrive className="text-purple-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">Images</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {isStatsLoading ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  stats?.byType?.find((t) => t._id === "image")?.count || 0
-                )}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <ImageIcon className="text-green-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm font-medium">Videos</p>
-              <p className="text-2xl font-bold text-secondary mt-1">
-                {isStatsLoading ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  stats?.byType?.find((t) => t._id === "video")?.count || 0
-                )}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-              <Video className="text-yellow-600 w-6 h-6" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters and Controls */}
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          {/* Search */}
-          <div className="flex-1 max-w-md">
-            <div className="relative">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search files by name, tags, description..."
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          {/* Type Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="image">Images</SelectItem>
-                <SelectItem value="video">Videos</SelectItem>
-                <SelectItem value="audio">Audio</SelectItem>
-                <SelectItem value="document">Documents</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Sort */}
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="newest">Newest First</SelectItem>
-              <SelectItem value="oldest">Oldest First</SelectItem>
-              <SelectItem value="name-asc">Name A-Z</SelectItem>
-              <SelectItem value="name-desc">Name Z-A</SelectItem>
-              <SelectItem value="size-desc">Largest Size</SelectItem>
-              <SelectItem value="size-asc">Smallest Size</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* View Toggle */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant={view === "grid" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("grid")}
-            >
-              <Grid2x2 className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={view === "list" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("list")}
-            >
-              <List className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Bulk Actions */}
-        {selectedCount > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={toggleSelectAll}>
-                {selectedCount === files.length ? (
-                  <CheckSquare className="w-4 h-4 mr-2" />
-                ) : (
-                  <Square className="w-4 h-4 mr-2" />
-                )}
-                {selectedCount} selected
-              </Button>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Sidebar - Folders */}
+        <div className="lg:col-span-1">
+          <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100 sticky top-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <Folder className="w-5 h-5" />
+                Folders
+              </h3>
               <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleBulkDelete}
-                disabled={bulkDeleteMutation.isPending}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setFolderDialogOpen(true)}
               >
-                {bulkDeleteMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Trash className="w-4 h-4 mr-2" />
-                )}
-                Delete Selected
+                <FolderPlus className="w-4 h-4" />
               </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectedItems({})}
-            >
-              <X className="w-4 h-4 mr-2" />
-              Clear Selection
-            </Button>
+            <ScrollArea className="h-[calc(100vh-280px)]">
+              <div className="space-y-1">
+                <button
+                  onClick={() => setCurrentFolder(null)}
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                    currentFolder === null
+                      ? "bg-primary text-white"
+                      : "hover:bg-gray-100"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">All Files</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {stats?.total?.totalFiles || 0}
+                    </Badge>
+                  </div>
+                </button>
+                {folders.map((folder: Folder) => (
+                  <button
+                    key={folder.name}
+                    onClick={() => setCurrentFolder(folder.name)}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                      currentFolder === folder.name
+                        ? "bg-primary text-white"
+                        : "hover:bg-gray-100"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Folder className="w-4 h-4 shrink-0" />
+                        <span className="text-sm font-medium truncate">
+                          {folder.name}
+                        </span>
+                      </div>
+                      <Badge
+                        variant="secondary"
+                        className="text-xs shrink-0 ml-2"
+                      >
+                        {folder.fileCount}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 pl-6">
+                      {uploadsService.formatFileSize(folder.totalSize)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
           </div>
-        )}
-      </div>
 
-      {/* Files Grid/List */}
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <span className="ml-3 text-gray-600">Loading files...</span>
+          {/* Storage Stats Mini */}
+          <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100 mt-4">
+            <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+              <HardDrive className="w-4 h-4" />
+              Storage Stats
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Total Files:</span>
+                <span className="font-medium">
+                  {stats?.total?.totalFiles || 0}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Storage Used:</span>
+                <span className="font-medium">
+                  {uploadsService.formatFileSize(stats?.total?.totalSize || 0)}
+                </span>
+              </div>
+            </div>
           </div>
-        ) : isError ? (
-          <div className="text-center py-12">
-            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-red-900 mb-2">
-              Error loading files
-            </h3>
-            <p className="text-red-600 mb-4">
-              {(error as Error)?.message || "Something went wrong"}
-            </p>
-            <Button onClick={() => refetch()}>Try Again</Button>
-          </div>
-        ) : files.length === 0 ? (
-          <div className="text-center py-12">
-            <File className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No files found
-            </h3>
-            {stats?.total?.totalFiles && stats.total.totalFiles > 0 ? (
-              <div className="space-y-3">
-                <p className="text-gray-600">
-                  Storage shows {stats.total.totalFiles} file(s) exist, but none
-                  are visible to your account.
-                </p>
-                <p className="text-sm text-gray-500">
-                  Files may have been uploaded by other users or you may need
-                  admin access.
-                </p>
-                <Button onClick={() => setUploadOpen(true)}>
-                  <UploadIcon className="w-4 h-4 mr-2" />
-                  Upload Your Files
+        </div>
+
+        {/* Main Content */}
+        <div className="lg:col-span-3">
+          {/* Breadcrumb */}
+          {currentFolder && (
+            <div className="flex items-center gap-2 mb-4 text-sm text-gray-600">
+              <button
+                onClick={() => setCurrentFolder(null)}
+                className="hover:text-primary"
+              >
+                All Files
+              </button>
+              <ChevronRight className="w-4 h-4" />
+              <span className="font-medium text-gray-900">{currentFolder}</span>
+            </div>
+          )}
+
+          {/* Filters and Controls */}
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              {/* Search */}
+              <div className="flex-1 max-w-md">
+                <div className="relative">
+                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search files by name, tags, description..."
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              {/* Type Filter */}
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-gray-500" />
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="image">Images</SelectItem>
+                    <SelectItem value="video">Videos</SelectItem>
+                    <SelectItem value="audio">Audio</SelectItem>
+                    <SelectItem value="document">Documents</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Sort */}
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest First</SelectItem>
+                  <SelectItem value="oldest">Oldest First</SelectItem>
+                  <SelectItem value="name-asc">Name A-Z</SelectItem>
+                  <SelectItem value="name-desc">Name Z-A</SelectItem>
+                  <SelectItem value="size-desc">Largest Size</SelectItem>
+                  <SelectItem value="size-asc">Smallest Size</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* View Toggle */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={view === "grid" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setView("grid")}
+                >
+                  <Grid2x2 className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={view === "list" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setView("list")}
+                >
+                  <List className="w-4 h-4" />
                 </Button>
               </div>
-            ) : (
-              <>
+            </div>
+
+            {/* Bulk Actions */}
+            {selectedCount > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="sm" onClick={toggleSelectAll}>
+                    {selectedCount === files.length ? (
+                      <CheckSquare className="w-4 h-4 mr-2" />
+                    ) : (
+                      <Square className="w-4 h-4 mr-2" />
+                    )}
+                    {selectedCount} selected
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setMoveFolderDialogOpen(true)}
+                  >
+                    <Folder className="w-4 h-4 mr-2" />
+                    Move to Folder
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    disabled={bulkDeleteMutation.isPending}
+                  >
+                    {bulkDeleteMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Trash className="w-4 h-4 mr-2" />
+                    )}
+                    Delete Selected
+                  </Button>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedItems({})}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear Selection
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Files Grid/List */}
+          <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <span className="ml-3 text-gray-600">Loading files...</span>
+              </div>
+            ) : isError ? (
+              <div className="text-center py-12">
+                <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-red-900 mb-2">
+                  Error loading files
+                </h3>
+                <p className="text-red-600 mb-4">
+                  {(error as Error)?.message || "Something went wrong"}
+                </p>
+                <Button onClick={() => refetch()}>Try Again</Button>
+              </div>
+            ) : files.length === 0 ? (
+              <div className="text-center py-12">
+                <File className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No files found
+                </h3>
                 <p className="text-gray-600 mb-4">
-                  Upload your first file to get started
+                  {currentFolder
+                    ? `No files in "${currentFolder}" folder`
+                    : "Upload your first file to get started"}
                 </p>
                 <Button onClick={() => setUploadOpen(true)}>
                   <UploadIcon className="w-4 h-4 mr-2" />
                   Upload Files
                 </Button>
-              </>
-            )}
-          </div>
-        ) : view === "grid" ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {files.map((file: UploadFile) => (
-              <div
-                key={file._id}
-                className={`group relative rounded-lg overflow-hidden border cursor-pointer transition-all hover:shadow-lg ${
-                  selectedItems[file._id]
-                    ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                    : "border-gray-200 bg-gray-50 hover:border-primary/50"
-                }`}
-              >
-                {/* Selection Checkbox */}
-                <div className="absolute top-2 left-2 z-10">
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="w-6 h-6 bg-white/90 hover:bg-white"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleSelect(file._id);
-                    }}
+              </div>
+            ) : view === "grid" ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {files.map((file: UploadFile) => (
+                  <div
+                    key={file._id}
+                    className={`group relative rounded-lg overflow-hidden border cursor-pointer transition-all hover:shadow-lg ${
+                      selectedItems[file._id]
+                        ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                        : "border-gray-200 bg-gray-50 hover:border-primary/50"
+                    }`}
                   >
-                    {selectedItems[file._id] ? (
-                      <CheckSquare className="w-4 h-4 text-primary" />
-                    ) : (
-                      <Square className="w-4 h-4 text-gray-400" />
-                    )}
-                  </Button>
-                </div>
+                    {/* Selection Checkbox */}
+                    <div className="absolute top-2 left-2 z-10">
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="w-6 h-6 bg-white/90 hover:bg-white"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelect(file._id);
+                        }}
+                      >
+                        {selectedItems[file._id] ? (
+                          <CheckSquare className="w-4 h-4 text-primary" />
+                        ) : (
+                          <Square className="w-4 h-4 text-gray-400" />
+                        )}
+                      </Button>
+                    </div>
 
-                {/* Preview */}
-                <div
-                  className="relative h-40 bg-gray-100 flex items-center justify-center overflow-hidden group/preview"
-                  onClick={() => openPreviewDialog(file)}
-                >
-                  {uploadsService.isImage(file.mimeType) ? (
-                    <img
-                      src={file.url}
-                      alt={file.originalName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : uploadsService.isVideo(file.mimeType) ? (
-                    <>
-                      {getVideoThumbnail(file.url) ? (
+                    {/* Preview */}
+                    <div
+                      className="relative h-40 bg-gray-100 flex items-center justify-center overflow-hidden group/preview"
+                      onClick={() => openPreviewDialog(file)}
+                    >
+                      {uploadsService.isImage(file.mimeType) ? (
+                        <img
+                          src={file.url}
+                          alt={file.altText || file.originalName}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : uploadsService.isVideo(file.mimeType) ? (
+                        <>
+                          {getVideoThumbnail(file.url) ? (
+                            <>
+                              <img
+                                src={getVideoThumbnail(file.url)!}
+                                alt={file.originalName}
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/preview:bg-black/40 transition-colors">
+                                <div className="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center">
+                                  <div className="w-0 h-0 border-l-[16px] border-l-blue-600 border-t-[10px] border-t-transparent border-b-[10px] border-b-transparent ml-1" />
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-blue-500">
+                              {getFileIcon(file.mimeType)}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-gray-500">
+                          {getFileIcon(file.mimeType)}
+                        </div>
+                      )}
+
+                      {/* Provider Badge */}
+                      <div className="absolute top-2 right-2 z-10">
+                        {getProviderBadge(file.provider)}
+                      </div>
+                    </div>
+
+                    {/* File Info */}
+                    <div className="p-3 bg-white">
+                      <p className="text-sm font-medium text-gray-900 truncate mb-1">
+                        {file.originalName}
+                      </p>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>{uploadsService.formatFileSize(file.size)}</span>
+                        <span className="uppercase">
+                          {uploadsService.getFileExtension(file.originalName)}
+                        </span>
+                      </div>
+                      {file.caption && (
+                        <p className="text-xs text-gray-600 mt-2 truncate">
+                          {file.caption}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white/95 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 bg-white hover:bg-gray-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openPreviewDialog(file);
+                          }}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 bg-white hover:bg-gray-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(file);
+                          }}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 bg-white hover:bg-gray-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditDialog(file);
+                          }}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 bg-white hover:bg-gray-100"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await uploadsService.duplicateFile(file._id);
+                                  queryClient.invalidateQueries({
+                                    queryKey: ["media-files"],
+                                  });
+                                  showToast({
+                                    message: "File duplicated successfully",
+                                    type: "success",
+                                  });
+                                } catch (error) {
+                                  showToast({
+                                    message: "Failed to duplicate file",
+                                    type: "error",
+                                  });
+                                }
+                              }}
+                            >
+                              <Copy className="w-4 h-4 mr-2" />
+                              Duplicate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(file.url, "URL");
+                              }}
+                            >
+                              <Copy className="w-4 h-4 mr-2" />
+                              Copy URL
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(
+                                  `![${file.altText || file.originalName}](${
+                                    file.url
+                                  })`,
+                                  "Markdown"
+                                );
+                              }}
+                            >
+                              <Copy className="w-4 h-4 mr-2" />
+                              Copy Markdown
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDeleteDialog(file);
+                              }}
+                              className="text-red-600"
+                            >
+                              <Trash className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {files.map((file: UploadFile) => (
+                  <div
+                    key={file._id}
+                    className={`flex items-center gap-4 p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
+                      selectedItems[file._id]
+                        ? "border-primary bg-primary/5"
+                        : "border-gray-200 bg-gray-50 hover:border-primary/50"
+                    }`}
+                  >
+                    {/* Checkbox */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(file._id);
+                      }}
+                    >
+                      {selectedItems[file._id] ? (
+                        <CheckSquare className="w-5 h-5 text-primary" />
+                      ) : (
+                        <Square className="w-5 h-5 text-gray-400" />
+                      )}
+                    </Button>
+
+                    {/* Preview */}
+                    <div
+                      className="shrink-0 w-16 h-16 rounded bg-gray-100 flex items-center justify-center overflow-hidden relative group/preview cursor-pointer"
+                      onClick={() => openPreviewDialog(file)}
+                    >
+                      {uploadsService.isImage(file.mimeType) ? (
+                        <img
+                          src={file.url}
+                          alt={file.altText || file.originalName}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : uploadsService.isVideo(file.mimeType) &&
+                        getVideoThumbnail(file.url) ? (
                         <>
                           <img
                             src={getVideoThumbnail(file.url)!}
@@ -799,342 +1191,172 @@ export default function MediaLibrary() {
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/preview:bg-black/40 transition-colors">
-                            <div className="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center">
-                              <div className="w-0 h-0 border-l-16 border-l-blue-600 border-t-[10px] border-t-transparent border-b-[10px] border-b-transparent ml-1" />
+                            <div className="w-6 h-6 bg-white/90 rounded-full flex items-center justify-center">
+                              <div className="w-0 h-0 border-l-[8px] border-l-blue-600 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent ml-0.5" />
                             </div>
                           </div>
                         </>
                       ) : (
-                        <div className="text-blue-500">
+                        <div className="text-gray-500">
                           {getFileIcon(file.mimeType)}
                         </div>
                       )}
-                    </>
-                  ) : (
-                    <div className="text-gray-500">
-                      {getFileIcon(file.mimeType)}
                     </div>
-                  )}
 
-                  {/* Provider Badge */}
-                  <div className="absolute top-2 right-2 z-10">
-                    {getProviderBadge(file.provider)}
-                  </div>
-                </div>
-
-                {/* File Info */}
-                <div className="p-3 bg-white">
-                  <p className="text-sm font-medium text-gray-900 truncate mb-1">
-                    {file.originalName}
-                  </p>
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>{uploadsService.formatFileSize(file.size)}</span>
-                    <span className="uppercase">
-                      {uploadsService.getFileExtension(file.originalName)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-white via-white/95 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 bg-white hover:bg-gray-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openPreviewDialog(file);
-                      }}
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 bg-white hover:bg-gray-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownload(file);
-                      }}
-                    >
-                      <Download className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 bg-white hover:bg-gray-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEditDialog(file);
-                      }}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 bg-white hover:bg-gray-100"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                              await uploadsService.duplicateFile(file._id);
-                              queryClient.invalidateQueries({
-                                queryKey: ["media-files"],
-                              });
-                              showToast({
-                                message: "File duplicated successfully",
-                                type: "success",
-                              });
-                            } catch (error) {
-                              showToast({
-                                message: "Failed to duplicate file",
-                                type: "error",
-                              });
-                            }
-                          }}
-                        >
-                          <Copy className="w-4 h-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(file.url);
-                            showToast({
-                              message: "URL copied to clipboard",
-                              type: "success",
-                            });
-                          }}
-                        >
-                          <Copy className="w-4 h-4 mr-2" />
-                          Copy URL
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openDeleteDialog(file);
-                          }}
-                          className="text-red-600"
-                        >
-                          <Trash className="w-4 h-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {files.map((file: UploadFile) => (
-              <div
-                key={file._id}
-                className={`flex items-center gap-4 p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
-                  selectedItems[file._id]
-                    ? "border-primary bg-primary/5"
-                    : "border-gray-200 bg-gray-50 hover:border-primary/50"
-                }`}
-              >
-                {/* Checkbox */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleSelect(file._id);
-                  }}
-                >
-                  {selectedItems[file._id] ? (
-                    <CheckSquare className="w-5 h-5 text-primary" />
-                  ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
-                  )}
-                </Button>
-
-                {/* Preview */}
-                <div
-                  className="shrink-0 w-16 h-16 rounded bg-gray-100 flex items-center justify-center overflow-hidden relative group/preview cursor-pointer"
-                  onClick={() => openPreviewDialog(file)}
-                >
-                  {uploadsService.isImage(file.mimeType) ? (
-                    <img
-                      src={file.url}
-                      alt={file.originalName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : uploadsService.isVideo(file.mimeType) &&
-                    getVideoThumbnail(file.url) ? (
-                    <>
-                      <img
-                        src={getVideoThumbnail(file.url)!}
-                        alt={file.originalName}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/preview:bg-black/40 transition-colors">
-                        <div className="w-6 h-6 bg-white/90 rounded-full flex items-center justify-center">
-                          <div className="w-0 h-0 border-l-[8px] border-l-blue-600 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent ml-0.5" />
-                        </div>
+                    {/* File Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate mb-1">
+                        {file.originalName}
+                      </p>
+                      <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                        <span>{uploadsService.formatFileSize(file.size)}</span>
+                        <span>•</span>
+                        <span className="uppercase">
+                          {uploadsService.getFileExtension(file.originalName)}
+                        </span>
+                        <span>•</span>
+                        <span>
+                          {new Date(file.createdAt).toLocaleDateString()}
+                        </span>
+                        {file.folder && (
+                          <>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <Folder className="w-3 h-3" />
+                              {file.folder}
+                            </span>
+                          </>
+                        )}
                       </div>
-                    </>
-                  ) : (
-                    <div className="text-gray-500">
-                      {getFileIcon(file.mimeType)}
+                      {file.caption && (
+                        <p className="text-xs text-gray-600 mt-1 truncate">
+                          {file.caption}
+                        </p>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                {/* File Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate mb-1">
-                    {file.originalName}
-                  </p>
-                  <div className="flex items-center gap-3 text-xs text-gray-500">
-                    <span>{uploadsService.formatFileSize(file.size)}</span>
-                    <span>•</span>
-                    <span className="uppercase">
-                      {uploadsService.getFileExtension(file.originalName)}
-                    </span>
-                    <span>•</span>
-                    <span>{new Date(file.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
+                    {/* Provider Badge */}
+                    <div className="shrink-0">
+                      {getProviderBadge(file.provider)}
+                    </div>
 
-                {/* Provider Badge */}
-                <div className="shrink-0">
-                  {getProviderBadge(file.provider)}
-                </div>
-
-                {/* Actions */}
-                <div className="shrink-0 flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openPreviewDialog(file);
-                    }}
-                  >
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownload(file);
-                    }}
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreVertical className="w-4 h-4" />
+                    {/* Actions */}
+                    <div className="shrink-0 flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openPreviewDialog(file);
+                        }}
+                      >
+                        <Eye className="w-4 h-4" />
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEditDialog(file)}>
-                        <Edit className="w-4 h-4 mr-2" />
-                        Edit Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={async () => {
-                          try {
-                            await uploadsService.duplicateFile(file._id);
-                            queryClient.invalidateQueries({
-                              queryKey: ["media-files"],
-                            });
-                            showToast({
-                              message: "File duplicated successfully",
-                              type: "success",
-                            });
-                          } catch (error) {
-                            showToast({
-                              message: "Failed to duplicate file",
-                              type: "error",
-                            });
-                          }
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(file);
                         }}
                       >
-                        <Copy className="w-4 h-4 mr-2" />
-                        Duplicate
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          navigator.clipboard.writeText(file.url);
-                          showToast({
-                            message: "URL copied to clipboard",
-                            type: "success",
-                          });
-                        }}
-                      >
-                        <Copy className="w-4 h-4 mr-2" />
-                        Copy URL
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => openDeleteDialog(file)}
-                        className="text-red-600"
-                      >
-                        <Trash className="w-4 h-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                        <Download className="w-4 h-4" />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => openEditDialog(file)}
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              try {
+                                await uploadsService.duplicateFile(file._id);
+                                queryClient.invalidateQueries({
+                                  queryKey: ["media-files"],
+                                });
+                                showToast({
+                                  message: "File duplicated successfully",
+                                  type: "success",
+                                });
+                              } catch (error) {
+                                showToast({
+                                  message: "Failed to duplicate file",
+                                  type: "error",
+                                });
+                              }
+                            }}
+                          >
+                            <Copy className="w-4 h-4 mr-2" />
+                            Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => copyToClipboard(file.url, "URL")}
+                          >
+                            <Copy className="w-4 h-4 mr-2" />
+                            Copy URL
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => openDeleteDialog(file)}
+                            className="text-red-600"
+                          >
+                            <Trash className="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Pagination */}
-      {!isLoading && files.length > 0 && (
-        <div className="flex items-center justify-between mt-6 bg-card rounded-xl p-4 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-600">
-            Showing {(page - 1) * limit + 1} to{" "}
-            {Math.min(page * limit, filesData?.total || 0)} of{" "}
-            {filesData?.total || 0} files
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Previous
-            </Button>
-            <span className="text-sm font-medium px-2">
-              Page {page} of {filesData?.pages || 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setPage((p) => Math.min(filesData?.pages || 1, p + 1))
-              }
-              disabled={page === (filesData?.pages || 1)}
-            >
-              Next
-              <ChevronRight className="w-4 h-4 ml-2" />
-            </Button>
-          </div>
+          {/* Pagination */}
+          {!isLoading && files.length > 0 && (
+            <div className="flex items-center justify-between mt-6 bg-card rounded-xl p-4 shadow-sm border border-gray-100">
+              <p className="text-sm text-gray-600">
+                Showing {(page - 1) * limit + 1} to{" "}
+                {Math.min(page * limit, filesData?.total || 0)} of{" "}
+                {filesData?.total || 0} files
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  <ChevronLeft className="w-4 h-4 mr-2" />
+                  Previous
+                </Button>
+                <span className="text-sm font-medium px-2">
+                  Page {page} of {filesData?.pages || 1}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setPage((p) => Math.min(filesData?.pages || 1, p + 1))
+                  }
+                  disabled={page === (filesData?.pages || 1)}
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Upload Dialog */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
@@ -1145,8 +1367,8 @@ export default function MediaLibrary() {
               Upload Files
             </DialogTitle>
             <DialogDescription>
-              Upload files to Bunny.net (videos) or Cloudinary
-              (images/documents)
+              Upload files to {currentFolder || "media library"}. Supports
+              multiple files and drag & drop.
             </DialogDescription>
           </DialogHeader>
 
@@ -1183,42 +1405,44 @@ export default function MediaLibrary() {
               onChange={handleFileInput}
             />
             <p className="text-xs text-gray-500 mt-4">
-              Supports: Images, Videos, Audio, Documents (Max: 50MB per file)
+              Supports: Images, Videos, Audio, Documents (Max: 100MB per file)
             </p>
           </div>
 
           {uploadFiles.length > 0 && (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {uploadFiles.map((file: File, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    {uploadsService.getFileIcon(file.name)}
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {file.name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {uploadsService.formatFileSize(file.size)}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      setUploadFiles((prev) =>
-                        prev.filter((_, i) => i !== index)
-                      )
-                    }
+            <ScrollArea className="max-h-48">
+              <div className="space-y-2">
+                {uploadFiles.map((file: File, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                   >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+                    <div className="flex items-center gap-3">
+                      {uploadsService.getFileIcon(file.name)}
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {file.name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {uploadsService.formatFileSize(file.size)}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        setUploadFiles((prev) =>
+                          prev.filter((_, i) => i !== index)
+                        )
+                      }
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
           )}
 
           {uploadMutation.isPending && (
@@ -1238,7 +1462,7 @@ export default function MediaLibrary() {
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button
               variant="outline"
               onClick={() => {
@@ -1260,69 +1484,264 @@ export default function MediaLibrary() {
               )}
               Upload {uploadFiles.length > 0 && `(${uploadFiles.length})`}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      {/* Upload from URL Dialog */}
+      <Dialog open={uploadFromUrlOpen} onOpenChange={setUploadFromUrlOpen}>
         <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LinkIcon className="w-5 h-5 text-primary" />
+              Upload from URL
+            </DialogTitle>
+            <DialogDescription>
+              Provide a URL to upload a file directly from the internet
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="url">File URL</Label>
+              <Input
+                id="url"
+                type="url"
+                value={uploadUrl}
+                onChange={(e) => setUploadUrl(e.target.value)}
+                placeholder="https://example.com/image.jpg"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="url-description">Description (Optional)</Label>
+              <Input
+                id="url-description"
+                value={uploadUrlDescription}
+                onChange={(e) => setUploadUrlDescription(e.target.value)}
+                placeholder="Enter file description..."
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setUploadFromUrlOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => uploadFromUrlMutation.mutate()}
+              disabled={!uploadUrl || uploadFromUrlMutation.isPending}
+            >
+              {uploadFromUrlMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <CloudUpload className="w-4 h-4 mr-2" />
+              )}
+              Upload from URL
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog with WordPress-style Metadata */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="w-5 h-5 text-primary" />
               Edit File Details
             </DialogTitle>
             <DialogDescription>
-              Update file information and settings
+              Update file metadata including alt text, captions, and folder
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={editForm.description}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, description: e.target.value })
-                }
-                placeholder="Enter file description..."
-                rows={3}
-              />
-            </div>
+          <Tabs defaultValue="basic" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="basic">Basic Info</TabsTrigger>
+              <TabsTrigger value="seo">SEO & Alt Text</TabsTrigger>
+              <TabsTrigger value="organization">Organization</TabsTrigger>
+            </TabsList>
 
-            <div>
-              <Label htmlFor="tags">Tags (comma-separated)</Label>
-              <Input
-                id="tags"
-                value={editForm.tags}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, tags: e.target.value })
-                }
-                placeholder="e.g., course, video, lecture"
-              />
-            </div>
+            <ScrollArea className="h-[400px] pr-4">
+              <TabsContent value="basic" className="space-y-4 pt-4">
+                <div>
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={editForm.description}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, description: e.target.value })
+                    }
+                    placeholder="Enter file description..."
+                    rows={3}
+                  />
+                </div>
 
-            <div>
-              <Label htmlFor="visibility">Visibility</Label>
-              <Select
-                value={editForm.visibility}
-                onValueChange={(value) =>
-                  setEditForm({ ...editForm, visibility: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="public">Public</SelectItem>
-                  <SelectItem value="private">Private</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+                <div>
+                  <Label htmlFor="caption">Caption</Label>
+                  <Textarea
+                    id="caption"
+                    value={editForm.caption}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, caption: e.target.value })
+                    }
+                    placeholder="Enter a caption for this file..."
+                    rows={2}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Captions are displayed with the file in galleries
+                  </p>
+                </div>
 
-          <div className="flex justify-end gap-2">
+                <div>
+                  <Label htmlFor="visibility">Visibility</Label>
+                  <Select
+                    value={editForm.visibility}
+                    onValueChange={(value) =>
+                      setEditForm({ ...editForm, visibility: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">
+                        <div className="flex items-center gap-2">
+                          <Eye className="w-4 h-4" />
+                          Public
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="private">
+                        <div className="flex items-center gap-2">
+                          <EyeOff className="w-4 h-4" />
+                          Private
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="seo" className="space-y-4 pt-4">
+                <div>
+                  <Label htmlFor="altText" className="flex items-center gap-2">
+                    <ImageIconAlt className="w-4 h-4" />
+                    Alt Text (Alternative Text)
+                  </Label>
+                  <Input
+                    id="altText"
+                    value={editForm.altText}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, altText: e.target.value })
+                    }
+                    placeholder="Describe this image for accessibility..."
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Alt text improves SEO and accessibility. Describe what's in
+                    the image.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="font-medium text-sm mb-2 text-blue-900 flex items-center gap-2">
+                    <Info className="w-4 h-4" />
+                    Why Alt Text Matters
+                  </h4>
+                  <ul className="text-xs text-blue-800 space-y-1">
+                    <li>• Helps search engines understand your images</li>
+                    <li>• Improves accessibility for screen readers</li>
+                    <li>• Shows when images fail to load</li>
+                    <li>• Essential for ADA compliance</li>
+                  </ul>
+                </div>
+
+                <div>
+                  <Label htmlFor="tags">Tags (comma-separated)</Label>
+                  <Input
+                    id="tags"
+                    value={editForm.tags}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, tags: e.target.value })
+                    }
+                    placeholder="e.g., course, video, lecture, education"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Tags help organize and search your files
+                  </p>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="organization" className="space-y-4 pt-4">
+                <div>
+                  <Label htmlFor="folder" className="flex items-center gap-2">
+                    <Folder className="w-4 h-4" />
+                    Folder
+                  </Label>
+                  <Select
+                    value={editForm.folder}
+                    onValueChange={(value) =>
+                      setEditForm({ ...editForm, folder: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a folder" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">
+                        No Folder (Uncategorized)
+                      </SelectItem>
+                      {folders
+                        .filter((f: Folder) => f.name !== "Uncategorized")
+                        .map((folder: Folder) => (
+                          <SelectItem key={folder.name} value={folder.name}>
+                            {folder.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Organize files into folders for better management
+                  </p>
+                </div>
+
+                {currentFile && (
+                  <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-medium text-sm">File Information</h4>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-gray-600">File Type:</span>
+                        <p className="font-medium mt-1">{currentFile.type}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Size:</span>
+                        <p className="font-medium mt-1">
+                          {uploadsService.formatFileSize(currentFile.size)}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Uploaded:</span>
+                        <p className="font-medium mt-1">
+                          {new Date(currentFile.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Downloads:</span>
+                        <p className="font-medium mt-1">
+                          {currentFile.downloadCount || 0}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+            </ScrollArea>
+          </Tabs>
+
+          <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>
               Cancel
             </Button>
@@ -1337,6 +1756,9 @@ export default function MediaLibrary() {
                       .map((t) => t.trim())
                       .filter(Boolean),
                     visibility: editForm.visibility,
+                    altText: editForm.altText,
+                    caption: editForm.caption,
+                    folder: editForm.folder,
                   });
                 }
               }}
@@ -1349,7 +1771,7 @@ export default function MediaLibrary() {
               )}
               Save Changes
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1379,7 +1801,7 @@ export default function MediaLibrary() {
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>
               Cancel
             </Button>
@@ -1397,13 +1819,13 @@ export default function MediaLibrary() {
               )}
               Delete File
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Preview Dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-5xl max-h-[95vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-primary" />
@@ -1412,108 +1834,200 @@ export default function MediaLibrary() {
           </DialogHeader>
 
           {currentFile && (
-            <div className="space-y-4">
-              {/* Preview */}
-              <div className="bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center min-h-[400px]">
-                {uploadsService.isImage(currentFile.mimeType) ? (
-                  <img
-                    src={currentFile.url}
-                    alt={currentFile.originalName}
-                    className="max-w-full max-h-[500px] object-contain"
-                  />
-                ) : uploadsService.isVideo(currentFile.mimeType) ? (
-                  <div className="w-full">
-                    {currentFile.url.includes("iframe.mediadelivery.net") ? (
-                      <iframe
-                        src={currentFile.url}
-                        loading="lazy"
-                        className="w-full aspect-video rounded-lg"
-                        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-                        allowFullScreen
-                      />
-                    ) : (
-                      <ReactPlayer
-                        url={currentFile.url}
-                        controls
-                        width="100%"
-                        height="500px"
-                        playing={false}
-                      />
-                    )}
+            <ScrollArea className="max-h-[calc(95vh-180px)]">
+              <div className="space-y-4">
+                {/* Preview */}
+                <div className="bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center min-h-[400px]">
+                  {uploadsService.isImage(currentFile.mimeType) ? (
+                    <img
+                      src={currentFile.url}
+                      alt={currentFile.altText || currentFile.originalName}
+                      className="max-w-full max-h-[600px] object-contain"
+                    />
+                  ) : uploadsService.isVideo(currentFile.mimeType) ? (
+                    <div className="w-full">
+                      {currentFile.url.includes("iframe.mediadelivery.net") ? (
+                        <iframe
+                          src={currentFile.url}
+                          loading="lazy"
+                          className="w-full aspect-video rounded-lg"
+                          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <ReactPlayer
+                          url={currentFile.url}
+                          controls
+                          width="100%"
+                          height="500px"
+                          playing={false}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center p-8">
+                      {getFileIcon(currentFile.mimeType)}
+                      <p className="mt-4 text-gray-600">
+                        Preview not available
+                      </p>
+                      <Button
+                        className="mt-4"
+                        onClick={() => handleDownload(currentFile)}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Download File
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* File Details Grid */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Filename</p>
+                    <p className="text-sm font-medium">
+                      {currentFile.originalName}
+                    </p>
                   </div>
-                ) : (
-                  <div className="text-center p-8">
-                    {getFileIcon(currentFile.mimeType)}
-                    <p className="mt-4 text-gray-600">Preview not available</p>
-                    <Button
-                      className="mt-4"
-                      onClick={() => handleDownload(currentFile)}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download File
-                    </Button>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Size</p>
+                    <p className="text-sm font-medium">
+                      {uploadsService.formatFileSize(currentFile.size)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Type</p>
+                    <p className="text-sm font-medium">
+                      {currentFile.mimeType}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Provider</p>
+                    <div className="mt-1">
+                      {getProviderBadge(currentFile.provider)}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Uploaded</p>
+                    <p className="text-sm font-medium">
+                      {new Date(currentFile.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Downloads</p>
+                    <p className="text-sm font-medium">
+                      {currentFile.downloadCount || 0}
+                    </p>
+                  </div>
+                  {currentFile.folder && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Folder</p>
+                      <p className="text-sm font-medium flex items-center gap-1">
+                        <Folder className="w-4 h-4" />
+                        {currentFile.folder}
+                      </p>
+                    </div>
+                  )}
+                  {currentFile.visibility && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Visibility</p>
+                      <p className="text-sm font-medium capitalize">
+                        {currentFile.visibility}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {currentFile.altText && (
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-2">
+                      <ImageIconAlt className="w-4 h-4" />
+                      Alt Text
+                    </p>
+                    <p className="text-sm">{currentFile.altText}</p>
                   </div>
                 )}
-              </div>
 
-              {/* File Details */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Filename</p>
-                  <p className="text-sm font-medium">
-                    {currentFile.originalName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Size</p>
-                  <p className="text-sm font-medium">
-                    {uploadsService.formatFileSize(currentFile.size)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Type</p>
-                  <p className="text-sm font-medium">{currentFile.mimeType}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Provider</p>
-                  <div className="mt-1">
-                    {getProviderBadge(currentFile.provider)}
+                {currentFile.caption && (
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-2">
+                      <Type className="w-4 h-4" />
+                      Caption
+                    </p>
+                    <p className="text-sm">{currentFile.caption}</p>
+                  </div>
+                )}
+
+                {currentFile.description && (
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Description
+                    </p>
+                    <p className="text-sm">{currentFile.description}</p>
+                  </div>
+                )}
+
+                {currentFile.tags && currentFile.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {currentFile.tags.map((tag, index) => (
+                      <Badge key={index} variant="secondary">
+                        <Tag className="w-3 h-3 mr-1" />
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {/* Quick Copy Section */}
+                <div className="p-4 bg-gray-50 rounded-lg space-y-2">
+                  <h4 className="text-sm font-semibold mb-2">Quick Copy</h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyToClipboard(currentFile.url, "URL")}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      URL
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        copyToClipboard(
+                          `![${
+                            currentFile.altText || currentFile.originalName
+                          }](${currentFile.url})`,
+                          "Markdown"
+                        )
+                      }
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Markdown
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        copyToClipboard(
+                          `<img src="${currentFile.url}" alt="${
+                            currentFile.altText || currentFile.originalName
+                          }" />`,
+                          "HTML"
+                        )
+                      }
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      HTML
+                    </Button>
                   </div>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Uploaded</p>
-                  <p className="text-sm font-medium">
-                    {new Date(currentFile.createdAt).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Downloads</p>
-                  <p className="text-sm font-medium">
-                    {currentFile.downloadCount || 0}
-                  </p>
-                </div>
               </div>
-
-              {currentFile.description && (
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-xs text-gray-500 mb-1">Description</p>
-                  <p className="text-sm">{currentFile.description}</p>
-                </div>
-              )}
-
-              {currentFile.tags && currentFile.tags.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {currentFile.tags.map((tag, index) => (
-                    <Badge key={index} variant="secondary">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
+            </ScrollArea>
           )}
 
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setPreviewOpen(false)}>
               Close
             </Button>
@@ -1521,7 +2035,10 @@ export default function MediaLibrary() {
               <>
                 <Button
                   variant="outline"
-                  onClick={() => openEditDialog(currentFile)}
+                  onClick={() => {
+                    setPreviewOpen(false);
+                    openEditDialog(currentFile);
+                  }}
                 >
                   <Edit className="w-4 h-4 mr-2" />
                   Edit
@@ -1534,7 +2051,132 @@ export default function MediaLibrary() {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Folder Dialog */}
+      <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderPlus className="w-5 h-5 text-primary" />
+              Create New Folder
+            </DialogTitle>
+            <DialogDescription>
+              Folders are created automatically when you assign files to them
+            </DialogDescription>
+          </DialogHeader>
+
+          <div>
+            <Label htmlFor="folderName">Folder Name</Label>
+            <Input
+              id="folderName"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="e.g., Course Materials, Product Images..."
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              Simply upload or move files to this folder name to create it
+            </p>
           </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setFolderDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (newFolderName) {
+                  setCurrentFolder(newFolderName);
+                  setFolderDialogOpen(false);
+                  setNewFolderName("");
+                  setUploadOpen(true);
+                }
+              }}
+              disabled={!newFolderName}
+            >
+              <UploadIcon className="w-4 h-4 mr-2" />
+              Upload to Folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move to Folder Dialog */}
+      <Dialog
+        open={moveFolderDialogOpen}
+        onOpenChange={setMoveFolderDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Folder className="w-5 h-5 text-primary" />
+              Move Files to Folder
+            </DialogTitle>
+            <DialogDescription>
+              Select a folder to move {selectedCount} selected file(s)
+            </DialogDescription>
+          </DialogHeader>
+
+          <div>
+            <Label htmlFor="targetFolder">Target Folder</Label>
+            <Select value={targetFolder} onValueChange={setTargetFolder}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a folder" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">No Folder (Uncategorized)</SelectItem>
+                {folders
+                  .filter((f: Folder) => f.name !== "Uncategorized")
+                  .map((folder: Folder) => (
+                    <SelectItem key={folder.name} value={folder.name}>
+                      {folder.name} ({folder.fileCount} files)
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+
+            <div className="mt-4">
+              <Label htmlFor="newFolder">Or Create New Folder</Label>
+              <Input
+                id="newFolder"
+                placeholder="Enter new folder name..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.currentTarget.value) {
+                    setTargetFolder(e.currentTarget.value);
+                    e.currentTarget.value = "";
+                  }
+                }}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Press Enter to create a new folder
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setMoveFolderDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkMoveToFolder}
+              disabled={!targetFolder || bulkMoveToFolderMutation.isPending}
+            >
+              {bulkMoveToFolderMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Check className="w-4 h-4 mr-2" />
+              )}
+              Move Files
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </main>

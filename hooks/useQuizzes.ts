@@ -263,8 +263,8 @@ export function useQuizzes(): UseQuizzesResult {
       setStatsLoading(true);
       try {
         const statsData = await quizzesService.getQuizStats(id);
-        setStats(statsData);
-        return statsData;
+        setStats(statsData as QuizStats);
+        return statsData as QuizStats | null;
       } catch (err: any) {
         const errorMessage =
           err?.response?.data?.message || err?.message || "Failed to fetch quiz stats";

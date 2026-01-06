@@ -79,6 +79,93 @@ import { CheckSquare, Square } from "lucide-react";
 
 type ViewMode = "grid" | "table";
 
+// Performance Analytics Component
+function PerformanceAnalytics() {
+  const [performanceData, setPerformanceData] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchPerformanceData = async () => {
+      try {
+        const { apiClient } = await import("@/lib/api-client");
+        const response = await apiClient.get("/admin/instructors/performance-tiers");
+        setPerformanceData(response.data);
+      } catch (error) {
+        console.error("Failed to fetch performance data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPerformanceData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+        <h3 className="text-lg font-semibold text-secondary mb-4">
+          Instructor Performance Analytics
+        </h3>
+        <div className="flex justify-center items-center py-8">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!performanceData) {
+    return null;
+  }
+
+  const { summary } = performanceData;
+
+  return (
+    <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
+      <h3 className="text-lg font-semibold text-secondary mb-4">
+        Instructor Performance Analytics
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="text-center p-4 bg-blue-50 rounded-lg">
+          <div className="text-2xl font-bold text-blue-600 mb-2">
+            {summary.topPerformersPercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Top Performers</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.topPerformers} instructors
+          </div>
+        </div>
+        <div className="text-center p-4 bg-green-50 rounded-lg">
+          <div className="text-2xl font-bold text-green-600 mb-2">
+            {summary.strongPerformersPercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Strong Performers</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.strongPerformers} instructors
+          </div>
+        </div>
+        <div className="text-center p-4 bg-yellow-50 rounded-lg">
+          <div className="text-2xl font-bold text-yellow-600 mb-2">
+            {summary.averagePerformersPercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Average Performers</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.averagePerformers} instructors
+          </div>
+        </div>
+        <div className="text-center p-4 bg-red-50 rounded-lg">
+          <div className="text-2xl font-bold text-red-600 mb-2">
+            {summary.needsSupportPercentage}%
+          </div>
+          <div className="text-sm text-gray-600">Needs Support</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {summary.needsSupport} instructors
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Instructors() {
   const {
     instructors,
@@ -1247,33 +1334,8 @@ export default function Instructors() {
         </div>
       )}
 
-      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
-        <h3 className="text-lg font-semibold text-secondary mb-4">
-          Instructor Performance Analytics
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600 mb-2">32%</div>
-            <div className="text-sm text-gray-600">Top Performers</div>
-            <div className="text-xs text-gray-500 mt-1">15 instructors</div>
-          </div>
-          <div className="text-center p-4 bg-green-50 rounded-lg">
-            <div className="text-2xl font-bold text-green-600 mb-2">45%</div>
-            <div className="text-sm text-gray-600">Strong Performers</div>
-            <div className="text-xs text-gray-500 mt-1">21 instructors</div>
-          </div>
-          <div className="text-center p-4 bg-yellow-50 rounded-lg">
-            <div className="text-2xl font-bold text-yellow-600 mb-2">18%</div>
-            <div className="text-sm text-gray-600">Average Performers</div>
-            <div className="text-xs text-gray-500 mt-1">8 instructors</div>
-          </div>
-          <div className="text-center p-4 bg-red-50 rounded-lg">
-            <div className="text-2xl font-bold text-red-600 mb-2">5%</div>
-            <div className="text-sm text-gray-600">Needs Support</div>
-            <div className="text-xs text-gray-500 mt-1">3 instructors</div>
-          </div>
-        </div>
-      </div>
+      {/* Performance Analytics - Now with Real Data */}
+      <PerformanceAnalytics />
 
       {specializationDistribution.length > 0 && (
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">

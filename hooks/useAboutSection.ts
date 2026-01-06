@@ -71,10 +71,10 @@ export function useAboutSection(): UseAboutSectionResult {
                 formData,
                 (progress) => setUploadProgress(progress)
             )
-            setAboutSection(response.data)
+            setAboutSection(response.data ?? null)
             push({ message: response.message || 'About section updated successfully', type: 'success' })
             setUploadProgress(0)
-            return response.data
+            return response.data ?? null
         } catch (err: any) {
             const errorMessage = err?.response?.data?.message || err?.message || 'Failed to update about section with media'
             push({ message: errorMessage, type: 'error' })

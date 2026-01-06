@@ -72,6 +72,7 @@ export default function LiveChat() {
   const [activeTab, setActiveTab] = React.useState<"chats" | "monitoring">(
     "chats"
   );
+  const [isUploading, setIsUploading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const messagesContainerRef = React.useRef<HTMLDivElement>(null);
@@ -80,6 +81,7 @@ export default function LiveChat() {
     conversations,
     selectedConversation,
     selectedMessages,
+    isConnected,
     isLoading,
     isSending,
     isTyping,
@@ -109,6 +111,7 @@ export default function LiveChat() {
     setNewChatOpen,
     setDeleteDialogOpen,
     setConversationToDelete,
+    setError,
     clearError,
     messagesEndRef,
   } = useChat();
@@ -164,16 +167,54 @@ export default function LiveChat() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedConversation?.id) return;
-    await sendFile(selectedConversation.id, file, "file");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      clearError();
+      setError("File size must be less than 10MB");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      await sendFile(selectedConversation.id, file, "file");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   // Handle image upload
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedConversation?.id) return;
-    await sendFile(selectedConversation.id, file, "image");
-    if (imageInputRef.current) imageInputRef.current.value = "";
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      clearError();
+      setError("Please select a valid image file");
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      return;
+    }
+
+    // Validate file size (max 5MB for images)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      clearError();
+      setError("Image size must be less than 5MB");
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      await sendFile(selectedConversation.id, file, "image");
+    } finally {
+      setIsUploading(false);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
   };
 
   // Handle edit message
@@ -247,9 +288,23 @@ export default function LiveChat() {
       <div className="mb-6">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-3xl font-bold text-secondary mb-2">
-              Live Chat
-            </h2>
+            <div className="flex items-center gap-3 mb-2">
+              <h2 className="text-3xl font-bold text-secondary">Live Chat</h2>
+              {/* Connection Status */}
+              <div className="flex items-center gap-2">
+                {isConnected ? (
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                    Connected
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">
+                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+                    Disconnected
+                  </span>
+                )}
+              </div>
+            </div>
             <p className="text-gray-600">
               Communicate with students and instructors in real-time
             </p>
@@ -258,11 +313,13 @@ export default function LiveChat() {
             <Button
               variant="outline"
               className="border-gray-300 hover:border-primary hover:text-primary transition-all"
-              onClick={handleExportChat}
-              disabled={!selectedConversation}
+              onClick={refreshConversations}
+              disabled={isLoading}
             >
-              <Download className="w-4 h-4 mr-2" />
-              Export Chat
+              <RefreshCw
+                className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
             </Button>
 
             {/* New Chat Dialog */}
@@ -328,18 +385,17 @@ export default function LiveChat() {
                             }}
                           >
                             <div className="flex items-center space-x-2">
-                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                                 <span className="text-xs font-medium text-primary">
-                                  {user.firstName?.[0]?.toUpperCase() ||
+                                  {user.name?.[0]?.toUpperCase() ||
                                     user.email?.[0]?.toUpperCase()}
                                 </span>
                               </div>
-                              <div>
-                                <p className="text-sm font-medium">
-                                  {user.firstName || "Unknown"}{" "}
-                                  {user.lastName || "Unknown"}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">
+                                  {user.name || "Unknown"}
                                 </p>
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs text-gray-500 truncate">
                                   {user.email}
                                 </p>
                               </div>
@@ -748,47 +804,72 @@ export default function LiveChat() {
                     <img
                       src={selectedConversation.avatarUrl}
                       alt={selectedConversation.name}
-                      className="w-10 h-10 rounded-full"
+                      className="w-10 h-10 rounded-full object-cover"
                     />
                     {selectedConversation.online && (
-                      <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />
+                      <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" />
                     )}
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-secondary">
-                      {selectedConversation.topic}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-secondary truncate">
+                      {selectedConversation.name}
                     </h3>
                     <div className="flex items-center space-x-1">
-                      <span className="text-xs text-gray-500">
-                        {selectedConversation.topic}
-                      </span>
-                      <span className="text-xs text-gray-500">•</span>
-                      <span className="text-xs text-green-600">
+                      {selectedConversation.topic && (
+                        <>
+                          <span className="text-xs text-gray-500 truncate">
+                            {selectedConversation.topic}
+                          </span>
+                          <span className="text-xs text-gray-500">•</span>
+                        </>
+                      )}
+                      <span
+                        className={`text-xs ${
+                          selectedConversation.online
+                            ? "text-green-600"
+                            : "text-gray-500"
+                        }`}
+                      >
                         {selectedConversation.online ? "Online" : "Offline"}
                       </span>
+                      {isTyping && (
+                        <>
+                          <span className="text-xs text-gray-500">•</span>
+                          <span className="text-xs text-blue-600">
+                            typing...
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1">
                   <button
-                    onClick={() => alert("Voice call coming soon!")}
+                    onClick={() => alert("Voice call feature coming soon!")}
                     className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all"
-                    title="Voice call"
+                    title="Start voice call"
                   >
                     <Phone className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => alert("Video call coming soon!")}
+                    onClick={() => alert("Video call feature coming soon!")}
                     className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all"
-                    title="Video call"
+                    title="Start video call"
                   >
                     <Video className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={handleExportChat}
+                    className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all"
+                    title="Export conversation"
+                  >
+                    <Download className="w-5 h-5" />
                   </button>
                   <button
                     onClick={() => setShowInfoPanel(!showInfoPanel)}
                     className={`p-2 hover:bg-gray-100 rounded-lg transition-all ${
                       showInfoPanel
-                        ? "text-primary bg-gray-100"
+                        ? "text-primary bg-primary/10"
                         : "text-gray-400 hover:text-primary"
                     }`}
                     title="Conversation info"
@@ -919,12 +1000,14 @@ export default function LiveChat() {
                                     m.sender === "me"
                                       ? "bg-blue-900 text-white"
                                       : "bg-gray-800 text-green-400"
-                                  } p-2 rounded mt-2 font-mono text-xs whitespace-pre`}
+                                  } p-3 rounded-lg mt-2 font-mono text-xs whitespace-pre overflow-x-auto`}
                                 >
                                   {m.content}
                                 </div>
                               ) : (
-                                <p className="text-sm">{m.content}</p>
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {m.content}
+                                </p>
                               )}
                               {m.isEdited && (
                                 <span className="text-xs opacity-70 italic">
@@ -1043,28 +1126,29 @@ export default function LiveChat() {
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all"
-                    title="Attach file"
+                    disabled={isUploading || isSending}
+                    className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Attach file (max 10MB)"
                   >
                     <Paperclip className="w-5 h-5" />
                   </button>
                   <button
                     onClick={() => imageInputRef.current?.click()}
-                    className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all"
-                    title="Send image"
+                    disabled={isUploading || isSending}
+                    className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Send image (max 5MB)"
                   >
                     <ImageIcon className="w-5 h-5" />
-                  </button>
-                  <button className="p-2 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg transition-all">
-                    <Code className="w-5 h-5" />
                   </button>
                   <div className="flex-1">
                     <input
                       type="text"
                       value={messageInput}
                       onChange={handleInputChange}
-                      placeholder="Type a message..."
-                      disabled={isSending}
+                      placeholder={
+                        isUploading ? "Uploading file..." : "Type a message..."
+                      }
+                      disabled={isSending || isUploading}
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -1076,10 +1160,11 @@ export default function LiveChat() {
                   </div>
                   <button
                     onClick={handleSendMessage}
-                    disabled={!messageInput.trim() || isSending}
+                    disabled={!messageInput.trim() || isSending || isUploading}
                     className="p-3 bg-primary text-white rounded-full hover:bg-primary/90 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-md"
+                    title={isUploading ? "Uploading..." : "Send message"}
                   >
-                    {isSending ? (
+                    {isSending || isUploading ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
                       <Send className="w-5 h-5" />

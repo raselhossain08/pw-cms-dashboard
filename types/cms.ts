@@ -127,12 +127,14 @@ export interface Language {
 export interface Currency {
     code: string;
     name: string;
+    symbol?: string;
 }
 
 export interface NewsAnnouncement {
     badge: string;
     text: string;
     icon: string;
+    link?: string;
 }
 
 export interface SocialLink {

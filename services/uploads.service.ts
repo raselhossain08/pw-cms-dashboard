@@ -25,6 +25,9 @@ export interface UploadFile {
     uploadedBy: string;
     description?: string;
     tags: string[];
+    altText?: string;
+    caption?: string;
+    folder?: string;
     metadata?: {
         width?: number;
         height?: number;
@@ -80,6 +83,9 @@ class UploadsService {
             associatedEntity?: string;
             entityType?: string;
             visibility?: string;
+            altText?: string;
+            caption?: string;
+            folder?: string;
         } = {}
     ): Promise<UploadFile> {
         const formData = new FormData();
@@ -91,6 +97,9 @@ class UploadsService {
         if (data.associatedEntity) formData.append("associatedEntity", data.associatedEntity);
         if (data.entityType) formData.append("entityType", data.entityType);
         if (data.visibility) formData.append("visibility", data.visibility);
+        if (data.altText) formData.append("altText", data.altText);
+        if (data.caption) formData.append("caption", data.caption);
+        if (data.folder) formData.append("folder", data.folder);
 
         const response = await apiClient.post<ApiResponse<UploadFile>>("/uploads/upload", formData, {
             headers: {
@@ -109,6 +118,9 @@ class UploadsService {
             associatedEntity?: string;
             entityType?: string;
             visibility?: string;
+            altText?: string;
+            caption?: string;
+            folder?: string;
         } = {}
     ): Promise<UploadFile> {
         const response = await apiClient.post<ApiResponse<UploadFile>>("/uploads/upload-from-url", {
@@ -179,6 +191,9 @@ class UploadsService {
             description?: string;
             tags?: string[];
             visibility?: string;
+            altText?: string;
+            caption?: string;
+            folder?: string;
         }
     ): Promise<UploadFile> {
         const response = await apiClient.put<ApiResponse<UploadFile>>(`/uploads/${id}`, updateData);

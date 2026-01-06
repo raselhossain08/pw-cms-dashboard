@@ -99,6 +99,8 @@ export default function Quizzes() {
   const {
     quizzes: quizzesData,
     loading,
+    error,
+    pagination,
     stats: quizStats,
     statsLoading,
     submissions,
@@ -114,6 +116,7 @@ export default function Quizzes() {
     bulkDeleteQuizzes,
     bulkToggleStatus,
     refreshQuizzes,
+    fetchQuizzes,
   } = useQuizzes();
 
   const [search, setSearch] = React.useState("");
@@ -566,126 +569,246 @@ export default function Quizzes() {
     setSelectedTemplate(null);
   };
 
-  return (
-    <main className="min-h-screen bg-linear-to-br from-slate-50 via-blue-50 to-slate-50">
-      <div className="p-6 max-w-[1800px] mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-                  <FileQuestion className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold bg-linear-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
-                    Aviation Quizzes & Exams
-                  </h1>
-                  <p className="text-slate-600 text-sm">
-                    Assess pilot knowledge and track student progress
-                  </p>
-                </div>
-              </div>
+  // Loading skeleton component
+  const QuizSkeleton = () => (
+    <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-slate-200 animate-pulse">
+      <div className="flex items-start justify-between mb-3 sm:mb-4">
+        <div className="flex items-center gap-2 sm:gap-3 flex-1">
+          <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 bg-slate-200 rounded"></div>
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-200 rounded-xl"></div>
+          <div className="flex-1">
+            <div className="h-5 bg-slate-200 rounded w-3/4 mb-2"></div>
+            <div className="h-3 bg-slate-200 rounded w-1/2"></div>
+          </div>
+        </div>
+      </div>
+      <div className="h-4 bg-slate-200 rounded w-full mb-2"></div>
+      <div className="h-4 bg-slate-200 rounded w-5/6 mb-4"></div>
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4">
+        <div className="h-4 bg-slate-200 rounded"></div>
+        <div className="h-4 bg-slate-200 rounded"></div>
+        <div className="h-4 bg-slate-200 rounded"></div>
+        <div className="h-4 bg-slate-200 rounded"></div>
+      </div>
+      <div className="flex gap-2">
+        <div className="flex-1 h-9 bg-slate-200 rounded"></div>
+        <div className="flex-1 h-9 bg-slate-200 rounded"></div>
+      </div>
+    </div>
+  );
+
+  // Error handling
+  if (loading && quizzes.length === 0) {
+    return (
+      <main className="w-full">
+        <div className="p-3 sm:p-4 md:p-6 max-w-[1800px] mx-auto">
+          <div className="mb-4 sm:mb-6 md:mb-8">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+              <div className="h-10 w-32 bg-slate-200 rounded animate-pulse"></div>
             </div>
-            <Button
-              onClick={() => setCreateOpen(true)}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Quiz
-            </Button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-4 sm:mb-6 md:mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-slate-200 animate-pulse"
+              >
+                <div className="h-12 bg-slate-200 rounded mb-2"></div>
+                <div className="h-8 bg-slate-200 rounded"></div>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <QuizSkeleton key={i} />
+            ))}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error && quizzes.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px] p-4">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">
+            Failed to Load Quizzes
+          </h3>
+          <p className="text-sm text-slate-600 mb-4">{error}</p>
+          <Button
+            onClick={() => refreshQuizzes()}
+            variant="outline"
+            className="text-sm"
+          >
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="w-full">
+      <div className="p-3 sm:p-4 md:p-6 max-w-[1800px] mx-auto">
+        {/* Header - Removed duplicate header since it's in page.tsx */}
+        <div className="mb-4 sm:mb-6 md:mb-8">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button
+                onClick={() => setCreateOpen(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200 w-full sm:w-auto text-xs sm:text-sm"
+                size="sm"
+              >
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                Create Quiz
+              </Button>
+              <Button
+                onClick={() => refreshQuizzes()}
+                variant="outline"
+                disabled={loading}
+                className="w-full sm:w-auto text-xs sm:text-sm"
+                size="sm"
+              >
+                {loading ? (
+                  <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                )}
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
 
         {/* Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all duration-200">
+        <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+          <div
+            className="bg-white rounded-xl p-4 sm:p-5 md:p-6 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 cursor-pointer"
+            style={{
+              background:
+                "linear-gradient(to bottom right, white, rgba(var(--primary-rgb, 59 130 246) / 0.05))",
+            }}
+          >
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-600 text-sm font-medium mb-1">
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-600 text-xs sm:text-sm font-medium mb-1">
                   Total Quizzes
                 </p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">
                   {stats.total}
                 </p>
-                <p className="text-primary text-sm mt-2 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  {stats.active} active
+                <p className="text-primary text-xs sm:text-sm flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3 shrink-0" />
+                  <span className="truncate font-medium">
+                    {stats.active} active
+                  </span>
                 </p>
               </div>
-              <div className="w-14 h-14 bg-primary/10 rounded-xl flex items-center justify-center">
-                <FileQuestion className="text-primary w-7 h-7" />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-primary/10 rounded-xl flex items-center justify-center shrink-0 ml-2 group-hover:bg-primary/20 transition-colors">
+                <FileQuestion className="text-primary w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all duration-200">
+          <div
+            className="bg-white rounded-xl p-4 sm:p-5 md:p-6 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 cursor-pointer"
+            style={{
+              background:
+                "linear-gradient(to bottom right, white, rgba(251, 191, 36, 0.1))",
+            }}
+          >
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-600 text-sm font-medium mb-1">
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-600 text-xs sm:text-sm font-medium mb-1">
                   Total Attempts
                 </p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">
                   {stats.totalAttempts}
                 </p>
-                <p className="text-amber-600 text-sm mt-2 flex items-center">
-                  <Users className="w-3 h-3 mr-1" />
-                  Student submissions
+                <p className="text-amber-600 text-xs sm:text-sm flex items-center gap-1">
+                  <Users className="w-3 h-3 shrink-0" />
+                  <span className="truncate font-medium">Submissions</span>
                 </p>
               </div>
-              <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center">
-                <Users className="text-amber-600 w-7 h-7" />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-amber-100 rounded-xl flex items-center justify-center shrink-0 ml-2">
+                <Users className="text-amber-600 w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all duration-200">
+          <div
+            className="bg-white rounded-xl p-4 sm:p-5 md:p-6 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 cursor-pointer"
+            style={{
+              background:
+                "linear-gradient(to bottom right, white, rgba(34, 197, 94, 0.1))",
+            }}
+          >
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-600 text-sm font-medium mb-1">
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-600 text-xs sm:text-sm font-medium mb-1">
                   Avg. Score
                 </p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">
                   {stats.avgScore}%
                 </p>
-                <p className="text-green-600 text-sm mt-2 flex items-center">
-                  <Target className="w-3 h-3 mr-1" />
-                  Above passing grade
+                <p className="text-green-600 text-xs sm:text-sm flex items-center gap-1">
+                  <Target className="w-3 h-3 shrink-0" />
+                  <span className="truncate font-medium">Performance</span>
                 </p>
               </div>
-              <div className="w-14 h-14 bg-green-50 rounded-xl flex items-center justify-center">
-                <Target className="text-green-600 w-7 h-7" />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-green-100 rounded-xl flex items-center justify-center shrink-0 ml-2">
+                <Target className="text-green-600 w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all duration-200">
+          <div
+            className="bg-white rounded-xl p-4 sm:p-5 md:p-6 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 cursor-pointer"
+            style={{
+              background:
+                "linear-gradient(to bottom right, white, rgba(168, 85, 247, 0.1))",
+            }}
+          >
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-600 text-sm font-medium mb-1">
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-600 text-xs sm:text-sm font-medium mb-1">
                   Completion Rate
                 </p>
-                <p className="text-3xl font-bold text-slate-900">
+                <p className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">
                   {stats.avgCompletion}%
                 </p>
-                <p className="text-purple-600 text-sm mt-2 flex items-center">
-                  <Award className="w-3 h-3 mr-1" />
-                  Average completion
+                <p className="text-purple-600 text-xs sm:text-sm flex items-center gap-1">
+                  <Award className="w-3 h-3 shrink-0" />
+                  <span className="truncate font-medium">Avg. completion</span>
                 </p>
               </div>
-              <div className="w-14 h-14 bg-purple-50 rounded-xl flex items-center justify-center">
-                <Award className="text-purple-600 w-7 h-7" />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-purple-100 rounded-xl flex items-center justify-center shrink-0 ml-2">
+                <Award className="text-purple-600 w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" />
               </div>
             </div>
           </div>
         </div>
 
+        {/* Error Display */}
+        {error && quizzes.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4 mb-4 sm:mb-6">
+            <div className="flex items-center gap-2">
+              <X className="w-4 h-4 text-red-600 shrink-0" />
+              <p className="text-xs sm:text-sm text-red-800">{error}</p>
+            </div>
+          </div>
+        )}
+
         {/* Filters and Search */}
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 mb-6">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-3">
+        <div className="bg-white rounded-xl p-3 sm:p-4 md:p-5 shadow-sm border border-slate-200 mb-4 sm:mb-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+            <div className="flex flex-wrap gap-2 sm:gap-3 w-full lg:w-auto">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40 bg-slate-50">
+                <SelectTrigger className="w-full sm:w-40 bg-slate-50 text-xs sm:text-sm">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -696,7 +819,7 @@ export default function Quizzes() {
               </Select>
 
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-52 bg-slate-50">
+                <SelectTrigger className="w-full sm:w-52 bg-slate-50 text-xs sm:text-sm">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
@@ -707,37 +830,64 @@ export default function Quizzes() {
                   <SelectItem value="attempts">Most Attempts</SelectItem>
                 </SelectContent>
               </Select>
+
+              {courses.length > 0 && (
+                <Select value={courseFilter} onValueChange={setCourseFilter}>
+                  <SelectTrigger className="w-full sm:w-48 bg-slate-50 text-xs sm:text-sm">
+                    <SelectValue placeholder="All Courses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Courses</SelectItem>
+                    {courses.map((course: any) => (
+                      <SelectItem key={course._id} value={course._id}>
+                        <span className="truncate block max-w-[200px] sm:max-w-full">
+                          {course.title}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full lg:w-auto">
               <div className="relative flex-1 lg:flex-initial lg:w-64">
                 <input
                   type="text"
                   placeholder="Search quizzes..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                  className="w-full pl-8 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 />
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <Search className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-slate-600 hover:text-primary hover:bg-primary/10"
+                    className="text-slate-600 hover:text-primary hover:bg-primary/10 h-9 w-9 sm:h-10 sm:w-10 shrink-0"
                   >
-                    <Download className="w-5 h-5" />
+                    <Download className="w-4 h-4 sm:w-5 sm:h-5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => handleExport("csv")}>
+                  <DropdownMenuItem
+                    onSelect={() => handleExport("csv")}
+                    className="text-xs sm:text-sm"
+                  >
                     Export as CSV
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => handleExport("xlsx")}>
+                  <DropdownMenuItem
+                    onSelect={() => handleExport("xlsx")}
+                    className="text-xs sm:text-sm"
+                  >
                     Export as Excel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => handleExport("pdf")}>
+                  <DropdownMenuItem
+                    onSelect={() => handleExport("pdf")}
+                    className="text-xs sm:text-sm"
+                  >
                     Export as PDF
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -748,37 +898,40 @@ export default function Quizzes() {
 
         {/* Bulk Actions */}
         {selectedIds.length > 0 && (
-          <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CheckSquare className="w-5 h-5 text-primary" />
-              <span className="font-semibold text-primary">
+          <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-primary shrink-0" />
+              <span className="font-semibold text-primary text-xs sm:text-sm">
                 {selectedIds.length} quiz{selectedIds.length > 1 ? "zes" : ""}{" "}
                 selected
               </span>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleBulkToggleStatus}
                 disabled={actionLoading}
+                className="text-xs sm:text-sm flex-1 sm:flex-initial"
               >
-                <Power className="w-4 h-4 mr-2" />
-                Toggle Status
+                <Power className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                <span className="hidden xs:inline">Toggle Status</span>
+                <span className="xs:hidden">Toggle</span>
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setBulkDeleteOpen(true)}
                 disabled={actionLoading}
-                className="text-red-600 border-red-200 hover:bg-red-50"
+                className="text-red-600 border-red-200 hover:bg-red-50 text-xs sm:text-sm flex-1 sm:flex-initial"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
+                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
                 Delete
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
+                className="text-xs sm:text-sm flex-1 sm:flex-initial"
                 onClick={() => setSelectedIds([])}
               >
                 <X className="w-4 h-4" />
@@ -788,60 +941,67 @@ export default function Quizzes() {
         )}
 
         {/* Quiz Cards */}
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {loading && quizzes.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {[...Array(6)].map((_, i) => (
-              <div
-                key={`skeleton-${i}`}
-                className="h-80 animate-pulse bg-slate-100 rounded-xl border border-slate-200"
-              />
+              <QuizSkeleton key={`skeleton-${i}`} />
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl p-16 shadow-sm border border-slate-200 text-center">
-            <div className="w-24 h-24 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <FileQuestion className="text-slate-400 w-12 h-12" />
+          <div className="bg-white rounded-2xl p-8 sm:p-12 md:p-16 shadow-sm border border-slate-200 text-center">
+            <div className="w-16 h-16 sm:w-24 sm:h-24 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 sm:mb-6">
+              <FileQuestion className="text-slate-400 w-8 h-8 sm:w-12 sm:h-12" />
             </div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-3">
+            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2 sm:mb-3">
               {search || statusFilter !== "all"
                 ? "No quizzes found"
                 : "No quizzes yet"}
             </h3>
-            <p className="text-slate-600 mb-8 max-w-md mx-auto">
+            <p className="text-sm sm:text-base text-slate-600 mb-6 sm:mb-8 max-w-md mx-auto px-4">
               {search || statusFilter !== "all"
                 ? "Try adjusting your filters to find what you're looking for"
-                : "Create your first aviation quiz to assess pilot knowledge"}
+                : "Create your first quiz to assess student knowledge"}
             </p>
+            {!search && statusFilter === "all" && (
+              <Button
+                onClick={() => setCreateOpen(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                size="sm"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Your First Quiz
+              </Button>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {filtered.map((quiz) => (
               <div
                 key={quiz.id}
-                className={`group bg-white rounded-xl p-6 shadow-sm border transition-all duration-300 hover:shadow-xl hover:border-primary/30 hover:-translate-y-1 ${
+                className={`group bg-white rounded-xl p-4 sm:p-6 shadow-sm border transition-all duration-300 hover:shadow-xl hover:border-primary/30 hover:-translate-y-1 ${
                   selectedIds.includes(quiz.id)
                     ? "border-primary bg-primary/5"
                     : "border-slate-200"
                 }`}
               >
                 {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex items-start justify-between mb-3 sm:mb-4">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(quiz.id)}
                       onChange={() => toggleSelection(quiz.id)}
-                      className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary rounded border-slate-300 focus:ring-primary shrink-0"
                     />
-                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
-                      <Plane className="text-primary w-6 h-6" />
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <Plane className="text-primary w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-slate-900 text-lg leading-tight line-clamp-2">
+                      <h3 className="font-bold text-slate-900 text-base sm:text-lg leading-tight line-clamp-2">
                         {quiz.title}
                       </h3>
                       {quiz.courseTitle && (
-                        <p className="text-sm text-slate-500 truncate mt-0.5">
+                        <p className="text-xs sm:text-sm text-slate-500 truncate mt-0.5">
                           {quiz.courseTitle}
                         </p>
                       )}
@@ -852,9 +1012,9 @@ export default function Quizzes() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="text-slate-400 hover:text-primary hover:bg-primary/10 shrink-0"
+                        className="text-slate-400 hover:text-primary hover:bg-primary/10 shrink-0 h-8 w-8 sm:h-10 sm:w-10"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
@@ -918,35 +1078,44 @@ export default function Quizzes() {
                 )}
 
                 {/* Metadata */}
-                <div className="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-slate-100">
-                  <div className="flex items-center text-sm text-slate-600">
-                    <FileQuestion className="w-4 h-4 mr-1.5 text-blue-500" />
+                <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4 pb-3 sm:pb-4 border-b border-slate-100">
+                  <div className="flex items-center text-xs sm:text-sm text-slate-600">
+                    <FileQuestion className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5 text-blue-500 shrink-0" />
                     <span className="font-medium">{quiz.questions}</span>
-                    <span className="ml-1">questions</span>
+                    <span className="ml-0.5 sm:ml-1 hidden xs:inline">
+                      questions
+                    </span>
+                    <span className="ml-0.5 sm:ml-1 xs:hidden">Q</span>
                   </div>
-                  <div className="flex items-center text-sm text-slate-600">
-                    <Clock className="w-4 h-4 mr-1.5 text-amber-500" />
+                  <div className="flex items-center text-xs sm:text-sm text-slate-600">
+                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5 text-amber-500 shrink-0" />
                     <span className="font-medium">{quiz.duration}</span>
-                    <span className="ml-1">min</span>
+                    <span className="ml-0.5 sm:ml-1">min</span>
                   </div>
-                  <div className="flex items-center text-sm text-slate-600">
-                    <Target className="w-4 h-4 mr-1.5 text-green-500" />
+                  <div className="flex items-center text-xs sm:text-sm text-slate-600">
+                    <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5 text-green-500 shrink-0" />
                     <span className="font-medium">{quiz.passingScore}%</span>
-                    <span className="ml-1">to pass</span>
+                    <span className="ml-0.5 sm:ml-1 hidden xs:inline">
+                      to pass
+                    </span>
+                    <span className="ml-0.5 sm:ml-1 xs:hidden">pass</span>
                   </div>
-                  <div className="flex items-center text-sm text-slate-600">
-                    <Users className="w-4 h-4 mr-1.5 text-purple-500" />
+                  <div className="flex items-center text-xs sm:text-sm text-slate-600">
+                    <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5 text-purple-500 shrink-0" />
                     <span className="font-medium">
                       {quiz.totalAttempts || 0}
                     </span>
-                    <span className="ml-1">attempts</span>
+                    <span className="ml-0.5 sm:ml-1 hidden xs:inline">
+                      attempts
+                    </span>
+                    <span className="ml-0.5 sm:ml-1 xs:hidden">att</span>
                   </div>
                 </div>
 
                 {/* Status and Score */}
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3 sm:mb-4 flex-wrap gap-2">
                   <span
-                    className={`text-xs font-semibold px-3 py-1.5 rounded-full ${
+                    className={`text-xs font-semibold px-2 sm:px-3 py-1 sm:py-1.5 rounded-full ${
                       quiz.status === "active"
                         ? "bg-green-50 text-green-700"
                         : "bg-amber-50 text-amber-700"
@@ -955,7 +1124,7 @@ export default function Quizzes() {
                     {quiz.status === "active" ? "✓ Active" : "Draft"}
                   </span>
                   {quiz.averageScore && (
-                    <div className="text-sm font-semibold text-primary">
+                    <div className="text-xs sm:text-sm font-semibold text-primary">
                       Avg: {quiz.averageScore}%
                     </div>
                   )}
@@ -963,16 +1132,16 @@ export default function Quizzes() {
 
                 {/* Progress */}
                 {quiz.completionRate && (
-                  <div className="mb-4">
-                    <div className="flex justify-between text-xs text-slate-600 mb-1.5">
+                  <div className="mb-3 sm:mb-4">
+                    <div className="flex justify-between text-xs text-slate-600 mb-1 sm:mb-1.5">
                       <span className="font-medium">Completion Rate</span>
                       <span className="font-semibold">
                         {quiz.completionRate}%
                       </span>
                     </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-slate-100 rounded-full h-1.5 sm:h-2 overflow-hidden">
                       <div
-                        className="bg-primary h-2 rounded-full transition-all duration-500"
+                        className="bg-primary h-full rounded-full transition-all duration-500"
                         style={{ width: `${quiz.completionRate}%` }}
                       />
                     </div>
@@ -980,24 +1149,25 @@ export default function Quizzes() {
                 )}
 
                 {/* Actions */}
-                <div className="flex gap-2 pt-2">
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 border-primary/30 text-primary hover:bg-primary/10 hover:border-primary"
+                    className="flex-1 border-primary/30 text-primary hover:bg-primary/10 hover:border-primary text-xs sm:text-sm"
                     onClick={() => setPreviewQuiz(quiz)}
                   >
-                    <Eye className="w-3.5 h-3.5 mr-1.5" />
+                    <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1 sm:mr-1.5" />
                     Preview
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50"
+                    className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50 text-xs sm:text-sm"
                     onClick={() => handleViewAnalytics(quiz)}
                   >
-                    <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
-                    Analytics
+                    <BarChart3 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1 sm:mr-1.5" />
+                    <span className="hidden xs:inline">Analytics</span>
+                    <span className="xs:hidden">Stats</span>
                   </Button>
                 </div>
               </div>
@@ -1005,19 +1175,45 @@ export default function Quizzes() {
           </div>
         )}
 
-        {/* Select All */}
+        {/* Select All & Pagination */}
         {filtered.length > 0 && (
-          <div className="mt-4 flex items-center justify-center">
+          <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={toggleSelectAll}
-              className="text-slate-600"
+              className="text-slate-600 text-xs sm:text-sm w-full sm:w-auto"
             >
               {selectedIds.length === filtered.length
                 ? "Deselect All"
                 : "Select All"}
             </Button>
+
+            {pagination && pagination.totalPages > 1 && (
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchQuizzes({ page: pagination.page - 1 })}
+                  disabled={pagination.page <= 1 || loading}
+                  className="text-xs sm:text-sm"
+                >
+                  Previous
+                </Button>
+                <span className="text-xs sm:text-sm text-slate-600 px-2 sm:px-3">
+                  Page {pagination.page} of {pagination.totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchQuizzes({ page: pagination.page + 1 })}
+                  disabled={pagination.page >= pagination.totalPages || loading}
+                  className="text-xs sm:text-sm"
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

@@ -69,6 +69,119 @@ import { UserViewDialog } from "./UserViewDialog";
 import { User, CreateUserDto, UpdateUserDto } from "@/services/users.service";
 import { Badge } from "@/components/ui/badge";
 
+// User Analytics Component
+function UserAnalytics() {
+  const [analytics, setAnalytics] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const { apiClient } = await import("@/lib/api-client");
+        const [analyticsRes, roleDistRes, activityRes] = await Promise.all([
+          apiClient.get("/admin/users/analytics"),
+          apiClient.get("/admin/users/role-distribution"),
+          apiClient.get("/admin/users/activity-summary?days=30"),
+        ]);
+
+        const analyticsData = (analyticsRes.data as any) || {};
+        const roleDistributionData = (roleDistRes.data as any) || {};
+        const activitySummaryData = (activityRes.data as any) || {};
+        setAnalytics({
+          ...analyticsData,
+          roleDistribution: roleDistributionData,
+          activitySummary: activitySummaryData,
+        });
+      } catch (error) {
+        console.error("Failed to fetch analytics:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnalytics();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h3 className="text-lg font-semibold text-secondary mb-4">
+          User Analytics
+        </h3>
+        <div className="flex justify-center items-center py-8">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!analytics) {
+    return null;
+  }
+
+  const { roleDistribution, activitySummary } = analytics;
+
+  return (
+    <div className="space-y-6 mb-6">
+      {/* Role Distribution */}
+      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <h3 className="text-lg font-semibold text-secondary mb-4">
+          Role Distribution
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {roleDistribution?.distribution?.map((role: any) => (
+            <div
+              key={role._id}
+              className="text-center p-4 bg-gray-50 rounded-lg"
+            >
+              <div className="text-2xl font-bold text-primary mb-1">
+                {role.count}
+              </div>
+              <div className="text-sm text-gray-600 capitalize mb-1">
+                {role._id?.replace("_", " ") || "Unknown"}
+              </div>
+              <div className="text-xs text-gray-500">{role.active} active</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Activity Summary */}
+      <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
+        <h3 className="text-lg font-semibold text-secondary mb-4">
+          Activity Summary ({activitySummary?.period})
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="text-center p-4 bg-green-50 rounded-lg">
+            <div className="text-2xl font-bold text-green-600 mb-1">
+              {activitySummary?.newUsers || 0}
+            </div>
+            <div className="text-sm text-gray-600">New Users</div>
+          </div>
+          <div className="text-center p-4 bg-blue-50 rounded-lg">
+            <div className="text-2xl font-bold text-blue-600 mb-1">
+              {activitySummary?.activeUsers || 0}
+            </div>
+            <div className="text-sm text-gray-600">Active Users</div>
+          </div>
+          <div className="text-center p-4 bg-purple-50 rounded-lg">
+            <div className="text-2xl font-bold text-purple-600 mb-1">
+              {activitySummary?.totalLogins || 0}
+            </div>
+            <div className="text-sm text-gray-600">Total Logins</div>
+          </div>
+          <div className="text-center p-4 bg-orange-50 rounded-lg">
+            <div className="text-2xl font-bold text-orange-600 mb-1">
+              {activitySummary?.avgActivePerDay || 0}
+            </div>
+            <div className="text-sm text-gray-600">Avg Active/Day</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Users() {
   const {
     users,
@@ -444,6 +557,9 @@ export default function Users() {
           </div>
         </div>
       </div>
+
+      {/* User Analytics */}
+      <UserAnalytics />
 
       {/* Tabs */}
       <div className="border-b border-gray-200 mb-6">

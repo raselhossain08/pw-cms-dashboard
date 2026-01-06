@@ -361,15 +361,17 @@ export default function Certificates() {
   });
 
   return (
-    <main className="">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold text-secondary mb-2">Certificates</h2>
-        <p className="text-gray-600">
+    <main className="w-full">
+      <div className="mb-4 sm:mb-6 md:mb-8">
+        <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-secondary mb-1 sm:mb-2">
+          Certificates
+        </h2>
+        <p className="text-xs sm:text-sm md:text-base text-gray-600">
           Manage certificate templates, issuance, and recent activity
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-4 sm:mb-6 md:mb-8">
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between">
             <div>
@@ -427,11 +429,11 @@ export default function Certificates() {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
+      <div className="bg-card rounded-xl p-3 sm:p-4 shadow-sm border border-gray-100 mb-4 sm:mb-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
           <div className="flex flex-wrap gap-2">
             <Select value={courseFilter} onValueChange={setCourseFilter}>
-              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-40">
+              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm w-full sm:w-40">
                 <SelectValue placeholder="All Courses" />
               </SelectTrigger>
               <SelectContent>
@@ -444,7 +446,7 @@ export default function Certificates() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-40">
+              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm w-full sm:w-40">
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent>
@@ -456,7 +458,7 @@ export default function Certificates() {
               </SelectContent>
             </Select>
             <Select value={templateFilter} onValueChange={setTemplateFilter}>
-              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-44">
+              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm w-full sm:w-44">
                 <SelectValue placeholder="All Templates" />
               </SelectTrigger>
               <SelectContent>
@@ -474,9 +476,9 @@ export default function Certificates() {
               placeholder="Search certificates... (Cmd+K)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="w-full pl-8 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <SearchIcon className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
       </div>
@@ -484,184 +486,211 @@ export default function Certificates() {
       {/* Certificates Table */}
       <div className="bg-card rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {isLoading ? (
-          <div className="p-12 text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
-            <p className="mt-4 text-gray-600">Loading certificates...</p>
+          <div className="p-8 sm:p-12 text-center">
+            <div className="inline-block animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-4 border-primary border-t-transparent"></div>
+            <p className="mt-3 sm:mt-4 text-xs sm:text-sm text-gray-600">
+              Loading certificates...
+            </p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="p-12 text-center">
-            <Award className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 font-medium">No certificates found</p>
-            <p className="text-sm text-gray-500 mt-1">
+          <div className="p-8 sm:p-12 text-center">
+            <Award className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400 mx-auto mb-3 sm:mb-4" />
+            <p className="text-sm sm:text-base text-gray-600 font-medium">
+              No certificates found
+            </p>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">
               {search
                 ? "Try adjusting your search"
                 : "Start earning certificates by completing courses"}
             </p>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]"></TableHead>
-                <TableHead>Student</TableHead>
-                <TableHead>Course</TableHead>
-                <TableHead>Certificate ID</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Issued Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((it) => (
-                <TableRow key={it.id} className="group hover:bg-gray-50">
-                  <TableCell>
-                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                      <Award className="text-purple-600 w-5 h-5" />
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium text-secondary">{it.student}</p>
-                      <p className="text-sm text-gray-500">{it.email}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <p className="font-medium">{it.course}</p>
-                    {it.courseDetail && (
-                      <p className="text-sm text-gray-500">{it.courseDetail}</p>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <code className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
-                      {it.certificateId}
-                    </code>
-                  </TableCell>
-                  <TableCell>
-                    {it.status === "revoked" ? (
-                      <Badge variant="destructive" className="gap-1">
-                        <Ban className="w-3 h-3" />
-                        Revoked
-                      </Badge>
-                    ) : (
-                      <Badge variant="default" className="gap-1 bg-green-600">
-                        <CheckCircle className="w-3 h-3" />
-                        Issued
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Clock className="w-4 h-4" />
-                      {it.issuedText}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelected(it);
-                          setPreviewOpen(true);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDownloadCertificate(it)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Download className="w-4 h-4" />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <EllipsisVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-52">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelected(it);
-                              setPreviewOpen(true);
-                            }}
-                          >
-                            <Eye className="w-4 h-4 mr-2" /> View Certificate
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDownloadCertificate(it)}
-                          >
-                            <Download className="w-4 h-4 mr-2" /> Download PDF
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleShareCertificate(it)}
-                          >
-                            <Share2 className="w-4 h-4 mr-2" /> Share
-                            Certificate
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => copyVerificationLink(it)}
-                          >
-                            <Link2 className="w-4 h-4 mr-2" /> Copy Verify Link
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              const rawCert = (myCerts as any)?.find?.(
-                                (c: any) => c._id === it.id
-                              );
-                              if (rawCert?._id) {
-                                resendEmailMutation.mutate(rawCert._id);
-                              }
-                            }}
-                          >
-                            <Mail className="w-4 h-4 mr-2" /> Resend Email
-                          </DropdownMenuItem>
-
-                          {/* Admin Only Actions */}
-                          {isAdmin && (
-                            <>
-                              <DropdownMenuSeparator />
-                              {it.status === "revoked" ? (
-                                <DropdownMenuItem
-                                  className="text-green-600"
-                                  onClick={() => {
-                                    const rawCert = (myCerts as any)?.find?.(
-                                      (c: any) => c._id === it.id
-                                    );
-                                    if (rawCert?._id) {
-                                      restoreMutation.mutate(rawCert._id);
-                                    }
-                                  }}
-                                >
-                                  <Undo2 className="w-4 h-4 mr-2" /> Restore
-                                  Certificate
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem
-                                  className="text-red-600"
-                                  onClick={() => {
-                                    setSelected(it);
-                                    setRevokeDialogOpen(true);
-                                    setRevocationReason("");
-                                  }}
-                                >
-                                  <Ban className="w-4 h-4 mr-2" /> Revoke
-                                  Certificate
-                                </DropdownMenuItem>
-                              )}
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40px] sm:w-[50px]"></TableHead>
+                  <TableHead className="text-xs sm:text-sm">Student</TableHead>
+                  <TableHead className="text-xs sm:text-sm">Course</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden sm:table-cell">
+                    Certificate ID
+                  </TableHead>
+                  <TableHead className="text-xs sm:text-sm">Status</TableHead>
+                  <TableHead className="text-xs sm:text-sm hidden md:table-cell">
+                    Issued Date
+                  </TableHead>
+                  <TableHead className="text-right text-xs sm:text-sm">
+                    Actions
+                  </TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((it) => (
+                  <TableRow key={it.id} className="group hover:bg-gray-50">
+                    <TableCell>
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <Award className="text-purple-600 w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium text-xs sm:text-sm text-secondary truncate max-w-[120px] sm:max-w-none">
+                          {it.student}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate max-w-[120px] sm:max-w-none">
+                          {it.email}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <p className="font-medium text-xs sm:text-sm truncate max-w-[150px] sm:max-w-none">
+                        {it.course}
+                      </p>
+                      {it.courseDetail && (
+                        <p className="text-xs text-gray-500 truncate max-w-[150px] sm:max-w-none">
+                          {it.courseDetail}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <code className="px-1.5 sm:px-2 py-0.5 sm:py-1 bg-gray-100 rounded text-xs font-mono break-all">
+                        {it.certificateId}
+                      </code>
+                    </TableCell>
+                    <TableCell>
+                      {it.status === "revoked" ? (
+                        <Badge variant="destructive" className="gap-1 text-xs">
+                          <Ban className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                          <span className="hidden xs:inline">Revoked</span>
+                          <span className="xs:hidden">Rev</span>
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="default"
+                          className="gap-1 bg-green-600 text-xs"
+                        >
+                          <CheckCircle className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                          <span className="hidden xs:inline">Issued</span>
+                          <span className="xs:hidden">Iss</span>
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-600">
+                        <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span>{it.issuedText}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelected(it);
+                            setPreviewOpen(true);
+                          }}
+                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-7 w-7 sm:h-8 sm:w-8 p-0"
+                        >
+                          <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownloadCertificate(it)}
+                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-7 w-7 sm:h-8 sm:w-8 p-0"
+                        >
+                          <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 sm:h-8 sm:w-8 p-0"
+                            >
+                              <EllipsisVertical className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelected(it);
+                                setPreviewOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4 mr-2" /> View Certificate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDownloadCertificate(it)}
+                            >
+                              <Download className="w-4 h-4 mr-2" /> Download PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleShareCertificate(it)}
+                            >
+                              <Share2 className="w-4 h-4 mr-2" /> Share
+                              Certificate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => copyVerificationLink(it)}
+                            >
+                              <Link2 className="w-4 h-4 mr-2" /> Copy Verify
+                              Link
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (it.certificateId) {
+                                  resendEmailMutation.mutate(it.certificateId);
+                                }
+                              }}
+                            >
+                              <Mail className="w-4 h-4 mr-2" /> Resend Email
+                            </DropdownMenuItem>
+
+                            {/* Admin Only Actions */}
+                            {isAdmin && (
+                              <>
+                                <DropdownMenuSeparator />
+                                {it.status === "revoked" ? (
+                                  <DropdownMenuItem
+                                    className="text-green-600"
+                                    onClick={() => {
+                                      const rawCert = (myCerts as any)?.find?.(
+                                        (c: any) => c._id === it.id
+                                      );
+                                      if (rawCert?._id) {
+                                        restoreMutation.mutate(rawCert._id);
+                                      }
+                                    }}
+                                  >
+                                    <Undo2 className="w-4 h-4 mr-2" /> Restore
+                                    Certificate
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    className="text-red-600"
+                                    onClick={() => {
+                                      setSelected(it);
+                                      setRevokeDialogOpen(true);
+                                      setRevocationReason("");
+                                    }}
+                                  >
+                                    <Ban className="w-4 h-4 mr-2" /> Revoke
+                                    Certificate
+                                  </DropdownMenuItem>
+                                )}
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
 
@@ -1024,13 +1053,8 @@ export default function Certificates() {
                 variant="outline"
                 className="flex-1"
                 onClick={() => {
-                  if (selected) {
-                    const rawCert = (myCerts as any)?.find?.(
-                      (c: any) => c._id === selected.id
-                    );
-                    if (rawCert?._id) {
-                      resendEmailMutation.mutate(rawCert._id);
-                    }
+                  if (selected?.certificateId) {
+                    resendEmailMutation.mutate(selected.certificateId);
                   }
                 }}
               >
