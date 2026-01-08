@@ -253,7 +253,7 @@ export function useModules(): UseModulesResult {
     async (id: string): Promise<ModuleStats | null> => {
       setStatsLoading(true);
       try {
-        const statsData = await modulesService.getModuleStats(id) as ModuleStats;
+        const statsData = await modulesService.getModuleStats(id);
         setStats(statsData);
         return statsData;
       } catch (err: any) {

@@ -90,15 +90,7 @@ export function useContact(): UseContactResult {
 
             // Note: The service layer doesn't have updateWithUpload, so we'll use axios directly
             const axios = (await import('@/lib/axios')).default;
-            const response = await axios.put<{
-                success: boolean;
-                message: string;
-                data: {
-                    success: boolean;
-                    message: string;
-                    data: Contact;
-                } | Contact;
-            }>(`/cms/contact/${contact._id}/upload`, formData, {
+            const response = await axios.put(`/cms/contact/${contact._id}/upload`, formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },
@@ -113,7 +105,7 @@ export function useContact(): UseContactResult {
             clearInterval(progressInterval);
             setUploadProgress(100);
 
-            const updated = ((response.data.data as any).data || response.data.data) as Contact;
+            const updated = (response.data.data as any).data || response.data.data;
             setContact(updated);
             push({ message: 'Contact updated successfully with image', type: 'success' });
             setTimeout(() => setUploadProgress(0), 1000);

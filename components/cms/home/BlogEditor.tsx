@@ -146,6 +146,12 @@ export function BlogEditor() {
 
   useEffect(() => {
     if (blog) {
+      console.log("🔄 Blog data received from API:", {
+        title: blog.title,
+        blogsCount: blog.blogs?.length,
+        blogs: blog.blogs,
+      });
+
       // Normalize blog data to ensure publishedAt is always an ISO string
       const normalizedBlogs = (blog.blogs || []).map((post) => ({
         ...post,
@@ -158,6 +164,8 @@ export function BlogEditor() {
             ? post.publishedAt.toISOString()
             : new Date().toISOString(),
       }));
+
+      console.log("✨ Normalized blogs count:", normalizedBlogs.length);
 
       setFormData({
         title: blog.title || "",
@@ -229,6 +237,23 @@ export function BlogEditor() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    console.log("🚀 Blog form submission started");
+    console.log("📝 Form data:", {
+      title: formData.title,
+      subtitle: formData.subtitle,
+      blogsCount: formData.blogs?.length,
+    });
+    console.log("📋 Full formData.blogs array:", formData.blogs);
+    console.log("📋 Individual blogs:");
+    formData.blogs?.forEach((blog, idx) => {
+      console.log(`  Blog ${idx}:`, {
+        title: blog.title,
+        content: blog.content?.substring(0, 50),
+        hasTitle: !!blog.title?.trim(),
+        hasContent: !!blog.content?.trim(),
+      });
+    });
+
     try {
       const submitFormData = new FormData();
 
@@ -237,18 +262,23 @@ export function BlogEditor() {
       submitFormData.append("subtitle", formData.subtitle || "");
       submitFormData.append("description", formData.description || "");
 
-      // Convert boolean to actual boolean (not string)
-      submitFormData.append("isActive", formData.isActive ? "true" : "false");
-
       // Add SEO data
       if (formData.seo) {
         submitFormData.append("seo", JSON.stringify(formData.seo));
       }
 
-      // Add blogs as proper JSON string (will be parsed on backend)
-      if (formData.blogs && formData.blogs.length > 0) {
+      // Filter out completely empty blog posts (no title AND no content)
+      const validBlogs = (formData.blogs || []).filter(
+        (blog) => blog.title?.trim() || blog.content?.trim()
+      );
+
+      console.log("✅ Valid blogs count:", validBlogs.length);
+      console.log("✅ Valid blogs:", validBlogs);
+
+      // Add blogs as proper JSON string
+      if (validBlogs.length > 0) {
         // Create a blogs array with proper structure
-        const blogsData = formData.blogs.map((blog) => {
+        const blogsData = validBlogs.map((blog) => {
           // Ensure publishedAt is a valid ISO string
           let publishedAtStr = new Date().toISOString();
           if (blog.publishedAt) {
@@ -297,23 +327,40 @@ export function BlogEditor() {
       }
 
       // Add image files
+      const imageFileCount = Object.keys(imageFiles).length;
+      console.log("🖼️ Image files to upload:", imageFileCount);
       Object.entries(imageFiles).forEach(([index, file]) => {
+        console.log(`  - image_${index}: ${file.name}`);
         submitFormData.append(`image_${index}`, file);
       });
 
       // Add avatar files
+      const avatarFileCount = Object.keys(avatarFiles).length;
+      console.log("👤 Avatar files to upload:", avatarFileCount);
       Object.entries(avatarFiles).forEach(([index, file]) => {
+        console.log(`  - avatar_${index}: ${file.name}`);
         submitFormData.append(`avatar_${index}`, file);
       });
 
-      await updateBlogWithMedia(submitFormData);
-      setImageFiles({});
-      setImagePreviews({});
-      setAvatarFiles({});
-      setAvatarPreviews({});
-      await refreshBlog();
+      console.log("📤 Sending update request to backend...");
+      const result = await updateBlogWithMedia(submitFormData);
+
+      if (result) {
+        console.log("✅ Blog update successful");
+        setImageFiles({});
+        setImagePreviews({});
+        setAvatarFiles({});
+        setAvatarPreviews({});
+        await refreshBlog();
+      } else {
+        console.error("❌ Blog update returned null");
+      }
     } catch (error) {
-      console.error("Failed to update blog:", error);
+      console.error("❌ Failed to update blog:", error);
+      if (error instanceof Error) {
+        console.error("Error message:", error.message);
+        console.error("Error stack:", error.stack);
+      }
     }
   };
 
@@ -625,17 +672,6 @@ export function BlogEditor() {
       {/* Header Actions */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-2">
-          <Badge variant={blog?.isActive ? "default" : "secondary"}>
-            {blog?.isActive ? (
-              <>
-                <Eye className="w-3 h-3 mr-1" /> Active
-              </>
-            ) : (
-              <>
-                <EyeOff className="w-3 h-3 mr-1" /> Inactive
-              </>
-            )}
-          </Badge>
           <Button
             variant="outline"
             size="sm"

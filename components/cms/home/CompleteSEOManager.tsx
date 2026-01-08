@@ -278,7 +278,6 @@ export function CompleteSEOManager() {
   const { events, loading: eventsLoading } = useEvents();
   const { testimonials, loading: testimonialsLoading } = useTestimonials();
 
-  
   const [refreshing, setRefreshing] = useState(false);
 
   const primarySeo = banners?.[0]?.seo || aboutSection?.seo;
@@ -559,7 +558,6 @@ export function CompleteSEOManager() {
                       icon={<Calendar className="w-4 h-4" />}
                       seo={events.seo}
                       editLink="/cms/home/events"
-                      isActive={events.isActive}
                     />
                   ) : (
                     <Alert>

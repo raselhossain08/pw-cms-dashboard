@@ -32,6 +32,7 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  ImageIcon,
 } from "lucide-react";
 import Image from "next/image";
 import { useRefundPolicy } from "@/hooks/useRefundPolicy";
@@ -58,6 +59,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { MediaLibrarySelector } from "@/components/cms/MediaLibrarySelector";
 
 export function RefundPolicyEditor() {
   const { push } = useToast();
@@ -78,6 +80,7 @@ export function RefundPolicyEditor() {
   const [imagePreview, setImagePreview] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
 
   const [formData, setFormData] = useState<Partial<RefundPolicy>>({
     headerSection: {
@@ -538,6 +541,14 @@ export function RefundPolicyEditor() {
                   >
                     <Upload className="w-4 h-4 mr-2" />
                     {imageFile ? "Change Image" : "Upload Image"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setMediaLibraryOpen(true)}
+                    type="button"
+                  >
+                    <ImageIcon className="w-4 h-4 mr-2" />
+                    Select from Library
                   </Button>
                   {imageFile && (
                     <Badge variant="secondary">{imageFile.name}</Badge>
@@ -1276,6 +1287,24 @@ export function RefundPolicyEditor() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {/* Media Library Selector */}
+      <MediaLibrarySelector
+        open={mediaLibraryOpen}
+        onOpenChange={setMediaLibraryOpen}
+        onSelect={(url: string) => {
+          setImagePreview(url);
+          setFormData({
+            ...formData,
+            headerSection: {
+              ...formData.headerSection!,
+              image: url,
+            },
+          });
+          setMediaLibraryOpen(false);
+        }}
+        title="Select Header Image"
+      />
     </div>
   );
 }

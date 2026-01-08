@@ -42,6 +42,36 @@ import type {
   Stat,
   StatsSection,
 } from "@/lib/services/about-us.service";
+
+// Home About Section Types
+interface Highlight {
+  icon: string;
+  label: string;
+  text: string;
+}
+
+interface CTA {
+  label: string;
+  link: string;
+}
+
+interface HomeStat {
+  value: number;
+  suffix: string;
+  label: string;
+}
+
+interface HomeAboutSection {
+  title: string;
+  subtitle: string;
+  description: string;
+  image: string;
+  imageAlt?: string;
+  highlights: Highlight[];
+  cta: CTA;
+  stats: HomeStat[];
+  isActive: boolean;
+}
 import { useToast } from "@/context/ToastContext";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import {
@@ -144,6 +174,27 @@ export function AboutUsEditor() {
     value: "",
     label: "",
   });
+
+  // Home About Section State
+  const [homeAboutSection, setHomeAboutSection] = useState<HomeAboutSection>({
+    title: "",
+    subtitle: "",
+    description: "",
+    image: "",
+    imageAlt: "",
+    highlights: [],
+    cta: { label: "", link: "" },
+    stats: [],
+    isActive: true,
+  });
+  const [homeImageFile, setHomeImageFile] = useState<File | null>(null);
+  const [homeImagePreview, setHomeImagePreview] = useState<string>("");
+  const [highlightIconFiles, setHighlightIconFiles] = useState<{
+    [key: number]: File;
+  }>({});
+  const [highlightIconPreviews, setHighlightIconPreviews] = useState<{
+    [key: number]: string;
+  }>({});
 
   useEffect(() => {
     if (aboutUs) {
@@ -388,6 +439,88 @@ export function AboutUsEditor() {
     setFormData({ ...formData, sections });
   };
 
+  // Home About Section Handlers
+  const handleHomeImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setHomeImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setHomeImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleHighlightIconChange = (
+    index: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setHighlightIconFiles({ ...highlightIconFiles, [index]: file });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setHighlightIconPreviews({
+          ...highlightIconPreviews,
+          [index]: reader.result as string,
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const addHighlight = () => {
+    setHomeAboutSection({
+      ...homeAboutSection,
+      highlights: [
+        ...homeAboutSection.highlights,
+        { icon: "🎓", label: "", text: "" },
+      ],
+    });
+  };
+
+  const removeHighlight = (index: number) => {
+    setHomeAboutSection({
+      ...homeAboutSection,
+      highlights: homeAboutSection.highlights.filter((_, i) => i !== index),
+    });
+  };
+
+  const updateHighlight = (
+    index: number,
+    field: keyof Highlight,
+    value: string
+  ) => {
+    const newHighlights = [...homeAboutSection.highlights];
+    newHighlights[index] = { ...newHighlights[index], [field]: value };
+    setHomeAboutSection({ ...homeAboutSection, highlights: newHighlights });
+  };
+
+  const addHomeStat = () => {
+    setHomeAboutSection({
+      ...homeAboutSection,
+      stats: [...homeAboutSection.stats, { value: 0, suffix: "+", label: "" }],
+    });
+  };
+
+  const removeHomeStat = (index: number) => {
+    setHomeAboutSection({
+      ...homeAboutSection,
+      stats: homeAboutSection.stats.filter((_, i) => i !== index),
+    });
+  };
+
+  const updateHomeStat = (
+    index: number,
+    field: keyof HomeStat,
+    value: string | number
+  ) => {
+    const newStats = [...homeAboutSection.stats];
+    newStats[index] = { ...newStats[index], [field]: value };
+    setHomeAboutSection({ ...homeAboutSection, stats: newStats });
+  };
+
   if (loading) {
     return (
       <Card>
@@ -543,7 +676,13 @@ export function AboutUsEditor() {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-2 h-auto p-1 bg-gray-100 dark:bg-gray-800">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1 sm:gap-2 h-auto p-1 bg-gray-100 dark:bg-gray-800">
+          <TabsTrigger
+            value="home"
+            className="text-xs sm:text-sm py-2 sm:py-2.5"
+          >
+            Home About
+          </TabsTrigger>
           <TabsTrigger
             value="header"
             className="text-xs sm:text-sm py-2 sm:py-2.5"
@@ -575,6 +714,312 @@ export function AboutUsEditor() {
             SEO
           </TabsTrigger>
         </TabsList>
+
+        {/* Home About Section Tab */}
+        <TabsContent value="home" className="space-y-3 sm:space-y-4 mt-4">
+          <Card className="shadow-md border-gray-200 dark:border-gray-700">
+            <CardHeader className="pb-3 sm:pb-4 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-t-lg">
+              <CardTitle className="text-lg sm:text-xl">
+                Home About Section
+              </CardTitle>
+              <CardDescription className="text-pink-100 text-xs sm:text-sm">
+                Manage the about section displayed on the homepage
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 sm:space-y-6 mt-4">
+              {/* Title */}
+              <div className="space-y-2">
+                <Label htmlFor="homeTitle">Title</Label>
+                <Input
+                  id="homeTitle"
+                  value={homeAboutSection.title}
+                  onChange={(e) =>
+                    setHomeAboutSection({
+                      ...homeAboutSection,
+                      title: e.target.value,
+                    })
+                  }
+                  placeholder="Passionate About Flight"
+                />
+              </div>
+
+              {/* Subtitle */}
+              <div className="space-y-2">
+                <Label htmlFor="homeSubtitle">Subtitle</Label>
+                <Input
+                  id="homeSubtitle"
+                  value={homeAboutSection.subtitle}
+                  onChange={(e) =>
+                    setHomeAboutSection({
+                      ...homeAboutSection,
+                      subtitle: e.target.value,
+                    })
+                  }
+                  placeholder="Meet Rich Pickett — Pilot, Instructor, and Aviation Innovator"
+                />
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <Label htmlFor="homeDescription">Description</Label>
+                <RichTextEditor
+                  content={homeAboutSection.description}
+                  onChange={(content) =>
+                    setHomeAboutSection({
+                      ...homeAboutSection,
+                      description: content,
+                    })
+                  }
+                  placeholder="From my very first exploratory flight..."
+                />
+              </div>
+
+              {/* Image Upload */}
+              <div className="space-y-2">
+                <Label>Featured Image</Label>
+                <div className="border-2 border-dashed rounded-xl p-6 text-center">
+                  {homeImagePreview ? (
+                    <div className="space-y-3">
+                      <div className="relative w-full h-48 rounded-lg overflow-hidden">
+                        <img
+                          src={homeImagePreview}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setHomeImageFile(null);
+                          setHomeImagePreview("");
+                        }}
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Change Image
+                      </Button>
+                    </div>
+                  ) : (
+                    <div>
+                      <Upload className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+                      <p className="text-sm mb-3">Upload Image</p>
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleHomeImageChange}
+                        className="cursor-pointer"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CTA */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>CTA Label</Label>
+                  <Input
+                    value={homeAboutSection.cta.label}
+                    onChange={(e) =>
+                      setHomeAboutSection({
+                        ...homeAboutSection,
+                        cta: { ...homeAboutSection.cta, label: e.target.value },
+                      })
+                    }
+                    placeholder="Explore My Courses"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>CTA Link</Label>
+                  <Input
+                    value={homeAboutSection.cta.link}
+                    onChange={(e) =>
+                      setHomeAboutSection({
+                        ...homeAboutSection,
+                        cta: { ...homeAboutSection.cta, link: e.target.value },
+                      })
+                    }
+                    placeholder="/courses"
+                  />
+                </div>
+              </div>
+
+              {/* Highlights */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold">Highlights</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addHighlight}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Highlight
+                  </Button>
+                </div>
+                {homeAboutSection.highlights.map((highlight, index) => (
+                  <Card key={index} className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label>Highlight {index + 1}</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeHighlight(index)}
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </Button>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label>Icon</Label>
+                        <div className="flex gap-4 items-start">
+                          <Input
+                            value={highlight.icon}
+                            onChange={(e) =>
+                              updateHighlight(index, "icon", e.target.value)
+                            }
+                            placeholder="Enter emoji (e.g., 🎓) or upload image"
+                          />
+                          {!highlight.icon.startsWith("http") &&
+                            highlight.icon && (
+                              <div className="w-16 h-16 border rounded-lg flex items-center justify-center text-3xl">
+                                {highlight.icon}
+                              </div>
+                            )}
+                        </div>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleHighlightIconChange(index, e)}
+                        />
+                        {highlightIconPreviews[index] && (
+                          <div className="w-20 h-20 border rounded-lg overflow-hidden">
+                            <img
+                              src={highlightIconPreviews[index]}
+                              alt="Icon preview"
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Label</Label>
+                        <Input
+                          value={highlight.label}
+                          onChange={(e) =>
+                            updateHighlight(index, "label", e.target.value)
+                          }
+                          placeholder="Certified Flight Instructor"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Text</Label>
+                        <Textarea
+                          value={highlight.text}
+                          onChange={(e) =>
+                            updateHighlight(index, "text", e.target.value)
+                          }
+                          placeholder="Teaching advanced flight operations..."
+                          rows={3}
+                        />
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Stats */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold">Statistics</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addHomeStat}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Stat
+                  </Button>
+                </div>
+                {homeAboutSection.stats.map((stat, index) => (
+                  <Card key={index} className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label>Stat {index + 1}</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeHomeStat(index)}
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </Button>
+                    </div>
+                    <div className="grid md:grid-cols-3 gap-3">
+                      <div className="space-y-2">
+                        <Label>Value</Label>
+                        <Input
+                          type="number"
+                          value={stat.value}
+                          onChange={(e) =>
+                            updateHomeStat(
+                              index,
+                              "value",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          placeholder="5000"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Suffix</Label>
+                        <Input
+                          value={stat.suffix}
+                          onChange={(e) =>
+                            updateHomeStat(index, "suffix", e.target.value)
+                          }
+                          placeholder="+"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Label</Label>
+                        <Input
+                          value={stat.label}
+                          onChange={(e) =>
+                            updateHomeStat(index, "label", e.target.value)
+                          }
+                          placeholder="Hours Flown"
+                        />
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Active Toggle */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div>
+                  <Label className="text-base">Active Status</Label>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Show this section on homepage
+                  </p>
+                </div>
+                <Switch
+                  checked={homeAboutSection.isActive}
+                  onCheckedChange={(checked) =>
+                    setHomeAboutSection({
+                      ...homeAboutSection,
+                      isActive: checked,
+                    })
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Header Tab */}
         <TabsContent value="header" className="space-y-3 sm:space-y-4 mt-4">
