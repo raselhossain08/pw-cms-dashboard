@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useToast } from "@/context/ToastContext";
 import { useCourseCategories } from "@/hooks/useCourseCategories";
-import { uploadService } from "@/services/upload.service";
+import { MediaLibrarySelector } from "@/components/cms/MediaLibrarySelector";
 import Image from "next/image";
 import {
   FolderTree,
@@ -92,15 +92,13 @@ export default function CourseCategories() {
     null
   );
   const [search, setSearch] = React.useState("");
-  const [imageFile, setImageFile] = React.useState<File | null>(null);
   const [imagePreview, setImagePreview] = React.useState<string>("");
-  const [uploadProgress, setUploadProgress] = React.useState<number>(0);
-  const [isUploading, setIsUploading] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
   const [isExporting, setIsExporting] = React.useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [mediaLibraryOpen, setMediaLibraryOpen] = React.useState(false);
+  const [mediaLibraryContext, setMediaLibraryContext] = React.useState<"create" | "edit">("create");
 
   const categories: CategoryItem[] = React.useMemo(() => {
     return categoriesList.map((cat: any) => ({
@@ -137,81 +135,24 @@ export default function CourseCategories() {
     }
 
     try {
-      let imageUrl = "";
-
-      // Upload image if selected
-      if (imageFile) {
-        setIsUploading(true);
-        try {
-          const uploadResult = await uploadService.uploadFile(imageFile, {
-            type: "image",
-            description: "Category image",
-            tags: ["category", "image"],
-            onProgress: (progress) => {
-              setUploadProgress(progress.percentage);
-            },
-          });
-          imageUrl = uploadResult.url;
-        } catch (uploadError) {
-          console.error("Image upload failed:", uploadError);
-          push({
-            type: "error",
-            message: "Failed to upload image. Creating category without image.",
-          });
-        } finally {
-          setIsUploading(false);
-        }
-      }
-
       const payload: any = { name };
-      if (imageUrl) {
-        payload.image = imageUrl;
+      if (imagePreview) {
+        payload.image = imagePreview;
       }
 
       setActionLoading(true);
       await createCategoryHook(payload);
       setCreateOpen(false);
-      setImageFile(null);
       setImagePreview("");
-      setUploadProgress(0);
     } catch (err) {
       console.error("Failed to create category:", err);
-      setIsUploading(false);
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      push({ type: "error", message: "Please select an image file" });
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      push({ type: "error", message: "Image size must be less than 5MB" });
-      return;
-    }
-
-    setImageFile(file);
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
   const clearImage = () => {
-    setImageFile(null);
     setImagePreview("");
-    setUploadProgress(0);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
   };
 
   const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -227,47 +168,17 @@ export default function CourseCategories() {
     }
 
     try {
-      let imageUrl = editCategory.image || "";
-
-      // Upload new image if selected
-      if (imageFile) {
-        setIsUploading(true);
-        try {
-          const uploadResult = await uploadService.uploadFile(imageFile, {
-            type: "image",
-            description: "Category image",
-            tags: ["category", "image"],
-            onProgress: (progress) => {
-              setUploadProgress(progress.percentage);
-            },
-          });
-          imageUrl = uploadResult.url;
-        } catch (uploadError) {
-          console.error("Image upload failed:", uploadError);
-          push({
-            type: "error",
-            message:
-              "Failed to upload image. Updating category without new image.",
-          });
-        } finally {
-          setIsUploading(false);
-        }
-      }
-
       const payload: any = { name };
-      if (imageUrl) {
-        payload.image = imageUrl;
+      if (imagePreview) {
+        payload.image = imagePreview;
       }
 
       setActionLoading(true);
       await updateCategoryHook(editCategory.slug, payload);
       setEditCategory(null);
-      setImageFile(null);
       setImagePreview("");
-      setUploadProgress(0);
     } catch (err) {
       console.error("Failed to update category:", err);
-      setIsUploading(false);
     } finally {
       setActionLoading(false);
     }
@@ -276,7 +187,6 @@ export default function CourseCategories() {
   const openEditDialog = (category: CategoryItem) => {
     setEditCategory(category);
     setImagePreview(category.image || "");
-    setImageFile(null);
   };
 
   const handleDelete = async () => {
@@ -794,53 +704,49 @@ export default function CourseCategories() {
                           className="object-cover"
                         />
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={clearImage}
-                        className="absolute top-2 right-2 bg-white/90 hover:bg-white shadow-md"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                      {isUploading && (
-                        <div className="mt-2">
-                          <div className="flex justify-between text-sm text-slate-600 mb-1">
-                            <span>Uploading...</span>
-                            <span>{uploadProgress}%</span>
-                          </div>
-                          <div className="w-full bg-slate-200 rounded-full h-2">
-                            <div
-                              className="bg-primary h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${uploadProgress}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
+                      <div className="absolute top-2 right-2 flex gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setMediaLibraryContext("create");
+                            setMediaLibraryOpen(true);
+                          }}
+                          className="bg-white/90 hover:bg-white shadow-md"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={clearImage}
+                          className="bg-white/90 hover:bg-white shadow-md"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div
                       className="flex flex-col items-center justify-center py-8 cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => {
+                        setMediaLibraryContext("create");
+                        setMediaLibraryOpen(true);
+                      }}
                     >
                       <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-3">
                         <ImageIcon className="w-8 h-8 text-slate-400" />
                       </div>
                       <p className="text-sm text-slate-600 mb-1">
-                        Click to upload or drag and drop
+                        Click to select from media library
                       </p>
                       <p className="text-xs text-slate-500">
-                        PNG, JPG or WEBP (MAX. 5MB)
+                        Choose from your uploaded images
                       </p>
                     </div>
                   )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    className="hidden"
-                  />
                 </div>
               </div>
 
@@ -852,19 +758,19 @@ export default function CourseCategories() {
                     setCreateOpen(false);
                     clearImage();
                   }}
-                  disabled={isUploading || actionLoading}
+                  disabled={actionLoading}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                  disabled={isUploading || actionLoading}
+                  disabled={actionLoading}
                 >
-                  {isUploading || actionLoading ? (
+                  {actionLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {isUploading ? "Uploading..." : "Creating..."}
+                      Creating...
                     </>
                   ) : (
                     <>
@@ -934,53 +840,49 @@ export default function CourseCategories() {
                           className="object-cover"
                         />
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={clearImage}
-                        className="absolute top-2 right-2 bg-white/90 hover:bg-white shadow-md"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                      {isUploading && (
-                        <div className="mt-2">
-                          <div className="flex justify-between text-sm text-slate-600 mb-1">
-                            <span>Uploading...</span>
-                            <span>{uploadProgress}%</span>
-                          </div>
-                          <div className="w-full bg-slate-200 rounded-full h-2">
-                            <div
-                              className="bg-primary h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${uploadProgress}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
+                      <div className="absolute top-2 right-2 flex gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setMediaLibraryContext("edit");
+                            setMediaLibraryOpen(true);
+                          }}
+                          className="bg-white/90 hover:bg-white shadow-md"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={clearImage}
+                          className="bg-white/90 hover:bg-white shadow-md"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div
                       className="flex flex-col items-center justify-center py-8 cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => {
+                        setMediaLibraryContext("edit");
+                        setMediaLibraryOpen(true);
+                      }}
                     >
                       <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-3">
                         <ImageIcon className="w-8 h-8 text-slate-400" />
                       </div>
                       <p className="text-sm text-slate-600 mb-1">
-                        Click to upload or drag and drop
+                        Click to select from media library
                       </p>
                       <p className="text-xs text-slate-500">
-                        PNG, JPG or WEBP (MAX. 5MB)
+                        Choose from your uploaded images
                       </p>
                     </div>
                   )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    className="hidden"
-                  />
                 </div>
               </div>
 
@@ -992,19 +894,19 @@ export default function CourseCategories() {
                     setEditCategory(null);
                     clearImage();
                   }}
-                  disabled={isUploading || actionLoading}
+                  disabled={actionLoading}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                  disabled={isUploading || actionLoading}
+                  disabled={actionLoading}
                 >
-                  {isUploading || actionLoading ? (
+                  {actionLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {isUploading ? "Uploading..." : "Updating..."}
+                      Updating...
                     </>
                   ) : (
                     <>
@@ -1092,6 +994,17 @@ export default function CourseCategories() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Media Library Selector */}
+        <MediaLibrarySelector
+          open={mediaLibraryOpen}
+          onOpenChange={setMediaLibraryOpen}
+          onSelect={(url: string) => {
+            setImagePreview(url);
+            setMediaLibraryOpen(false);
+          }}
+          title="Select Category Image"
+        />
       </div>
     </main>
   );

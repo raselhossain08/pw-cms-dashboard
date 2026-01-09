@@ -528,7 +528,6 @@ export default function Lessons() {
     const [error, setError] = React.useState<string | null>(null);
 
     if (!url) {
-      
       return (
         <div className="w-full h-64 bg-gray-100 rounded-lg flex items-center justify-center">
           <p className="text-gray-500">No video URL provided</p>
@@ -569,7 +568,6 @@ export default function Lessons() {
       );
     }
 
-
     // For h-64 class, convert to aspect ratio
     const containerClass = className?.includes("h-64")
       ? "h-64"
@@ -597,7 +595,6 @@ export default function Lessons() {
             setError("Failed to load video");
           }}
           onDuration={(d: number) => {
-
             if (onVideoDuration) onVideoDuration(d);
           }}
           config={{
@@ -1005,17 +1002,99 @@ export default function Lessons() {
     }
   };
 
-  // Create lesson handler
-  const handleCreateLesson = async (
-    courseId: string,
-    payload: CreateLessonPayload
-  ) => {
-    setActionLoading(true);
-    try {
-      await createLessonHook(courseId, payload);
-      queryClient.invalidateQueries({
+  // Create lesson mutation with optimistic updates
+  const createLessonMutation = useMutation({
+    mutationFn: ({
+      courseId,
+      payload,
+    }: {
+      courseId: string;
+      payload: CreateLessonPayload;
+    }) => lessonsService.createLesson(courseId, payload),
+    onMutate: async ({ courseId, payload }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({
         queryKey: ["lessons", selectedCourseId],
       });
+
+      // Snapshot previous value
+      const previousLessons = queryClient.getQueryData([
+        "lessons",
+        selectedCourseId,
+      ]);
+
+      // Create optimistic lesson object
+      const optimisticLesson = {
+        _id: `temp-${Date.now()}`,
+        ...payload,
+        slug: payload.title.toLowerCase().replace(/\s+/g, "-"),
+        status: payload.status || LessonStatus.DRAFT,
+        type: payload.type || LessonType.VIDEO,
+        order: payload.order || 999,
+        duration: payload.duration || 0,
+        isFree: payload.isFree || false,
+        passingScore: 70,
+        completionCount: 0,
+        averageScore: 0,
+        course: courseId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Optimistically add the new lesson to cache
+      queryClient.setQueryData(["lessons", selectedCourseId], (old: any) => {
+        if (!old) return [optimisticLesson];
+
+        // Handle different data structures
+        if (Array.isArray(old)) {
+          return [...old, optimisticLesson];
+        }
+
+        if (old.data?.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: {
+                ...old.data.data,
+                lessons: [...old.data.data.lessons, optimisticLesson],
+              },
+            },
+          };
+        }
+
+        if (old.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              lessons: [...old.data.lessons, optimisticLesson],
+            },
+          };
+        }
+
+        return old;
+      });
+
+      return { previousLessons };
+    },
+    onError: (error, variables, context) => {
+      // Rollback on error
+      if (context?.previousLessons) {
+        queryClient.setQueryData(
+          ["lessons", selectedCourseId],
+          context.previousLessons
+        );
+      }
+      console.error("Failed to create lesson:", error);
+      push({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Failed to create lesson",
+      });
+    },
+    onSuccess: () => {
+      push({ type: "success", message: "Lesson created successfully" });
       setCreateOpen(false);
       // Reset form
       setVideoPreview(null);
@@ -1023,27 +1102,106 @@ export default function Lessons() {
       setThumbnailPreview(null);
       setThumbnailFile(null);
       setAutoDurationSeconds(null);
-    } catch (error) {
-      console.error("Failed to create lesson:", error);
-    } finally {
-      setActionLoading(false);
-    }
+    },
+    onSettled: () => {
+      // Refetch to ensure consistency
+      queryClient.invalidateQueries({
+        queryKey: ["lessons", selectedCourseId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["course-modules"] });
+    },
+  });
+
+  // Create lesson handler
+  const handleCreateLesson = async (
+    courseId: string,
+    payload: CreateLessonPayload
+  ) => {
+    createLessonMutation.mutate({ courseId, payload });
   };
 
-  // Update lesson handler
-  const handleUpdateLesson = async (
-    lessonId: string,
-    payload: UpdateLessonPayload
-  ) => {
-    setActionLoading(true);
-    try {
-      await updateLessonHook(lessonId, payload);
-      queryClient.invalidateQueries({
-        queryKey: ["lessons"],
+  // Update lesson mutation with optimistic updates
+  const updateLessonMutation = useMutation({
+    mutationFn: ({
+      lessonId,
+      payload,
+    }: {
+      lessonId: string;
+      payload: UpdateLessonPayload;
+    }) => lessonsService.updateLesson(lessonId, payload),
+    onMutate: async ({ lessonId, payload }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: ["lessons", selectedCourseId],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["course-modules"],
+
+      // Snapshot previous value
+      const previousLessons = queryClient.getQueryData([
+        "lessons",
+        selectedCourseId,
+      ]);
+
+      // Optimistically update the lesson in cache
+      queryClient.setQueryData(["lessons", selectedCourseId], (old: any) => {
+        if (!old) return old;
+
+        const updateLesson = (lesson: any) => {
+          if (lesson._id === lessonId) {
+            return { ...lesson, ...payload };
+          }
+          return lesson;
+        };
+
+        // Handle different data structures
+        if (Array.isArray(old)) {
+          return old.map(updateLesson);
+        }
+
+        if (old.data?.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: {
+                ...old.data.data,
+                lessons: old.data.data.lessons.map(updateLesson),
+              },
+            },
+          };
+        }
+
+        if (old.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              lessons: old.data.lessons.map(updateLesson),
+            },
+          };
+        }
+
+        return old;
       });
+
+      return { previousLessons };
+    },
+    onError: (error, variables, context) => {
+      // Rollback on error
+      if (context?.previousLessons) {
+        queryClient.setQueryData(
+          ["lessons", selectedCourseId],
+          context.previousLessons
+        );
+      }
+      console.error("Failed to update lesson:", error);
+      push({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Failed to update lesson",
+      });
+    },
+    onSuccess: () => {
+      push({ type: "success", message: "Lesson updated successfully" });
       // Clear drag state
       setDraggedId(null);
       setDragOverId(null);
@@ -1055,38 +1213,203 @@ export default function Lessons() {
       setThumbnailPreview(null);
       setThumbnailFile(null);
       setAutoDurationSeconds(null);
-    } catch (error) {
-      console.error("Failed to update lesson:", error);
-      // Clear drag state on error too
-      setDraggedId(null);
-      setDragOverId(null);
-      setDragOverModuleId(null);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Delete lesson handler
-  const handleDeleteLesson = async (lessonId: string) => {
-    setActionLoading(true);
-    try {
-      await deleteLessonHook(lessonId);
+    },
+    onSettled: () => {
+      // Refetch to ensure consistency
       queryClient.invalidateQueries({
         queryKey: ["lessons", selectedCourseId],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["course-modules"],
-      });
-      if (selectedCourseId) {
-        await refreshLessons(selectedCourseId);
-      }
-      setDeleteId(null);
-    } catch (error) {
-      console.error("Failed to delete lesson:", error);
-    } finally {
-      setActionLoading(false);
-    }
+      queryClient.invalidateQueries({ queryKey: ["course-modules"] });
+    },
+  });
+
+  // Update lesson handler
+  const handleUpdateLesson = async (
+    lessonId: string,
+    payload: UpdateLessonPayload
+  ) => {
+    updateLessonMutation.mutate({ lessonId, payload });
   };
+
+  // Delete lesson mutation with optimistic updates
+  const deleteLessonMutation = useMutation({
+    mutationFn: (lessonId: string) => lessonsService.deleteLesson(lessonId),
+    onMutate: async (lessonId) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: ["lessons", selectedCourseId],
+      });
+
+      // Snapshot previous value
+      const previousLessons = queryClient.getQueryData([
+        "lessons",
+        selectedCourseId,
+      ]);
+
+      // Optimistically update - remove the lesson from cache
+      queryClient.setQueryData(["lessons", selectedCourseId], (old: any) => {
+        if (!old) return old;
+
+        // Handle different data structures
+        if (Array.isArray(old)) {
+          return old.filter((lesson: any) => lesson._id !== lessonId);
+        }
+
+        if (old.data?.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: {
+                ...old.data.data,
+                lessons: old.data.data.lessons.filter(
+                  (lesson: any) => lesson._id !== lessonId
+                ),
+              },
+            },
+          };
+        }
+
+        if (old.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              lessons: old.data.lessons.filter(
+                (lesson: any) => lesson._id !== lessonId
+              ),
+            },
+          };
+        }
+
+        return old;
+      });
+
+      return { previousLessons };
+    },
+    onError: (error, lessonId, context) => {
+      // Rollback on error
+      if (context?.previousLessons) {
+        queryClient.setQueryData(
+          ["lessons", selectedCourseId],
+          context.previousLessons
+        );
+      }
+      console.error("Failed to delete lesson:", error);
+      push({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Failed to delete lesson",
+      });
+    },
+    onSuccess: (data, lessonId) => {
+      push({ type: "success", message: "Lesson deleted successfully" });
+      setDeleteId(null);
+    },
+    onSettled: () => {
+      // Refetch to ensure consistency
+      queryClient.invalidateQueries({
+        queryKey: ["lessons", selectedCourseId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["course-modules"] });
+    },
+  });
+
+  // Delete lesson handler
+  const handleDeleteLesson = (lessonId: string) => {
+    deleteLessonMutation.mutate(lessonId);
+  };
+
+  // Bulk delete mutation with optimistic updates
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (lessonIds: string[]) =>
+      lessonsService.bulkDeleteLessons(lessonIds),
+    onMutate: async (lessonIds) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: ["lessons", selectedCourseId],
+      });
+
+      // Snapshot previous value
+      const previousLessons = queryClient.getQueryData([
+        "lessons",
+        selectedCourseId,
+      ]);
+
+      // Optimistically update - remove the lessons from cache
+      queryClient.setQueryData(["lessons", selectedCourseId], (old: any) => {
+        if (!old) return old;
+
+        // Handle different data structures
+        if (Array.isArray(old)) {
+          return old.filter((lesson: any) => !lessonIds.includes(lesson._id));
+        }
+
+        if (old.data?.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              data: {
+                ...old.data.data,
+                lessons: old.data.data.lessons.filter(
+                  (lesson: any) => !lessonIds.includes(lesson._id)
+                ),
+              },
+            },
+          };
+        }
+
+        if (old.data?.lessons) {
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              lessons: old.data.lessons.filter(
+                (lesson: any) => !lessonIds.includes(lesson._id)
+              ),
+            },
+          };
+        }
+
+        return old;
+      });
+
+      return { previousLessons };
+    },
+    onError: (error, lessonIds, context) => {
+      // Rollback on error
+      if (context?.previousLessons) {
+        queryClient.setQueryData(
+          ["lessons", selectedCourseId],
+          context.previousLessons
+        );
+      }
+      console.error("Failed to delete lessons:", error);
+      push({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "Failed to delete lessons",
+      });
+    },
+    onSuccess: (data, lessonIds) => {
+      push({
+        type: "success",
+        message: `${lessonIds.length} lesson${
+          lessonIds.length > 1 ? "s" : ""
+        } deleted successfully`,
+      });
+      setBulkDeleteOpen(false);
+      setSelectedIds([]);
+    },
+    onSettled: () => {
+      // Refetch to ensure consistency
+      queryClient.invalidateQueries({
+        queryKey: ["lessons", selectedCourseId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["course-modules"] });
+    },
+  });
 
   // Helper functions for bulk operations
   const toggleSelection = (id: string) => {
@@ -5105,27 +5428,28 @@ export default function Lessons() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={bulkDeleteMutation.isPending}>
+                Cancel
+              </AlertDialogCancel>
               <AlertDialogAction
-                onClick={async () => {
-                  setActionLoading(true);
-                  try {
-                    await bulkDeleteLessons(selectedIds);
-                    setBulkDeleteOpen(false);
-                    setSelectedIds([]);
-                    queryClient.invalidateQueries({
-                      queryKey: ["lessons", selectedCourseId],
-                    });
-                  } catch (error) {
-                    console.error("Failed to delete lessons:", error);
-                  } finally {
-                    setActionLoading(false);
-                  }
+                onClick={() => {
+                  bulkDeleteMutation.mutate(selectedIds);
                 }}
                 className="bg-red-600 hover:bg-red-700"
-                disabled={actionLoading}
+                disabled={bulkDeleteMutation.isPending}
               >
-                {actionLoading ? "Deleting..." : "Delete"}
+                {bulkDeleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash className="w-4 h-4 mr-2" />
+                    Delete {selectedIds.length} Lesson
+                    {selectedIds.length > 1 ? "s" : ""}
+                  </>
+                )}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -5151,7 +5475,7 @@ export default function Lessons() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={actionLoading}>
+              <AlertDialogCancel disabled={deleteLessonMutation.isPending}>
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
@@ -5160,10 +5484,10 @@ export default function Lessons() {
                     handleDeleteLesson(deleteId);
                   }
                 }}
-                disabled={actionLoading}
+                disabled={deleteLessonMutation.isPending}
                 className="bg-red-600 hover:bg-red-700"
               >
-                {actionLoading ? (
+                {deleteLessonMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Deleting...

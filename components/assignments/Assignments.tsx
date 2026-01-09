@@ -526,7 +526,7 @@ export default function Assignments() {
   };
 
   return (
-    <main className="min-h-screen bg-linear-to-br from-slate-50 via-blue-50 to-slate-50">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50">
       <div className="p-6 max-w-[1800px] mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -537,7 +537,7 @@ export default function Assignments() {
                   <FileText className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold bg-linear-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                  <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                     Aviation Assignments
                   </h1>
                   <p className="text-slate-600 text-sm">

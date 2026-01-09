@@ -161,7 +161,7 @@ export default function Quizzes() {
     staleTime: 60000,
   });
 
-  const courses = (coursesData as any)?.courses || [];
+  const courses = (coursesData as any)?.data?.courses || [];
 
   const quizzes: QuizItem[] = React.useMemo(() => {
     return quizzesData

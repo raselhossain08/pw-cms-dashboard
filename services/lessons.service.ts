@@ -88,13 +88,29 @@ export interface UpdateLessonPayload {
 class LessonsService {
     async getCourseLessons(courseId: string): Promise<LessonDto[]> {
         try {
-            const { data } = await apiClient.get<{ lessons?: LessonDto[] } | LessonDto[]>(`/courses/${courseId}/lessons`);
+            const { data } = await apiClient.get<any>(`/courses/${courseId}/lessons`);
+            
+            // Handle direct array
             if (Array.isArray(data)) {
                 return data;
             }
-            if (data && typeof data === 'object' && 'lessons' in data && Array.isArray((data as { lessons?: LessonDto[] }).lessons)) {
-                return (data as { lessons?: LessonDto[] }).lessons || [];
+            
+            // Handle nested data structure: { success: true, data: { lessons: [...] } }
+            if (data && typeof data === 'object') {
+                // Check for data.data.lessons (double nested)
+                if (data.data && typeof data.data === 'object' && Array.isArray(data.data.lessons)) {
+                    return data.data.lessons;
+                }
+                // Check for data.lessons (single nested)
+                if (Array.isArray(data.lessons)) {
+                    return data.lessons;
+                }
+                // Check for nested data array
+                if (Array.isArray(data.data)) {
+                    return data.data;
+                }
             }
+            
             return [];
         } catch (error) {
             throw error;

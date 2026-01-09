@@ -304,6 +304,10 @@ export default function Modules() {
   const [preSelectedCourseId, setPreSelectedCourseId] =
     React.useState<string>("");
   const [bulkActionsOpen, setBulkActionsOpen] = React.useState(false);
+  const [deleteModuleId, setDeleteModuleId] = React.useState<string | null>(
+    null
+  );
+  const [deleteModuleName, setDeleteModuleName] = React.useState<string>("");
 
   const filtered = React.useMemo(() => {
     return courses
@@ -400,18 +404,24 @@ export default function Modules() {
     setDragOverId(null);
   };
 
-  const handleDeleteModule = async (moduleId: string, courseId: string) => {
+  const handleDeleteModule = async (moduleId: string) => {
     try {
       // Call the module delete API
       await modulesService.deleteModule(moduleId);
 
-      // Refetch courses to update the modules list
+      // Invalidate and refetch all related queries
+      queryClient.invalidateQueries({ queryKey: ["modules"] });
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
       await refetchCourses();
 
       push({
         type: "success",
         message: "Module deleted successfully",
       });
+      
+      // Close the dialog
+      setDeleteModuleId(null);
+      setDeleteModuleName("");
     } catch (error) {
       console.error("Failed to delete module:", error);
       push({
@@ -539,29 +549,29 @@ export default function Modules() {
   };
 
   return (
-    <main className="min-h-screen bg-linear-to-br from-slate-50 via-blue-50 to-slate-50">
-      <div className="p-6 max-w-[1800px] mx-auto">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50">
+                <div className="p-3 sm:p-4 md:p-6 max-w-[1800px] mx-auto">
         {/* Header Section */}
-        <div className="mb-8">
+        <div className="mb-6 md:mb-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-                  <BookOpen className="w-6 h-6 text-white" />
+              <div className="flex items-center gap-2 sm:gap-3 mb-2">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
+                  <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold bg-linear-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                  <h1 className="text-xl sm:text-2xl md:text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                     Courses & Modules
                   </h1>
-                  <p className="text-slate-600 text-sm">
+                  <p className="text-slate-600 text-xs sm:text-sm">
                     Manage courses and their training modules
                   </p>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {selectedIds.length > 0 && (
-                <div className="flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-lg border border-primary/20">
+                <div className="flex items-center gap-2 bg-primary/10 px-3 sm:px-4 py-2 rounded-lg border border-primary/20">
                   <span className="text-sm font-semibold text-primary">
                     {selectedIds.length} selected
                   </span>
@@ -893,17 +903,17 @@ export default function Modules() {
           </div>
         </div>
 
-        <div className="grid grid-cols-12 gap-5">
-          <div className="col-span-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="col-span-1 lg:col-span-4">
             {/* Available Modules Section - Drag to add to courses */}
             {availableModules && availableModules.length > 0 && (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 mb-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
                   <div>
                     <h3 className="text-lg font-bold text-slate-900">
                       All Modules
                     </h3>
-                    <p className="text-sm text-slate-600">
+                    <p className="text-xs sm:text-sm text-slate-600 break-words">
                       Drag modules to add them to courses (supports multiple
                       courses per module)
                     </p>
@@ -928,9 +938,9 @@ export default function Modules() {
                         className={`relative flex items-center justify-between p-3 rounded-lg border-2 transition-all group cursor-grab active:cursor-grabbing ${
                           isDragging
                             ? "opacity-40 scale-95 border-dashed border-primary bg-primary/10"
-                            : isSelected
-                            ? "bg-linear-to-br from-primary/5 to-primary/10 border-primary shadow-md"
-                            : "bg-linear-to-br from-white to-slate-50 border-slate-200 hover:border-primary hover:shadow-md hover:scale-[1.02]"
+                            :                           isSelected
+                            ? "bg-gradient-to-br from-primary/5 to-primary/10 border-primary shadow-md"
+                            : "bg-gradient-to-br from-white to-slate-50 border-slate-200 hover:border-primary hover:shadow-md hover:scale-[1.02]"
                         }`}
                       >
                         {isDragging && (
@@ -958,11 +968,11 @@ export default function Modules() {
                             {module.icon}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-primary transition-colors">
+                            <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate group-hover:text-primary transition-colors">
                               {module.title}
                             </p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <p className="text-xs text-slate-500">
+                            <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-0.5">
+                              <p className="text-[10px] sm:text-xs text-slate-500 whitespace-nowrap">
                                 {module.lessons} lessons · {module.duration}
                               </p>
                               {(module.courses?.length ?? 0) > 0 && (
@@ -1011,7 +1021,7 @@ export default function Modules() {
               </div>
             )}
           </div>
-          <div className="col-span-8">
+          <div className="col-span-1 lg:col-span-8">
             {" "}
             {/* Loading State */}
             {isLoading || isFetching ? (
@@ -1074,16 +1084,16 @@ export default function Modules() {
                     )}
 
                     {/* Header */}
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                    <div className="flex justify-between items-start gap-2 mb-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start gap-2 mb-2">
                           <div
                             className={`w-10 h-10 ${m.accentClass} rounded-lg flex items-center justify-center shrink-0`}
                           >
                             {m.icon}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-slate-900 text-lg leading-tight truncate">
+                            <h3 className="font-bold text-slate-900 text-base sm:text-lg leading-tight line-clamp-2 break-words">
                               {m.title}
                             </h3>
                             {m.level && (
@@ -1093,7 +1103,7 @@ export default function Modules() {
                             )}
                             {m.courseTitle && (
                               <div className="mt-1">
-                                <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                                <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700 truncate inline-block max-w-full">
                                   {m.courseTitle}
                                 </span>
                               </div>
@@ -1203,7 +1213,7 @@ export default function Modules() {
 
                     {/* Description */}
                     {m.description && (
-                      <p className="text-slate-600 text-sm mb-4 line-clamp-2">
+                      <p className="text-slate-600 text-xs sm:text-sm mb-4 line-clamp-2 break-words">
                         {m.description}
                       </p>
                     )}
@@ -1313,8 +1323,8 @@ export default function Modules() {
                       }`}
                     >
                       {/* Course Header (Top Level Container) */}
-                      <div className="bg-linear-to-r from-primary/5 to-white border-b border-slate-200">
-                        <div className="flex items-center justify-between p-4">
+                      <div className="bg-gradient-to-r from-primary/5 to-white border-b border-slate-200">
+                        <div className="flex items-center justify-between gap-2 p-3 sm:p-4">
                           <button
                             onClick={() => {
                               const newSet = new Set(expandedModules);
@@ -1325,43 +1335,43 @@ export default function Modules() {
                               }
                               setExpandedModules(newSet);
                             }}
-                            className="flex items-center gap-3 flex-1 text-left hover:text-primary transition-colors"
+                            className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 text-left hover:text-primary transition-colors"
                           >
-                            <div className="text-slate-400">
+                            <div className="text-slate-400 shrink-0">
                               {isCourseExpanded ? (
-                                <ChevronDown className="w-5 h-5" />
+                                <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5" />
                               ) : (
-                                <ChevronRight className="w-5 h-5" />
+                                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
                               )}
                             </div>
-                            <BookOpen className="w-6 h-6 text-primary" />
-                            <span className="font-bold text-slate-900">
+                            <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
+                            <span className="font-bold text-slate-900 text-sm sm:text-base truncate flex-1 min-w-0">
                               {course.title}
                             </span>
                             <Badge
                               variant="outline"
-                              className={
+                              className={`shrink-0 text-[10px] sm:text-xs ${
                                 course.status === "published"
                                   ? "bg-green-50 text-green-700"
                                   : "bg-amber-50 text-amber-700"
-                              }
+                              }`}
                             >
                               {course.status}
                             </Badge>
                             {courseModules.length > 0 && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                              <span className="hidden sm:inline-block text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0">
                                 {courseModules.length} module
                                 {courseModules.length !== 1 ? "s" : ""}
                               </span>
                             )}
                             {dropTargetModuleId === course.id &&
                               draggedCourseId && (
-                                <span className="text-xs bg-primary text-white px-3 py-1 rounded-full font-semibold animate-pulse">
+                                <span className="hidden sm:inline-block text-xs bg-primary text-white px-3 py-1 rounded-full font-semibold animate-pulse whitespace-nowrap shrink-0">
                                   ↓ Drop Module Here
                                 </span>
                               )}
                           </button>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1 sm:gap-2 shrink-0">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1370,19 +1380,19 @@ export default function Modules() {
                                 setPreSelectedCourseId(course.id);
                                 setCreateOpen(true);
                               }}
-                              className="text-primary hover:text-primary hover:bg-primary/10"
+                              className="text-primary hover:text-primary hover:bg-primary/10 text-xs sm:text-sm"
                             >
-                              <Plus className="w-4 h-4 mr-1" />
-                              Add Module
+                              <Plus className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
+                              <span className="hidden sm:inline">Add Module</span>
                             </Button>
-                            <Link href={`/courses/${course.id}/edit`}>
+                            <Link href={`/courses/${course.id}/edit`} className="hidden sm:block">
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="text-slate-600 hover:text-primary hover:bg-primary/10"
+                                className="text-slate-600 hover:text-primary hover:bg-primary/10 text-xs sm:text-sm"
                               >
-                                <Pencil className="w-4 h-4 mr-1" />
-                                Edit Course
+                                <Pencil className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                                <span className="hidden md:inline">Edit Course</span>
                               </Button>
                             </Link>
                             <DropdownMenu>
@@ -1457,48 +1467,48 @@ export default function Modules() {
                                       : "hover:bg-white/50 hover:border-l-4 hover:border-l-primary"
                                   }`}
                                 >
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="flex items-center gap-3 flex-1">
-                                      <div className="text-slate-400 cursor-grab active:cursor-grabbing opacity-0 group-hover/module:opacity-100 transition-opacity">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                                      <div className="text-slate-400 cursor-grab active:cursor-grabbing opacity-0 group-hover/module:opacity-100 transition-opacity shrink-0">
                                         <GripVertical className="w-4 h-4" />
                                       </div>
                                       <div
-                                        className={`${module.accentClass} p-2 rounded-lg`}
+                                        className={`${module.accentClass} p-1.5 sm:p-2 rounded-lg shrink-0`}
                                       >
                                         {module.icon}
                                       </div>
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs text-slate-400 font-mono">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+                                          <span className="text-[10px] sm:text-xs text-slate-400 font-mono shrink-0">
                                             #{idx + 1}
                                           </span>
-                                          <span className="font-semibold text-slate-800">
+                                          <span className="font-semibold text-slate-800 text-sm sm:text-base truncate flex-1 min-w-0">
                                             {module.title}
                                           </span>
                                           <Badge
                                             variant="outline"
-                                            className={module.badgeClass}
+                                            className={`${module.badgeClass} text-[10px] sm:text-xs shrink-0`}
                                           >
                                             {module.status}
                                           </Badge>
                                         </div>
-                                        <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
-                                          <span className="flex items-center gap-1">
-                                            <FileText className="w-3.5 h-3.5" />
+                                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-slate-500">
+                                          <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                                             {module.lessons} lesson
                                             {module.lessons !== 1 ? "s" : ""}
                                           </span>
-                                          <span className="flex items-center gap-1">
-                                            <Clock className="w-3.5 h-3.5" />
+                                          <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                                             {module.duration}
                                           </span>
-                                          <span className="text-xs text-blue-600 font-medium">
+                                          <span className="hidden md:inline-flex items-center gap-1 text-xs text-blue-600 font-medium truncate">
                                             📚 {course.title}
                                           </span>
                                         </div>
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1 shrink-0">
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -1518,12 +1528,10 @@ export default function Modules() {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() =>
-                                          handleDeleteModule(
-                                            module.id,
-                                            course.id
-                                          )
-                                        }
+                                        onClick={() => {
+                                          setDeleteModuleId(module.id);
+                                          setDeleteModuleName(module.title);
+                                        }}
                                         className="h-7 px-2 text-slate-600 hover:text-red-600 hover:bg-red-50"
                                       >
                                         <Trash className="w-3.5 h-3.5" />
@@ -2163,7 +2171,7 @@ export default function Modules() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation for Grid View */}
       <AlertDialog
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}
@@ -2171,11 +2179,11 @@ export default function Modules() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-xl font-bold text-slate-900">
-              Delete Training Course?
+              Delete Training Module?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-slate-600">
               This action cannot be undone. This will permanently delete the
-              course and all associated lessons and progress data.
+              module and all associated lessons and progress data.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2187,17 +2195,60 @@ export default function Modules() {
                   await modulesService.deleteModule(deleteId);
                   push({
                     type: "success",
-                    message: "Course deleted successfully",
+                    message: "Module deleted successfully",
                   });
                   setDeleteId(null);
                   queryClient.invalidateQueries({ queryKey: ["modules"] });
+                  queryClient.invalidateQueries({ queryKey: ["courses"] });
+                  await refetchCourses();
                 } catch {
-                  push({ type: "error", message: "Failed to delete course" });
+                  push({ type: "error", message: "Failed to delete module" });
                 }
               }}
               className="bg-red-600 hover:bg-red-700"
             >
-              Delete Course
+              Delete Module
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Confirmation for List View Modules */}
+      <AlertDialog
+        open={!!deleteModuleId}
+        onOpenChange={(v) => {
+          if (!v) {
+            setDeleteModuleId(null);
+            setDeleteModuleName("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-bold text-slate-900">
+              Delete Module?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-600">
+              Are you sure you want to delete "<strong>{deleteModuleName}</strong>"? This action cannot be undone and will permanently remove the module and all its lessons.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteModuleId(null);
+                setDeleteModuleName("");
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!deleteModuleId) return;
+                await handleDeleteModule(deleteModuleId);
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete Module
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
