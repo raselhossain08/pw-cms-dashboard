@@ -124,182 +124,239 @@ export default function Dashboard() {
       label: "Add New Course",
       description: "Create learning content",
       color: "primary",
-      route: "/courses/new",
+      route: "/courses/create",
     },
     {
       icon: Play,
-      label: "Add Training Program",
-      description: "Create certification",
+      label: "Training Programs",
+      description: "Manage certifications",
       color: "accent",
-      route: "/training/new",
+      route: "/training-programs",
     },
     {
       icon: MessageSquare,
-      label: "Add Blog Post",
-      description: "Publish content",
+      label: "Manage Blog",
+      description: "CMS content",
       color: "blue",
-      route: "/cms/blog/new",
+      route: "/cms/home/blog",
     },
     {
       icon: Plane,
-      label: "Add Aircraft Listing",
-      description: "List for sale",
+      label: "Aircraft Brokerage",
+      description: "Manage listings",
       color: "yellow",
-      route: "/aircraft/new",
+      route: "/aircraft-brokerage",
     },
     {
       icon: ShoppingCart,
-      label: "Add Product",
-      description: "Shopify store",
+      label: "Shop Management",
+      description: "Products & orders",
       color: "purple",
-      route: "/shop/products/new",
+      route: "/shop",
     },
     {
-      icon: Megaphone,
-      label: "Send Announcement",
-      description: "Notify users",
+      icon: Users,
+      label: "Manage Students",
+      description: "View enrollments",
       color: "red",
-      route: "/notifications/new",
+      route: "/students",
     },
   ];
 
   useEffect(() => {
-    if (!charts || !window.Plotly) return;
+    console.log("=== CHART RENDERING ===");
+    console.log("Charts data:", charts);
+    console.log("Plotly loaded:", !!window.Plotly);
 
-    const enrollmentsData = [
-      {
-        type: "scatter",
-        mode: "lines",
-        x: charts.enrollments.x,
-        y: charts.enrollments.y,
-        line: { color: "#6366F1", width: 3 },
-        fill: "tozeroy",
-        fillcolor: "rgba(99, 102, 241, 0.1)",
-      },
-    ];
-    const enrollmentsLayout = {
-      margin: { t: 20, r: 20, b: 40, l: 40 },
-      plot_bgcolor: "#FFFFFF",
-      paper_bgcolor: "#FFFFFF",
-      showlegend: false,
-      xaxis: { showgrid: false },
-      yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
-    };
-    window.Plotly.newPlot(
-      "enrollments-chart",
-      enrollmentsData,
-      enrollmentsLayout,
-      {
+    if (!charts) {
+      console.warn("Charts data not ready");
+      return;
+    }
+
+    // Wait for Plotly to load if not available yet
+    if (!window.Plotly) {
+      console.warn("Waiting for Plotly to load...");
+      const checkPlotly = setInterval(() => {
+        if (window.Plotly) {
+          clearInterval(checkPlotly);
+          console.log("Plotly loaded, rendering charts now");
+          renderCharts();
+        }
+      }, 100);
+      return () => clearInterval(checkPlotly);
+    }
+
+    renderCharts();
+
+    function renderCharts() {
+      if (!window.Plotly || !charts) return;
+
+      console.log("Rendering charts with data:", {
+        enrollments: charts.enrollments,
+        revenue: charts.revenue,
+        progress: charts.progress,
+        traffic: charts.traffic,
+      });
+
+      const enrollmentsData = [
+        {
+          type: "scatter",
+          mode: "lines",
+          x: charts.enrollments.x,
+          y: charts.enrollments.y,
+          line: { color: "#6366F1", width: 3 },
+          fill: "tozeroy",
+          fillcolor: "rgba(99, 102, 241, 0.1)",
+        },
+      ];
+      const enrollmentsLayout = {
+        margin: { t: 20, r: 20, b: 40, l: 40 },
+        plot_bgcolor: "#FFFFFF",
+        paper_bgcolor: "#FFFFFF",
+        showlegend: false,
+        xaxis: { showgrid: false },
+        yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
+      };
+      window.Plotly.newPlot(
+        "enrollments-chart",
+        enrollmentsData,
+        enrollmentsLayout,
+        {
+          responsive: true,
+          displayModeBar: false,
+        }
+      );
+
+      const revenueData = [
+        {
+          type: "bar",
+          x: charts.revenue.x,
+          y: charts.revenue.y,
+          marker: { color: "#10B981" },
+        },
+      ];
+      const revenueLayout = {
+        margin: { t: 20, r: 20, b: 40, l: 60 },
+        plot_bgcolor: "#FFFFFF",
+        paper_bgcolor: "#FFFFFF",
+        showlegend: false,
+        xaxis: { showgrid: false },
+        yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
+      };
+      window.Plotly.newPlot("sales-chart", revenueData, revenueLayout, {
         responsive: true,
         displayModeBar: false,
+      });
+
+      // Only render aircraft chart if we have data
+      if (charts.aircraftInquiries.x.length > 0) {
+        const aircraftData = [
+          {
+            type: "bar",
+            x: charts.aircraftInquiries.x,
+            y: charts.aircraftInquiries.y,
+            marker: { color: "#3B82F6" },
+          },
+        ];
+        const aircraftLayout = {
+          margin: { t: 20, r: 20, b: 40, l: 60 },
+          plot_bgcolor: "#FFFFFF",
+          paper_bgcolor: "#FFFFFF",
+          showlegend: false,
+          xaxis: { showgrid: false },
+          yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
+        };
+        window.Plotly.newPlot("aircraft-chart", aircraftData, aircraftLayout, {
+          responsive: true,
+          displayModeBar: false,
+        });
+      } else {
+        // Show "No data" message
+        const chartEl = document.getElementById("aircraft-chart");
+        if (chartEl) {
+          chartEl.innerHTML =
+            '<div style="display:flex;align-items:center;justify-center;height:300px;color:#9CA3AF">No aircraft inquiry data available</div>';
+        }
       }
-    );
 
-    const revenueData = [
-      {
+      // Only render AI performance chart if we have data
+      if (charts.aiPerformance.x.length > 0) {
+        const aiPerfData = [
+          {
+            type: "scatter",
+            mode: "lines+markers",
+            x: charts.aiPerformance.x,
+            y: charts.aiPerformance.y,
+            line: { color: "#8B5CF6", width: 3 },
+            marker: { size: 8 },
+          },
+        ];
+        const aiPerfLayout = {
+          margin: { t: 20, r: 20, b: 40, l: 40 },
+          plot_bgcolor: "#FFFFFF",
+          paper_bgcolor: "#FFFFFF",
+          showlegend: false,
+          xaxis: { showgrid: false },
+          yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
+        };
+        window.Plotly.newPlot(
+          "ai-performance-chart",
+          aiPerfData,
+          aiPerfLayout,
+          {
+            responsive: true,
+            displayModeBar: false,
+          }
+        );
+      } else {
+        const chartEl = document.getElementById("ai-performance-chart");
+        if (chartEl) {
+          chartEl.innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#9CA3AF">No AI performance data available</div>';
+        }
+      }
+
+      const progressData = [
+        {
+          type: "pie",
+          labels: charts.progress.labels,
+          values: charts.progress.values,
+          marker: { colors: ["#10B981", "#F59E0B", "#EF4444"] },
+        },
+      ];
+      const progressLayout = {
+        margin: { t: 20, r: 20, b: 20, l: 20 },
+        plot_bgcolor: "#FFFFFF",
+        paper_bgcolor: "#FFFFFF",
+        showlegend: true,
+        legend: { orientation: "h", y: -0.1 },
+      };
+      window.Plotly.newPlot("progress-chart", progressData, progressLayout, {
+        responsive: true,
+        displayModeBar: false,
+      });
+
+      const trafficData = charts.traffic.series.map((s) => ({
         type: "bar",
-        x: charts.revenue.x,
-        y: charts.revenue.y,
-        marker: { color: "#10B981" },
-      },
-    ];
-    const revenueLayout = {
-      margin: { t: 20, r: 20, b: 40, l: 60 },
-      plot_bgcolor: "#FFFFFF",
-      paper_bgcolor: "#FFFFFF",
-      showlegend: false,
-      xaxis: { showgrid: false },
-      yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
-    };
-    window.Plotly.newPlot("sales-chart", revenueData, revenueLayout, {
-      responsive: true,
-      displayModeBar: false,
-    });
-
-    const aircraftData = [
-      {
-        type: "bar",
-        x: charts.aircraftInquiries.x,
-        y: charts.aircraftInquiries.y,
-        marker: { color: "#3B82F6" },
-      },
-    ];
-    const aircraftLayout = {
-      margin: { t: 20, r: 20, b: 40, l: 60 },
-      plot_bgcolor: "#FFFFFF",
-      paper_bgcolor: "#FFFFFF",
-      showlegend: false,
-      xaxis: { showgrid: false },
-      yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
-    };
-    window.Plotly.newPlot("aircraft-chart", aircraftData, aircraftLayout, {
-      responsive: true,
-      displayModeBar: false,
-    });
-
-    const aiPerfData = [
-      {
-        type: "scatter",
-        mode: "lines+markers",
-        x: charts.aiPerformance.x,
-        y: charts.aiPerformance.y,
-        line: { color: "#8B5CF6", width: 3 },
-        marker: { size: 8 },
-      },
-    ];
-    const aiPerfLayout = {
-      margin: { t: 20, r: 20, b: 40, l: 40 },
-      plot_bgcolor: "#FFFFFF",
-      paper_bgcolor: "#FFFFFF",
-      showlegend: false,
-      xaxis: { showgrid: false },
-      yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
-    };
-    window.Plotly.newPlot("ai-performance-chart", aiPerfData, aiPerfLayout, {
-      responsive: true,
-      displayModeBar: false,
-    });
-
-    const progressData = [
-      {
-        type: "pie",
-        labels: charts.progress.labels,
-        values: charts.progress.values,
-        marker: { colors: ["#10B981", "#F59E0B", "#EF4444"] },
-      },
-    ];
-    const progressLayout = {
-      margin: { t: 20, r: 20, b: 20, l: 20 },
-      plot_bgcolor: "#FFFFFF",
-      paper_bgcolor: "#FFFFFF",
-      showlegend: true,
-      legend: { orientation: "h", y: -0.1 },
-    };
-    window.Plotly.newPlot("progress-chart", progressData, progressLayout, {
-      responsive: true,
-      displayModeBar: false,
-    });
-
-    const trafficData = charts.traffic.series.map((s) => ({
-      type: "bar",
-      name: s.name,
-      x: charts.traffic.categories,
-      y: s.values,
-    }));
-    const trafficLayout = {
-      margin: { t: 20, r: 20, b: 40, l: 60 },
-      barmode: "group",
-      plot_bgcolor: "#FFFFFF",
-      paper_bgcolor: "#FFFFFF",
-      showlegend: true,
-      xaxis: { showgrid: false },
-      yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
-      legend: { orientation: "h" },
-    } as const;
-    window.Plotly.newPlot("traffic-chart", trafficData, trafficLayout, {
-      responsive: true,
-      displayModeBar: false,
-    });
+        name: s.name,
+        x: charts.traffic.categories,
+        y: s.values,
+      }));
+      const trafficLayout = {
+        margin: { t: 20, r: 20, b: 40, l: 60 },
+        barmode: "group",
+        plot_bgcolor: "#FFFFFF",
+        paper_bgcolor: "#FFFFFF",
+        showlegend: true,
+        xaxis: { showgrid: false },
+        yaxis: { showgrid: true, gridcolor: "#e5e7eb" },
+        legend: { orientation: "h" },
+      } as const;
+      window.Plotly.newPlot("traffic-chart", trafficData, trafficLayout, {
+        responsive: true,
+        displayModeBar: false,
+      });
+    }
   }, [charts]);
 
   return (
@@ -581,14 +638,41 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 {quickActions.map((action, index) => {
                   const Icon = action.icon;
-                  const colorClasses = {
-                    primary: "bg-primary/5 hover:bg-primary/10 bg-primary",
-                    accent: "bg-accent/5 hover:bg-accent/10 bg-accent",
-                    blue: "bg-blue-50 hover:bg-blue-100 bg-blue-500",
-                    yellow: "bg-yellow-50 hover:bg-yellow-100 bg-yellow-500",
-                    purple: "bg-purple-50 hover:bg-purple-100 bg-purple-500",
-                    red: "bg-red-50 hover:bg-red-100 bg-red-500",
+                  const colorConfig = {
+                    primary: {
+                      bg: "bg-primary/5",
+                      hover: "hover:bg-primary/10",
+                      icon: "bg-primary",
+                    },
+                    accent: {
+                      bg: "bg-accent/5",
+                      hover: "hover:bg-accent/10",
+                      icon: "bg-accent",
+                    },
+                    blue: {
+                      bg: "bg-blue-50",
+                      hover: "hover:bg-blue-100",
+                      icon: "bg-blue-500",
+                    },
+                    yellow: {
+                      bg: "bg-yellow-50",
+                      hover: "hover:bg-yellow-100",
+                      icon: "bg-yellow-500",
+                    },
+                    purple: {
+                      bg: "bg-purple-50",
+                      hover: "hover:bg-purple-100",
+                      icon: "bg-purple-500",
+                    },
+                    red: {
+                      bg: "bg-red-50",
+                      hover: "hover:bg-red-100",
+                      icon: "bg-red-500",
+                    },
                   };
+
+                  const colors =
+                    colorConfig[action.color as keyof typeof colorConfig];
 
                   return (
                     <button
@@ -601,22 +685,10 @@ export default function Dashboard() {
                         });
                         router.push(action.route);
                       }}
-                      className={`flex flex-col items-center space-y-3 p-4 ${
-                        colorClasses[
-                          action.color as keyof typeof colorClasses
-                        ].split(" ")[0]
-                      } ${
-                        colorClasses[
-                          action.color as keyof typeof colorClasses
-                        ].split(" ")[1]
-                      } rounded-lg transition-colors`}
+                      className={`flex flex-col items-center space-y-3 p-4 ${colors.bg} ${colors.hover} rounded-lg transition-colors`}
                     >
                       <div
-                        className={`w-12 h-12 ${
-                          colorClasses[
-                            action.color as keyof typeof colorClasses
-                          ].split(" ")[2]
-                        } rounded-lg flex items-center justify-center`}
+                        className={`w-12 h-12 ${colors.icon} rounded-lg flex items-center justify-center`}
                       >
                         <Icon className="text-white w-6 h-6" />
                       </div>
@@ -639,7 +711,17 @@ export default function Dashboard() {
                 <h3 className="text-lg font-semibold text-secondary">
                   Recent Activity
                 </h3>
-                <button className="text-primary hover:text-primary/80 text-sm font-medium">
+                <button
+                  onClick={() => {
+                    toast({
+                      message: "Navigating to Activity Logs...",
+                      type: "info",
+                      duration: 2000,
+                    });
+                    router.push("/activity-logs");
+                  }}
+                  className="text-primary hover:text-primary/80 text-sm font-medium transition-colors"
+                >
                   View All
                 </button>
               </div>
@@ -823,14 +905,41 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {quickActions.map((action, index) => {
                   const Icon = action.icon;
-                  const colorClasses = {
-                    primary: "bg-primary/5 hover:bg-primary/10 bg-primary",
-                    accent: "bg-accent/5 hover:bg-accent/10 bg-accent",
-                    blue: "bg-blue-50 hover:bg-blue-100 bg-blue-500",
-                    yellow: "bg-yellow-50 hover:bg-yellow-100 bg-yellow-500",
-                    purple: "bg-purple-50 hover:bg-purple-100 bg-purple-500",
-                    red: "bg-red-50 hover:bg-red-100 bg-red-500",
+                  const colorConfig = {
+                    primary: {
+                      bg: "bg-primary/5",
+                      hover: "hover:bg-primary/10",
+                      icon: "bg-primary",
+                    },
+                    accent: {
+                      bg: "bg-accent/5",
+                      hover: "hover:bg-accent/10",
+                      icon: "bg-accent",
+                    },
+                    blue: {
+                      bg: "bg-blue-50",
+                      hover: "hover:bg-blue-100",
+                      icon: "bg-blue-500",
+                    },
+                    yellow: {
+                      bg: "bg-yellow-50",
+                      hover: "hover:bg-yellow-100",
+                      icon: "bg-yellow-500",
+                    },
+                    purple: {
+                      bg: "bg-purple-50",
+                      hover: "hover:bg-purple-100",
+                      icon: "bg-purple-500",
+                    },
+                    red: {
+                      bg: "bg-red-50",
+                      hover: "hover:bg-red-100",
+                      icon: "bg-red-500",
+                    },
                   };
+
+                  const colors =
+                    colorConfig[action.color as keyof typeof colorConfig];
 
                   return (
                     <button
@@ -844,22 +953,10 @@ export default function Dashboard() {
                         });
                         router.push(action.route);
                       }}
-                      className={`flex items-center space-x-4 p-4 ${
-                        colorClasses[
-                          action.color as keyof typeof colorClasses
-                        ].split(" ")[0]
-                      } ${
-                        colorClasses[
-                          action.color as keyof typeof colorClasses
-                        ].split(" ")[1]
-                      } rounded-lg transition-all transform hover:scale-105`}
+                      className={`flex items-center space-x-4 p-4 ${colors.bg} ${colors.hover} rounded-lg transition-all transform hover:scale-105`}
                     >
                       <div
-                        className={`w-12 h-12 ${
-                          colorClasses[
-                            action.color as keyof typeof colorClasses
-                          ].split(" ")[2]
-                        } rounded-lg flex items-center justify-center shrink-0`}
+                        className={`w-12 h-12 ${colors.icon} rounded-lg flex items-center justify-center shrink-0`}
                       >
                         <Icon className="text-white w-6 h-6" />
                       </div>
