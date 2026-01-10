@@ -296,6 +296,18 @@ class InstructorsService {
     });
     return response.data;
   }
+
+  // Send broadcast announcement to instructors
+  async sendBroadcast(data: { subject: string; message: string; instructorIds?: string[] }) {
+    const response = await apiClient.post("/admin/instructors/broadcast", data);
+    return response.data;
+  }
+
+  // Send individual message to instructor
+  async sendMessage(instructorId: string, data: { subject: string; message: string; type?: 'email' | 'notification' | 'both' }) {
+    const response = await apiClient.post(`/admin/instructors/${instructorId}/message`, data);
+    return response.data;
+  }
 }
 
 export const instructorsService = new InstructorsService();

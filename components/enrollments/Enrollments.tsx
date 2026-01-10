@@ -35,6 +35,7 @@ import {
   CheckSquare,
   RefreshCw,
   FileText,
+  ChevronsUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +59,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   LineChart,
@@ -73,6 +87,13 @@ import { useToast } from "@/context/ToastContext";
 import { Enrollment } from "@/services/enrollments.service";
 import { coursesService } from "@/services/courses.service";
 import { usersService } from "@/services/users.service";
+import { enrollmentsService } from "@/services/enrollments.service";
+import {
+  formatDateToYYYYMMDD,
+  formatDateToReadable,
+  formatRelativeTime,
+  isValidDate,
+} from "@/lib/date-utils";
 
 export default function Enrollments() {
   const {
@@ -168,6 +189,7 @@ export default function Enrollments() {
 
   // Dropdown data
   const [courses, setCourses] = React.useState<any[]>([]);
+  const [availableCourses, setAvailableCourses] = React.useState<any[]>([]);
   const [students, setStudents] = React.useState<any[]>([]);
   const [instructors, setInstructors] = React.useState<any[]>([]);
   const [coursesLoading, setCoursesLoading] = React.useState(false);
@@ -175,6 +197,12 @@ export default function Enrollments() {
   const [trendRange, setTrendRange] = React.useState<
     "7d" | "30d" | "90d" | "year"
   >("30d");
+
+  // Combobox states
+  const [studentOpen, setStudentOpen] = React.useState(false);
+  const [courseOpen, setCourseOpen] = React.useState(false);
+  const [studentSearch, setStudentSearch] = React.useState("");
+  const [courseSearch, setCourseSearch] = React.useState("");
 
   // Load initial data
   React.useEffect(() => {
@@ -211,16 +239,35 @@ export default function Enrollments() {
       setCoursesLoading(true);
       setStudentsLoading(true);
 
+      // Load all data, but handle available courses separately
       const [coursesData, studentsData, instructorsData] = await Promise.all([
         coursesService.getAllCourses({ limit: 100 }),
         usersService.getAllUsers({ role: "student", limit: 100 }),
         usersService.getAllUsers({ role: "instructor", limit: 100 }),
       ]);
 
-      setCourses((coursesData as any).courses || []);
+      console.log("Courses data received:", coursesData);
+      const extractedCourses = (coursesData as any).data?.courses || (coursesData as any).courses || [];
+      console.log("Extracted courses:", extractedCourses);
+
+      setCourses(extractedCourses);
       setStudents((studentsData as any).users || []);
       setInstructors((instructorsData as any).users || []);
+
+      // Try to load available courses (may not be available yet)
+      try {
+        const availableCoursesData =
+          await enrollmentsService.getAvailableCourses({ limit: 100 });
+        setAvailableCourses(availableCoursesData.courses || []);
+      } catch (availableCoursesError) {
+        // Fallback to regular courses if available courses endpoint doesn't exist
+        console.log(
+          "Available courses endpoint not available, using all courses"
+        );
+        setAvailableCourses((coursesData as any).data?.courses || (coursesData as any).courses || []);
+      }
     } catch (error) {
+      console.error("Error loading dropdown data:", error);
       push({ type: "error", message: "Failed to load dropdown data" });
     } finally {
       setCoursesLoading(false);
@@ -483,13 +530,21 @@ export default function Enrollments() {
     );
   };
 
-  const formatDate = (date: string | Date | undefined) => {
+  // Date formatting function - now using utility functions
+  const formatDate = (
+    date: string | Date | undefined,
+    format: "readable" | "yyyy-mm-dd" | "relative" = "readable"
+  ) => {
     if (!date) return "N/A";
-    return new Date(date).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+
+    switch (format) {
+      case "yyyy-mm-dd":
+        return formatDateToYYYYMMDD(date);
+      case "relative":
+        return formatRelativeTime(date);
+      default:
+        return formatDateToReadable(date);
+    }
   };
 
   const getStudentName = (enrollment: Enrollment) => {
@@ -1038,7 +1093,6 @@ export default function Enrollments() {
                 </div>
                 <div className="mb-4">
                   <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
-                    <span>{it.course?.description || "No description"}</span>
                     {getStatusBadge(it.status)}
                   </div>
                   <div className="flex items-center space-x-2 text-sm text-gray-600">
@@ -1191,9 +1245,6 @@ export default function Enrollments() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
                           {getCourseName(it)}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {it.course?.description || "No description"}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -1383,39 +1434,64 @@ export default function Enrollments() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <button
             onClick={() => setCreateOpen(true)}
-            className="flex items-center space-x-3 p-4 bg-primary/5 hover:bg-primary/10 rounded-lg transition-colors"
+            disabled={formLoading}
+            className="flex items-center space-x-3 p-4 bg-primary/5 hover:bg-primary/10 rounded-lg transition-all hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title="Add a new student enrollment to a course"
           >
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <UserPlus className="text-white w-5 h-5" />
+            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shrink-0">
+              {formLoading ? (
+                <Loader2 className="text-white w-5 h-5 animate-spin" />
+              ) : (
+                <UserPlus className="text-white w-5 h-5" />
+              )}
             </div>
-            <div className="text-left">
+            <div className="text-left flex-1">
               <p className="font-medium text-secondary">New Enrollment</p>
               <p className="text-sm text-gray-600">Add student to course</p>
             </div>
           </button>
           <button
             onClick={() => handleExport("csv")}
-            className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            disabled={loading || enrollments.length === 0}
+            className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title="Export enrollment data as CSV file"
           >
-            <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-              <Download className="text-white w-5 h-5" />
+            <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center shrink-0">
+              {loading ? (
+                <Loader2 className="text-white w-5 h-5 animate-spin" />
+              ) : (
+                <Download className="text-white w-5 h-5" />
+              )}
             </div>
-            <div className="text-left">
+            <div className="text-left flex-1">
               <p className="font-medium text-secondary">Export Data</p>
               <p className="text-sm text-gray-600">Enrollment reports</p>
             </div>
           </button>
           <button
-            onClick={() => {
-              fetchStats();
-              fetchDistribution();
+            onClick={async () => {
+              await Promise.all([
+                fetchStats(),
+                fetchDistribution(),
+                fetchTrends(trendRange),
+              ]);
+              push({
+                type: "success",
+                message: "Analytics refreshed successfully",
+              });
             }}
-            className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors"
+            disabled={statsLoading || distributionLoading || trendsLoading}
+            className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-all hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title="Refresh enrollment statistics and analytics"
           >
-            <div className="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center">
-              <BarChart2 className="text-white w-5 h-5" />
+            <div className="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center shrink-0">
+              {statsLoading || distributionLoading || trendsLoading ? (
+                <Loader2 className="text-white w-5 h-5 animate-spin" />
+              ) : (
+                <RefreshCw className="text-white w-5 h-5" />
+              )}
             </div>
-            <div className="text-left">
+            <div className="text-left flex-1">
               <p className="font-medium text-secondary">Refresh Analytics</p>
               <p className="text-sm text-gray-600">Update statistics</p>
             </div>
@@ -1426,14 +1502,24 @@ export default function Enrollments() {
               setCourseFilter("all");
               setStatusFilter("all");
               setInstructorFilter("all");
+              setSortBy("createdAt");
+              setSortOrder("desc");
               setPage(1);
+              clearAdvancedFilters();
+              push({ type: "success", message: "All filters cleared" });
             }}
-            className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg transition-colors"
+            disabled={loading}
+            className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg transition-all hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title="Reset all filters to default values"
           >
-            <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-              <X className="text-white w-5 h-5" />
+            <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center shrink-0">
+              {loading ? (
+                <Loader2 className="text-white w-5 h-5 animate-spin" />
+              ) : (
+                <X className="text-white w-5 h-5" />
+              )}
             </div>
-            <div className="text-left">
+            <div className="text-left flex-1">
               <p className="font-medium text-secondary">Clear Filters</p>
               <p className="text-sm text-gray-600">Reset all filters</p>
             </div>
@@ -1451,71 +1537,215 @@ export default function Enrollments() {
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Student Selector */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Student *
                 </label>
-                <select
-                  value={createForm.studentId}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, studentId: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  required
-                  disabled={studentsLoading || formLoading}
-                >
-                  <option value="">Select student</option>
-                  {students.map((student: any) => (
-                    <option key={student._id} value={student._id}>
-                      {student.name ||
-                        `${student.firstName || ""} ${
-                          student.lastName || ""
-                        }`.trim() ||
-                        student.email}
-                    </option>
-                  ))}
-                </select>
+                <Popover open={studentOpen} onOpenChange={setStudentOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={studentOpen}
+                      className="w-full justify-between"
+                      disabled={studentsLoading || formLoading}
+                    >
+                      {createForm.studentId
+                        ? (() => {
+                            const student = students.find(
+                              (s) => s._id === createForm.studentId
+                            );
+                            return (
+                              student?.name ||
+                              `${student?.firstName || ""} ${
+                                student?.lastName || ""
+                              }`.trim() ||
+                              student?.email ||
+                              "Select student"
+                            );
+                          })()
+                        : "Select student"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[400px] p-0">
+                    <Command>
+                      <CommandInput
+                        placeholder="Search students..."
+                        value={studentSearch}
+                        onValueChange={setStudentSearch}
+                      />
+                      <CommandList>
+                        <CommandEmpty>No student found.</CommandEmpty>
+                        <CommandGroup>
+                          {students
+                            .filter((student) => {
+                              const searchLower = studentSearch.toLowerCase();
+                              const name =
+                                student.name ||
+                                `${student.firstName || ""} ${
+                                  student.lastName || ""
+                                }`.trim();
+                              const email = student.email || "";
+                              return (
+                                name.toLowerCase().includes(searchLower) ||
+                                email.toLowerCase().includes(searchLower)
+                              );
+                            })
+                            .map((student) => (
+                              <CommandItem
+                                key={student._id}
+                                value={student._id}
+                                onSelect={(currentValue) => {
+                                  setCreateForm({
+                                    ...createForm,
+                                    studentId: currentValue,
+                                  });
+                                  setStudentOpen(false);
+                                  setStudentSearch("");
+                                }}
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${
+                                    createForm.studentId === student._id
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  }`}
+                                />
+                                <div className="flex flex-col">
+                                  <span className="font-medium">
+                                    {student.name ||
+                                      `${student.firstName || ""} ${
+                                        student.lastName || ""
+                                      }`.trim()}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {student.email}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
+
+              {/* Course Selector */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Course *
                 </label>
-                <select
-                  value={createForm.courseId}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, courseId: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  required
-                  disabled={coursesLoading || formLoading}
-                >
-                  <option value="">Select course</option>
-                  {courses.map((course: any) => (
-                    <option key={course._id} value={course._id}>
-                      {course.title}
-                    </option>
-                  ))}
-                </select>
+                <Popover open={courseOpen} onOpenChange={setCourseOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={courseOpen}
+                      className="w-full justify-between"
+                      disabled={coursesLoading || formLoading}
+                    >
+                      {createForm.courseId
+                        ? (() => {
+                            const course = courses.find(
+                              (c) => c._id === createForm.courseId
+                            );
+                            return course?.title || "Select course";
+                          })()
+                        : "Select course"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[400px] p-0">
+                    <Command>
+                      <CommandInput
+                        placeholder="Search courses..."
+                        value={courseSearch}
+                        onValueChange={setCourseSearch}
+                      />
+                      <CommandList>
+                        <CommandEmpty>No course found.</CommandEmpty>
+                        <CommandGroup>
+                          {courses
+                            .filter((course) =>
+                              course.title
+                                .toLowerCase()
+                                .includes(courseSearch.toLowerCase())
+                            )
+                            .map((course) => (
+                              <CommandItem
+                                key={course._id}
+                                value={course._id}
+                                onSelect={(currentValue) => {
+                                  setCreateForm({
+                                    ...createForm,
+                                    courseId: currentValue,
+                                  });
+                                  setCourseOpen(false);
+                                  setCourseSearch("");
+                                }}
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${
+                                    createForm.courseId === course._id
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  }`}
+                                />
+                                <div className="flex flex-col flex-1">
+                                  <span className="font-medium">
+                                    {course.title}
+                                  </span>
+                                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <span>{course.level}</span>
+                                    <span>•</span>
+                                    <span>
+                                      {course.isFree
+                                        ? "Free"
+                                        : `$${course.price}`}
+                                    </span>
+                                    <span>•</span>
+                                    <span>{course.totalLessons} lessons</span>
+                                  </div>
+                                </div>
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {courses.length === 0 && !coursesLoading && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    No courses available
+                  </p>
+                )}
               </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Status
               </label>
-              <select
+              <Select
                 value={createForm.status}
-                onChange={(e) =>
+                onValueChange={(value) =>
                   setCreateForm({
                     ...createForm,
-                    status: e.target.value as "active" | "pending",
+                    status: value as "active" | "pending",
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                 disabled={formLoading}
               >
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex justify-end gap-3">
               <Button
@@ -1528,6 +1758,8 @@ export default function Enrollments() {
                     courseId: "",
                     status: "active",
                   });
+                  setStudentSearch("");
+                  setCourseSearch("");
                 }}
                 disabled={formLoading}
               >
@@ -1599,10 +1831,6 @@ export default function Enrollments() {
                   <div className="p-3 bg-gray-50 rounded-lg">
                     <p className="font-medium">
                       {getCourseName(selectedEnrollment)}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {selectedEnrollment.course?.description ||
-                        "No description"}
                     </p>
                   </div>
                 </div>

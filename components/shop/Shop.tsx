@@ -34,6 +34,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useProducts } from "@/hooks/useProducts";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import type { Product } from "@/lib/types/product";
 import ProductForm from "./ProductForm";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
@@ -96,6 +97,9 @@ export default function Shop() {
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [typeFilter, setTypeFilter] = React.useState<string>("all");
+  const [useInfiniteScrollMode, setUseInfiniteScrollMode] =
+    React.useState(false);
+  const [allProducts, setAllProducts] = React.useState<Product[]>([]);
   const debouncedSearch = useDebounce(search, 500);
 
   const {
@@ -222,6 +226,7 @@ export default function Shop() {
   // Update filters and reset page
   React.useEffect(() => {
     setPage(1);
+    setAllProducts([]); // Clear products when filters change
     fetchProducts({
       page: 1,
       limit,
@@ -229,7 +234,61 @@ export default function Shop() {
       status: statusFilter !== "all" ? statusFilter : undefined,
       type: typeFilter !== "all" ? typeFilter : undefined,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, statusFilter, typeFilter, limit]);
+
+  // Update allProducts when apiProducts change
+  React.useEffect(() => {
+    if (useInfiniteScrollMode && page === 1) {
+      // Reset for new filter/search
+      setAllProducts(apiProducts);
+    } else if (useInfiniteScrollMode && page > 1) {
+      // Append for infinite scroll
+      setAllProducts((prev) => {
+        // Avoid duplicates
+        const newProducts = apiProducts.filter(
+          (p) => !prev.some((existing) => existing._id === p._id)
+        );
+        return [...prev, ...newProducts];
+      });
+    } else {
+      // Traditional pagination mode
+      setAllProducts(apiProducts);
+    }
+  }, [apiProducts, page, useInfiniteScrollMode]);
+
+  // Handle infinite scroll load more
+  const handleLoadMore = React.useCallback(() => {
+    if (!loading && pagination.page < pagination.totalPages) {
+      const nextPage = pagination.page + 1;
+      setPage(nextPage);
+      fetchProducts({
+        page: nextPage,
+        limit,
+        search: debouncedSearch || undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        type: typeFilter !== "all" ? typeFilter : undefined,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    loading,
+    pagination.page,
+    pagination.totalPages,
+    limit,
+    debouncedSearch,
+    statusFilter,
+    typeFilter,
+  ]);
+
+  // Infinite scroll hook
+  const { observerTarget } = useInfiniteScroll({
+    onLoadMore: handleLoadMore,
+    hasMore: pagination.page < pagination.totalPages,
+    isLoading: loading,
+    threshold: 0.1,
+    rootMargin: "300px",
+  });
 
   // Handle view product
   const handleViewProduct = async (productId: string) => {
@@ -307,7 +366,8 @@ export default function Shop() {
 
   // Convert API products to UI format
   const products: ProductItem[] = React.useMemo(() => {
-    return apiProducts.map((p) => ({
+    const sourceProducts = useInfiniteScrollMode ? allProducts : apiProducts;
+    return sourceProducts.map((p) => ({
       id: p._id,
       title: p.title,
       description: p.description,
@@ -318,7 +378,7 @@ export default function Shop() {
       sales: p.soldCount || 0,
       imageUrl: p.images && p.images.length > 0 ? p.images[0] : undefined,
     }));
-  }, [apiProducts]);
+  }, [allProducts, apiProducts, useInfiniteScrollMode]);
 
   const filtered = React.useMemo(() => {
     return products
@@ -623,6 +683,23 @@ export default function Shop() {
                 <List className="w-4 h-4" />
               </Button>
             </div>
+            <Button
+              variant={useInfiniteScrollMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setUseInfiniteScrollMode(!useInfiniteScrollMode);
+                setPage(1);
+                setAllProducts([]);
+              }}
+              className="ml-2"
+              title={
+                useInfiniteScrollMode
+                  ? "Disable infinite scroll"
+                  : "Enable infinite scroll"
+              }
+            >
+              {useInfiniteScrollMode ? "∞ On" : "∞ Off"}
+            </Button>
           </div>
         </div>
         <div className="flex items-center gap-2 mt-4">
@@ -652,18 +729,73 @@ export default function Shop() {
           )}
         </div>
         {error && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600" />
-            <p className="text-sm text-red-600">{error}</p>
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-800">
+                  Error Loading Products
+                </p>
+                <p className="text-sm text-red-600 mt-1">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    refreshProducts();
+                    fetchStats();
+                  }}
+                  className="mt-2 text-red-600 border-red-300 hover:bg-red-50"
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Retry
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {loading ? (
+      {loading && page === 1 ? (
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
             <p className="text-gray-600">Loading products...</p>
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-md border border-gray-200 mb-8 p-12">
+          <div className="text-center max-w-md mx-auto">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Box className="w-10 h-10 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              {search || statusFilter !== "all" || typeFilter !== "all"
+                ? "No Products Found"
+                : "No Products Yet"}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {search || statusFilter !== "all" || typeFilter !== "all"
+                ? "Try adjusting your filters or search terms to find what you're looking for."
+                : "Get started by creating your first product."}
+            </p>
+            {search || statusFilter !== "all" || typeFilter !== "all" ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setTypeFilter("all");
+                  setSearch("");
+                }}
+              >
+                <X className="w-4 h-4 mr-2" />
+                Clear Filters
+              </Button>
+            ) : (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Your First Product
+              </Button>
+            )}
           </div>
         </div>
       ) : viewMode === "table" ? (
@@ -811,7 +943,7 @@ export default function Shop() {
               </tbody>
             </table>
           </div>
-          {pagination.totalPages > 1 && (
+          {!useInfiniteScrollMode && pagination.totalPages > 1 && (
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
               <div className="text-sm text-gray-600">
                 Showing {(page - 1) * limit + 1} to{" "}
@@ -842,6 +974,32 @@ export default function Shop() {
                 </Button>
               </div>
             </div>
+          )}
+          {useInfiniteScrollMode && (
+            <>
+              {/* Infinite Scroll Observer Target */}
+              <div
+                ref={observerTarget}
+                className="h-10 flex items-center justify-center"
+              >
+                {loading && pagination.page < pagination.totalPages && (
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-sm">Loading more products...</span>
+                  </div>
+                )}
+              </div>
+
+              {/* End of list indicator */}
+              {!loading &&
+                pagination.page >= pagination.totalPages &&
+                filtered.length > 0 && (
+                  <div className="p-4 text-center text-gray-500 text-sm border-t border-gray-200">
+                    You've reached the end of the product catalog (
+                    {pagination.total} total products)
+                  </div>
+                )}
+            </>
           )}
         </div>
       ) : (
@@ -950,6 +1108,33 @@ export default function Shop() {
               Create a new course, e-book, or merchandise
             </p>
           </div>
+
+          {/* Infinite Scroll Observer Target for Grid View */}
+          {useInfiniteScrollMode && (
+            <>
+              <div
+                ref={observerTarget}
+                className="col-span-full h-10 flex items-center justify-center"
+              >
+                {loading && pagination.page < pagination.totalPages && (
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-sm">Loading more products...</span>
+                  </div>
+                )}
+              </div>
+
+              {/* End of list indicator */}
+              {!loading &&
+                pagination.page >= pagination.totalPages &&
+                filtered.length > 0 && (
+                  <div className="col-span-full p-4 text-center text-gray-500 text-sm">
+                    You've reached the end of the product catalog (
+                    {pagination.total} total products)
+                  </div>
+                )}
+            </>
+          )}
         </div>
       )}
 

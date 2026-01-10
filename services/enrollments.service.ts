@@ -322,6 +322,108 @@ class EnrollmentsService {
         }>(`/enrollments/admin/${enrollmentId}/payment-details`);
         return response.data;
     }
+
+    // ==================== Quick Actions ====================
+
+    // Download course materials
+    async downloadMaterials(enrollmentId: string): Promise<{
+        success: boolean;
+        materials: Array<{
+            name: string;
+            type: string;
+            url: string;
+            size?: string;
+        }>;
+    }> {
+        const response = await apiClient.post<{
+            success: boolean;
+            materials: Array<{
+                name: string;
+                type: string;
+                url: string;
+                size?: string;
+            }>;
+        }>(`/enrollments/${enrollmentId}/download-materials`);
+        return response.data;
+    }
+
+    // Resend welcome email
+    async resendWelcomeEmail(enrollmentId: string): Promise<{
+        success: boolean;
+        message: string;
+    }> {
+        const response = await apiClient.post<{
+            success: boolean;
+            message: string;
+        }>(`/enrollments/${enrollmentId}/resend-welcome`);
+        return response.data;
+    }
+
+    // Extend access
+    async extendAccess(enrollmentId: string, days: number, reason?: string): Promise<Enrollment> {
+        const response = await apiClient.patch<Enrollment>(
+            `/enrollments/admin/${enrollmentId}/extend-access`,
+            { days, reason }
+        );
+        return response.data;
+    }
+
+    // Reset progress
+    async resetProgress(enrollmentId: string, reason?: string): Promise<Enrollment> {
+        const response = await apiClient.post<Enrollment>(
+            `/enrollments/admin/${enrollmentId}/reset-progress`,
+            { reason }
+        );
+        return response.data;
+    }
+
+    // Get available courses (courses not yet enrolled in)
+    async getAvailableCourses(params: {
+        category?: string;
+        level?: string;
+        isFree?: boolean;
+        search?: string;
+        page?: number;
+        limit?: number;
+    } = {}): Promise<{
+        courses: Array<{
+            _id: string;
+            title: string;
+            slug: string;
+            description?: string;
+            thumbnail?: string;
+            price: number;
+            originalPrice?: number;
+            isFree: boolean;
+            rating: number;
+            reviewCount: number;
+            studentCount: number;
+            level: string;
+            duration: string;
+            totalLessons: number;
+            instructor: {
+                _id: string;
+                firstName: string;
+                lastName: string;
+                avatar?: string;
+            };
+            category: {
+                _id: string;
+                name: string;
+            };
+        }>;
+        total: number;
+        enrolled: number;
+        available: number;
+    }> {
+        const response = await apiClient.get<{
+            courses: Array<any>;
+            total: number;
+            enrolled: number;
+            available: number;
+        }>("/enrollments/available-courses", { params });
+        return response.data;
+    }
 }
 
 export const enrollmentsService = new EnrollmentsService();

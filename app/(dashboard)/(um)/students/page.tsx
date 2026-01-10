@@ -12,7 +12,7 @@ export default function StudentsPage() {
   return (
     <RequireAuth roles={["admin", "super_admin", "instructor"]}>
       <AppLayout>
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+        <div className="min-h-screen bg-linear-to-br from-gray-50 via-white to-gray-50">
           <Students />
         </div>
       </AppLayout>

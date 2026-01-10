@@ -48,9 +48,34 @@ export function useInstructors() {
         return { instructors: [], total: 0 };
       }
 
+      // Normalize dates to ensure they are strings (defensive programming)
+      const normalizedInstructors = instructorsArray.map((instructor: any) => {
+        // Helper function to safely convert dates
+        const safeDate = (value: any): string | null => {
+          if (!value) return null;
+          if (typeof value === 'string') return value;
+          // Check if it's an empty object or invalid value
+          if (typeof value === 'object' && Object.keys(value).length === 0) return null;
+          try {
+            const date = new Date(value);
+            if (isNaN(date.getTime())) return null;
+            return date.toISOString();
+          } catch {
+            return null;
+          }
+        };
+
+        return {
+          ...instructor,
+          createdAt: safeDate(instructor.createdAt),
+          updatedAt: safeDate(instructor.updatedAt),
+          lastLogin: safeDate(instructor.lastLogin),
+        };
+      });
+
       // Calculate stats for each instructor
       const instructorsWithStats = await Promise.all(
-        instructorsArray.map(async (instructor: any) => {
+        normalizedInstructors.map(async (instructor: any) => {
           try {
             // Fetch courses for this instructor
             const { apiClient } = await import("@/lib/api-client");
@@ -155,6 +180,20 @@ export function useInstructors() {
   const createInstructor = useCallback(async (instructorData: CreateInstructorDto) => {
     setLoading(true);
     try {
+      // Validate specialization and experience before sending
+      if (instructorData.specialization && instructorData.specialization.length > 200) {
+        throw new Error('Specialization must not exceed 200 characters');
+      }
+
+      if (instructorData.experience) {
+        const validExperience = ['expert', 'advanced', 'intermediate'];
+        if (!validExperience.includes(instructorData.experience)) {
+          throw new Error(`Experience must be one of: ${validExperience.join(', ')}`);
+        }
+      }
+
+      console.log('Creating instructor with data:', instructorData);
+
       const data = await instructorsService.createInstructor(instructorData);
 
       const newInstructor = {
@@ -176,9 +215,20 @@ export function useInstructors() {
 
       return newInstructor;
     } catch (error: any) {
+      console.error('Failed to create instructor:', error);
+
+      // Enhanced error messages
+      let errorMessage = 'Failed to create instructor';
+
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       push({
         type: "error",
-        message: error?.message || "Failed to create instructor",
+        message: errorMessage,
       });
       throw error;
     } finally {
@@ -190,6 +240,20 @@ export function useInstructors() {
   const updateInstructor = useCallback(async (id: string, instructorData: UpdateInstructorDto) => {
     setLoading(true);
     try {
+      // Validate specialization and experience before sending
+      if (instructorData.specialization && instructorData.specialization.length > 200) {
+        throw new Error('Specialization must not exceed 200 characters');
+      }
+
+      if (instructorData.experience) {
+        const validExperience = ['expert', 'advanced', 'intermediate'];
+        if (!validExperience.includes(instructorData.experience)) {
+          throw new Error(`Experience must be one of: ${validExperience.join(', ')}`);
+        }
+      }
+
+      console.log('Updating instructor with data:', instructorData);
+
       const data = await instructorsService.updateInstructor(id, instructorData);
 
       const updatedInstructor = {
@@ -208,9 +272,20 @@ export function useInstructors() {
 
       return updatedInstructor;
     } catch (error: any) {
+      console.error('Failed to update instructor:', error);
+
+      // Enhanced error messages
+      let errorMessage = 'Failed to update instructor';
+
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       push({
         type: "error",
-        message: error?.message || "Failed to update instructor",
+        message: errorMessage,
       });
       throw error;
     } finally {
@@ -318,8 +393,22 @@ export function useInstructors() {
   // Export instructors
   const exportInstructors = useCallback(async (filters: InstructorFilters = {}) => {
     try {
-      // For now, we'll use client-side export
-      // In the future, this can call the service method
+      // Format date safely
+      const formatDate = (date: any): string => {
+        if (!date) return 'N/A';
+        try {
+          const d = new Date(date);
+          if (isNaN(d.getTime())) return 'Invalid Date';
+          return d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          });
+        } catch {
+          return 'Invalid Date';
+        }
+      };
+
       const csv = [
         [
           "Name",
@@ -334,25 +423,27 @@ export function useInstructors() {
         ].join(","),
         ...instructors.map((i) =>
           [
-            i.name,
+            `"${i.name.replace(/"/g, '""')}"`,
             i.email,
             i.status,
-            i.specialization || "",
+            `"${(i.specialization || '').replace(/"/g, '""')}"`,
             i.experience || "",
             i.coursesCount || 0,
             i.studentsCount || 0,
             i.rating || 0,
-            new Date(i.createdAt).toLocaleDateString(),
+            formatDate(i.createdAt),
           ].join(",")
         ),
       ].join("\n");
 
-      const blob = new Blob([csv], { type: "text/csv" });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `instructors-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
       push({
@@ -430,6 +521,48 @@ export function useInstructors() {
     return updateStatus(id, "inactive");
   }, [updateStatus]);
 
+  // Send broadcast announcement to instructors
+  const sendBroadcast = useCallback(async (data: { subject: string; message: string; instructorIds?: string[] }) => {
+    setLoading(true);
+    try {
+      const result = await instructorsService.sendBroadcast(data) as any;
+      push({
+        type: "success",
+        message: result.message || "Announcement sent successfully",
+      });
+      return result;
+    } catch (error: any) {
+      push({
+        type: "error",
+        message: error?.message || "Failed to send announcement",
+      });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [push]);
+
+  // Send individual message to instructor
+  const sendMessage = useCallback(async (instructorId: string, data: { subject: string; message: string; type?: 'email' | 'notification' | 'both' }) => {
+    setLoading(true);
+    try {
+      const result = await instructorsService.sendMessage(instructorId, data) as any;
+      push({
+        type: "success",
+        message: result.message || "Message sent successfully",
+      });
+      return result;
+    } catch (error: any) {
+      push({
+        type: "error",
+        message: error?.message || "Failed to send message",
+      });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [push]);
+
   return {
     instructors,
     stats,
@@ -452,5 +585,7 @@ export function useInstructors() {
     activateInstructor,
     deactivateInstructor,
     exportInstructors,
+    sendBroadcast,
+    sendMessage,
   };
 }

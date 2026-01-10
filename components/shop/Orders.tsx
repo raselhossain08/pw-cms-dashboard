@@ -415,10 +415,10 @@ export default function Orders() {
             <h1>Order ${order.orderNumber}</h1>
             <p>Date: ${formatDate(order.createdAt)}</p>
           </div>
-          <div class="section">
+          <div className="section">
             <h3>Customer Information</h3>
-            <p>${order.user.name || order.user.email}</p>
-            <p>${order.user.email}</p>
+            <p>${order.user?.name || order.user?.email || "Unknown User"}</p>
+            <p>${order.user?.email || "N/A"}</p>
           </div>
           <div class="section">
             <h3>Order Items</h3>
@@ -834,15 +834,15 @@ export default function Orders() {
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
                           <span className="text-primary text-sm font-medium">
-                            {o.user.name?.charAt(0).toUpperCase() || "U"}
+                            {o.user?.name?.charAt(0).toUpperCase() || o.user?.email?.charAt(0).toUpperCase() || "U"}
                           </span>
                         </div>
                         <div>
                           <div className="font-medium text-secondary">
-                            {o.user.name || o.user.email}
+                            {o.user?.name || o.user?.email || "Unknown User"}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {o.user.email}
+                            {o.user?.email || "N/A"}
                           </div>
                         </div>
                       </div>
@@ -1113,10 +1113,10 @@ export default function Orders() {
                     Customer
                   </Label>
                   <p className="font-medium mt-1">
-                    {selectedOrder.user.name || selectedOrder.user.email}
+                    {selectedOrder.user?.name || selectedOrder.user?.email || "Unknown User"}
                   </p>
                   <p className="text-sm text-gray-500">
-                    {selectedOrder.user.email}
+                    {selectedOrder.user?.email || "N/A"}
                   </p>
                 </div>
                 <div>

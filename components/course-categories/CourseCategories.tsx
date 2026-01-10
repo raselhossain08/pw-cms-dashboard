@@ -98,7 +98,9 @@ export default function CourseCategories() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
   const [isExporting, setIsExporting] = React.useState(false);
   const [mediaLibraryOpen, setMediaLibraryOpen] = React.useState(false);
-  const [mediaLibraryContext, setMediaLibraryContext] = React.useState<"create" | "edit">("create");
+  const [mediaLibraryContext, setMediaLibraryContext] = React.useState<
+    "create" | "edit"
+  >("create");
 
   const categories: CategoryItem[] = React.useMemo(() => {
     return categoriesList.map((cat: any) => ({

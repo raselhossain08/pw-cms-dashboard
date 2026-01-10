@@ -31,19 +31,38 @@ export function useStudents() {
             const data = await studentsService.getAllStudents(params);
 
             // Transform data to match Student interface
-            const transformedStudents = data.students.map((user: any) => ({
-                ...user,
-                avatarUrl: user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.email)}&background=random&color=fff&size=128`,
-                progressPercent: user.progressPercent || 0,
-                scorePercent: user.scorePercent || 0,
-                enrolledText: `Enrolled: ${new Date(user.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
-                joinedDate: new Date(user.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
-                rating: user.rating || 0,
-                location: user.country || "",
-                courseCount: user.enrolledCourses || 0,
-                course: user.course || "",
-                courseDetail: user.courseDetail || "",
-            }));
+            const transformedStudents = data.students.map((user: any) => {
+                // Format date properly
+                let joinedDate = "N/A";
+                try {
+                    if (user.createdAt) {
+                        const date = new Date(user.createdAt);
+                        if (!isNaN(date.getTime())) {
+                            joinedDate = date.toLocaleDateString("en-US", { 
+                                year: "numeric", 
+                                month: "short", 
+                                day: "numeric" 
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error formatting date:", error);
+                }
+
+                return {
+                    ...user,
+                    avatarUrl: user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.email)}&background=random&color=fff&size=128`,
+                    progressPercent: user.progressPercent || 0,
+                    scorePercent: user.scorePercent || 0,
+                    enrolledText: `Enrolled: ${joinedDate}`,
+                    joinedDate: joinedDate,
+                    rating: user.rating || 0,
+                    location: user.country || "Unknown",
+                    courseCount: user.enrolledCourses || 0,
+                    course: user.course || "",
+                    courseDetail: user.courseDetail || "",
+                };
+            });
 
             setStudents(transformedStudents);
             setTotal(data.total);
@@ -83,15 +102,32 @@ export function useStudents() {
         try {
             const newStudent = await studentsService.createStudent(studentData) as any;
 
+            // Format date properly
+            let joinedDate = "N/A";
+            try {
+                if (newStudent.createdAt) {
+                    const date = new Date(newStudent.createdAt);
+                    if (!isNaN(date.getTime())) {
+                        joinedDate = date.toLocaleDateString("en-US", { 
+                            year: "numeric", 
+                            month: "short", 
+                            day: "numeric" 
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error("Error formatting date:", error);
+            }
+
             const transformedStudent: Student = {
                 ...newStudent,
-                avatarUrl: newStudent.avatar || "https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-2.jpg",
+                avatarUrl: newStudent.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(newStudent.name || newStudent.email)}&background=random&color=fff&size=128`,
                 progressPercent: 0,
                 scorePercent: 0,
-                enrolledText: `Enrolled: ${new Date(newStudent.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
-                joinedDate: new Date(newStudent.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
+                enrolledText: `Enrolled: ${joinedDate}`,
+                joinedDate: joinedDate,
                 rating: 0,
-                location: "Unknown",
+                location: newStudent.country || "Unknown",
                 courseCount: 0,
                 course: "General Course",
                 courseDetail: "Course Details",

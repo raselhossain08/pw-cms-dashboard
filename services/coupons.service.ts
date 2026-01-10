@@ -18,19 +18,19 @@ export interface Coupon {
     type: CouponType;
     value: number;
     isActive: boolean;
-    expiresAt?: string;
+    expiresAt?: string | null;
     maxUses: number;
     usedCount: number;
     minPurchaseAmount: number;
-    createdAt: string;
-    updatedAt: string;
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 export interface CreateCouponDto {
     code: string;
     type: CouponType;
     value: number;
-    expiresAt?: string;
+    expiresAt?: string | null;
     maxUses?: number;
     minPurchaseAmount?: number;
     isActive?: boolean;

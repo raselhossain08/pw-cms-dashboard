@@ -121,6 +121,11 @@ export default function Discounts() {
   const [actionLoading, setActionLoading] = React.useState(false);
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
 
+  // Helper function to safely get coupon ID (handles both _id and id)
+  const getCouponId = (coupon: Coupon | any): string => {
+    return coupon._id || coupon.id || "";
+  };
+
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -168,10 +173,12 @@ export default function Discounts() {
         return matchesSearch && matchesStatus && matchesType;
       })
       .sort((a, b) => {
-        if (sortBy === "newest")
-          return (
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
+        if (sortBy === "newest") {
+          // Handle missing createdAt dates
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return dateB - dateA;
+        }
         if (sortBy === "most-used") return b.usedCount - a.usedCount;
         if (sortBy === "expiry") {
           if (!a.expiresAt || !isValidDate(a.expiresAt)) return 1;
@@ -235,8 +242,14 @@ export default function Discounts() {
       errors.minPurchaseAmount = "Minimum purchase amount cannot be negative";
     }
 
-    if (formData.expiresAt && new Date(formData.expiresAt) < new Date()) {
-      errors.expiresAt = "Expiration date cannot be in the past";
+    // Only validate expiration date if it's provided and not empty
+    if (formData.expiresAt && formData.expiresAt.trim() !== "") {
+      const expiryDate = new Date(formData.expiresAt);
+      if (isNaN(expiryDate.getTime())) {
+        errors.expiresAt = "Invalid date format";
+      } else if (expiryDate < new Date()) {
+        errors.expiresAt = "Expiration date cannot be in the past";
+      }
     }
 
     setFormErrors(errors);
@@ -258,10 +271,31 @@ export default function Discounts() {
   const handleCreate = async () => {
     if (!validateForm()) return;
     setActionLoading(true);
-    const result = await createCoupon({
+
+    // Prepare data and handle empty expiresAt
+    const submitData: CreateCouponDto = {
       ...formData,
       code: formData.code.toUpperCase().trim(),
-    });
+    };
+
+    // Remove or convert expiresAt
+    if (
+      !submitData.expiresAt ||
+      (typeof submitData.expiresAt === "string" &&
+        submitData.expiresAt.trim() === "")
+    ) {
+      delete submitData.expiresAt;
+    } else {
+      // Convert to ISO string if it's a valid date
+      const date = new Date(submitData.expiresAt);
+      if (!isNaN(date.getTime())) {
+        submitData.expiresAt = date.toISOString();
+      } else {
+        delete submitData.expiresAt;
+      }
+    }
+
+    const result = await createCoupon(submitData);
     setActionLoading(false);
     if (result) {
       setCreateOpen(false);
@@ -273,11 +307,41 @@ export default function Discounts() {
 
   const handleEdit = async () => {
     if (!selectedCoupon || !validateForm()) return;
+
+    // Get coupon ID (try both _id and id for compatibility)
+    const couponId = selectedCoupon._id || (selectedCoupon as any).id;
+    if (!couponId) {
+      console.error("Coupon ID is missing:", selectedCoupon);
+      return;
+    }
+
     setActionLoading(true);
-    const result = await updateCoupon(selectedCoupon._id, {
+
+    // Prepare data and handle empty expiresAt
+    const submitData: UpdateCouponDto = {
       ...formData,
       code: formData.code.toUpperCase().trim(),
-    });
+    };
+
+    // Remove or convert expiresAt
+    if (
+      !submitData.expiresAt ||
+      (typeof submitData.expiresAt === "string" &&
+        submitData.expiresAt.trim() === "")
+    ) {
+      // Explicitly set to null to remove from database
+      submitData.expiresAt = null as any;
+    } else {
+      // Convert to ISO string if it's a valid date
+      const date = new Date(submitData.expiresAt);
+      if (!isNaN(date.getTime())) {
+        submitData.expiresAt = date.toISOString();
+      } else {
+        submitData.expiresAt = null as any;
+      }
+    }
+
+    const result = await updateCoupon(couponId, submitData);
     setActionLoading(false);
     if (result) {
       setEditOpen(false);
@@ -290,8 +354,16 @@ export default function Discounts() {
 
   const handleDelete = async () => {
     if (!selectedCoupon) return;
+
+    // Get coupon ID (try both _id and id for compatibility)
+    const couponId = selectedCoupon._id || (selectedCoupon as any).id;
+    if (!couponId) {
+      console.error("Coupon ID is missing:", selectedCoupon);
+      return;
+    }
+
     setActionLoading(true);
-    const result = await deleteCoupon(selectedCoupon._id);
+    const result = await deleteCoupon(couponId);
     setActionLoading(false);
     if (result) {
       setDeleteOpen(false);
@@ -328,7 +400,7 @@ export default function Discounts() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedCoupons(new Set(filtered.map((c) => c._id)));
+      setSelectedCoupons(new Set(filtered.map((c) => getCouponId(c))));
     } else {
       setSelectedCoupons(new Set());
     }
@@ -362,11 +434,11 @@ export default function Discounts() {
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) {
-        return "Invalid date";
+        return "No expiry";
       }
       return format(date, "MMM dd, yyyy");
     } catch {
-      return "Invalid date";
+      return "No expiry";
     }
   };
 
@@ -407,11 +479,11 @@ export default function Discounts() {
   };
 
   const handleToggleStatus = async (coupon: Coupon) => {
-    await toggleCouponStatus(coupon._id);
+    await toggleCouponStatus(getCouponId(coupon));
   };
 
   const handleDuplicate = async (coupon: Coupon) => {
-    await duplicateCoupon(coupon._id);
+    await duplicateCoupon(getCouponId(coupon));
   };
 
   const handleCopyCode = (code: string) => {
@@ -485,6 +557,7 @@ export default function Discounts() {
           {selectedCoupons.size > 0 && (
             <>
               <Button
+                key="bulk-toggle"
                 variant="outline"
                 onClick={handleBulkToggle}
                 disabled={actionLoading}
@@ -492,6 +565,7 @@ export default function Discounts() {
                 <ToggleRight className="w-4 h-4 mr-2" /> Toggle Status
               </Button>
               <Button
+                key="bulk-delete"
                 variant="destructive"
                 onClick={() => setBulkDeleteOpen(true)}
                 disabled={actionLoading}
@@ -502,6 +576,7 @@ export default function Discounts() {
             </>
           )}
           <Button
+            key="export"
             variant="outline"
             onClick={handleExport}
             disabled={filtered.length === 0}
@@ -509,6 +584,7 @@ export default function Discounts() {
             <Download className="w-4 h-4 mr-2" /> Export
           </Button>
           <Button
+            key="refresh"
             variant="outline"
             onClick={() => {
               fetchCoupons(currentPage, pageSize, search);
@@ -524,6 +600,7 @@ export default function Discounts() {
             Refresh
           </Button>
           <Button
+            key="create"
             onClick={() => {
               resetForm();
               setCreateOpen(true);
@@ -703,10 +780,11 @@ export default function Discounts() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             {filtered.map((c) => {
               const status = getStatus(c);
-              const isSelected = selectedCoupons.has(c._id);
+              const couponId = getCouponId(c);
+              const isSelected = selectedCoupons.has(couponId);
               return (
                 <div
-                  key={c._id}
+                  key={couponId}
                   className={`bg-card rounded-xl p-6 shadow-sm border ${
                     isSelected
                       ? "border-primary ring-2 ring-primary/20"
@@ -718,7 +796,7 @@ export default function Discounts() {
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) =>
-                          handleSelectCoupon(c._id, checked as boolean)
+                          handleSelectCoupon(couponId, checked as boolean)
                         }
                       />
                       <div className="flex gap-2">
@@ -959,7 +1037,12 @@ export default function Discounts() {
                       : ""
                   }
                   onChange={(e) => {
-                    setFormData({ ...formData, expiresAt: e.target.value });
+                    const value = e.target.value;
+                    // Convert empty string to undefined to properly clear the date
+                    setFormData({
+                      ...formData,
+                      expiresAt: value === "" ? undefined : value,
+                    });
                     if (formErrors.expiresAt) {
                       setFormErrors({ ...formErrors, expiresAt: "" });
                     }

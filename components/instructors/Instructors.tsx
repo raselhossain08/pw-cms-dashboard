@@ -76,6 +76,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/context/ToastContext";
 import { CheckSquare, Square } from "lucide-react";
+import { formatDate, formatDateTime, isValidDate } from "@/utils/date";
 
 type ViewMode = "grid" | "table";
 
@@ -88,7 +89,9 @@ function PerformanceAnalytics() {
     const fetchPerformanceData = async () => {
       try {
         const { apiClient } = await import("@/lib/api-client");
-        const response = await apiClient.get("/admin/instructors/performance-tiers");
+        const response = await apiClient.get(
+          "/admin/instructors/performance-tiers"
+        );
         setPerformanceData(response.data);
       } catch (error) {
         console.error("Failed to fetch performance data:", error);
@@ -185,6 +188,8 @@ export default function Instructors() {
     activateInstructor,
     deactivateInstructor,
     exportInstructors,
+    sendBroadcast,
+    sendMessage,
   } = useInstructors();
   const { push } = useToast();
 
@@ -203,6 +208,7 @@ export default function Instructors() {
   const [viewOpen, setViewOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  const [announcementOpen, setAnnouncementOpen] = React.useState(false);
   const [selectedInstructor, setSelectedInstructor] =
     React.useState<Instructor | null>(null);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
@@ -212,6 +218,7 @@ export default function Instructors() {
     firstName: "",
     lastName: "",
     email: "",
+    password: "",
     phone: "",
     bio: "",
     specialization: "",
@@ -220,6 +227,13 @@ export default function Instructors() {
     status: "active",
   });
   const [formLoading, setFormLoading] = React.useState(false);
+
+  // Announcement form state
+  const [announcementData, setAnnouncementData] = React.useState({
+    subject: "",
+    message: "",
+    sendToAll: true,
+  });
 
   // Pagination
   const [currentPage, setCurrentPage] = React.useState(1);
@@ -368,9 +382,100 @@ export default function Instructors() {
       .slice(0, 4); // Show top 4 specializations
   }, [instructors]);
 
-  // Form handlers
+  // Form handlers with type-safe validation
   const handleFormChange = (field: keyof CreateInstructorDto, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => {
+      const newData = { ...prev, [field]: value };
+
+      // Validate specialization length
+      if (field === "specialization" && value && value.length > 200) {
+        push({
+          type: "error",
+          message: "Specialization must not exceed 200 characters",
+        });
+        return prev;
+      }
+
+      // Validate experience enum
+      if (field === "experience" && value) {
+        const validExperience = ["expert", "advanced", "intermediate"];
+        if (!validExperience.includes(value)) {
+          push({
+            type: "error",
+            message: "Invalid experience level selected",
+          });
+          return prev;
+        }
+      }
+
+      return newData;
+    });
+  };
+
+  // Enhanced validation with detailed feedback
+  const validateFormData = (
+    data: CreateInstructorDto,
+    isEdit: boolean = false
+  ): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    // Required fields
+    if (!data.firstName?.trim()) errors.push("First name is required");
+    if (!data.lastName?.trim()) errors.push("Last name is required");
+    if (!data.email?.trim()) errors.push("Email is required");
+
+    // Password only required when creating, not editing
+    if (!isEdit && !data.password?.trim()) {
+      errors.push("Password is required");
+    }
+
+    // Field length validations
+    if (data.firstName && data.firstName.trim().length < 2) {
+      errors.push("First name must be at least 2 characters");
+    }
+    if (data.lastName && data.lastName.trim().length < 2) {
+      errors.push("Last name must be at least 2 characters");
+    }
+    if (!isEdit && data.password && data.password.length < 6) {
+      errors.push("Password must be at least 6 characters");
+    }
+
+    // Email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (data.email && !emailRegex.test(data.email)) {
+      errors.push("Please enter a valid email address");
+    }
+
+    // Phone format if provided
+    if (data.phone) {
+      const phoneRegex =
+        /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$/;
+      if (!phoneRegex.test(data.phone.replace(/\s/g, ""))) {
+        errors.push("Please enter a valid phone number");
+      }
+    }
+
+    // Bio length
+    if (data.bio && data.bio.length > 2000) {
+      errors.push("Bio must not exceed 2000 characters");
+    }
+
+    // Specialization validation
+    if (data.specialization && data.specialization.length > 200) {
+      errors.push("Specialization must not exceed 200 characters");
+    }
+
+    // Experience validation
+    if (data.experience) {
+      const validExperience = ["expert", "advanced", "intermediate"];
+      if (!validExperience.includes(data.experience)) {
+        errors.push(
+          "Experience must be one of: expert, advanced, or intermediate"
+        );
+      }
+    }
+
+    return { isValid: errors.length === 0, errors };
   };
 
   const resetForm = () => {
@@ -378,6 +483,7 @@ export default function Instructors() {
       firstName: "",
       lastName: "",
       email: "",
+      password: "",
       phone: "",
       bio: "",
       specialization: "",
@@ -388,16 +494,45 @@ export default function Instructors() {
   };
 
   const handleCreate = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email) {
-      push({ type: "error", message: "Please fill in all required fields" });
+    // Use comprehensive validation
+    const validation = validateFormData(formData);
+    if (!validation.isValid) {
+      validation.errors.forEach((error) => {
+        push({ type: "error", message: error });
+      });
       return;
     }
+
+    // Check for duplicate email in existing instructors
+    const duplicateEmail = instructors.find(
+      (i) => i.email.toLowerCase() === formData.email.toLowerCase()
+    );
+    if (duplicateEmail) {
+      push({
+        type: "error",
+        message: `An instructor with email ${formData.email} already exists`,
+      });
+      return;
+    }
+
     setFormLoading(true);
     try {
+      console.log("Creating instructor with validated data:", {
+        ...formData,
+        fieldTypes: {
+          firstName: typeof formData.firstName,
+        },
+      });
       await createInstructor(formData);
       setCreateOpen(false);
       resetForm();
-      fetchInstructors({
+      push({
+        type: "success",
+        message: `✓ Instructor ${formData.firstName} ${formData.lastName} created successfully`,
+      });
+
+      // Refresh data to show updated state
+      await fetchInstructors({
         page: currentPage,
         limit: itemsPerPage,
         search,
@@ -408,8 +543,25 @@ export default function Instructors() {
         sortBy,
       });
       fetchStats();
-    } catch (error) {
-      // Error handled in hook
+    } catch (error: any) {
+      console.error("Failed to create instructor:", error);
+      // Provide detailed error feedback
+      if (error?.message?.includes("already exists")) {
+        push({
+          type: "error",
+          message: `An instructor with this email already exists. Please use a different email.`,
+        });
+      } else if (error?.message?.includes("Invalid")) {
+        push({
+          type: "error",
+          message: error.message,
+        });
+      } else {
+        push({
+          type: "error",
+          message: "Failed to create instructor. Please try again.",
+        });
+      }
     } finally {
       setFormLoading(false);
     }
@@ -417,16 +569,54 @@ export default function Instructors() {
 
   const handleEdit = async () => {
     if (!selectedInstructor) return;
+
+    // Use comprehensive validation (isEdit = true, password not required)
+    const validation = validateFormData(formData, true);
+    if (!validation.isValid) {
+      validation.errors.forEach((error) => {
+        push({ type: "error", message: error });
+      });
+      return;
+    }
+
+    // Check for duplicate email (excluding current instructor)
+    const duplicateEmail = instructors.find(
+      (i) =>
+        i._id !== selectedInstructor._id &&
+        i.email.toLowerCase() === formData.email.toLowerCase()
+    );
+    if (duplicateEmail) {
+      push({
+        type: "error",
+        message: `Another instructor with email ${formData.email} already exists`,
+      });
+      return;
+    }
+
     setFormLoading(true);
     try {
+      console.log("Updating instructor:", selectedInstructor._id, formData);
+
+      // Remove password from update data if it's empty
+      const updateData = { ...formData };
+      if (!updateData.password || updateData.password.trim() === "") {
+        delete updateData.password;
+      }
+
       await updateInstructor(
         selectedInstructor._id,
-        formData as UpdateInstructorDto
+        updateData as UpdateInstructorDto
       );
       setEditOpen(false);
       setSelectedInstructor(null);
       resetForm();
-      fetchInstructors({
+      push({
+        type: "success",
+        message: `✓ Instructor ${formData.firstName} ${formData.lastName} updated successfully`,
+      });
+
+      // Refresh data to show updated state
+      await fetchInstructors({
         page: currentPage,
         limit: itemsPerPage,
         search,
@@ -437,8 +627,25 @@ export default function Instructors() {
         sortBy,
       });
       fetchStats();
-    } catch (error) {
-      // Error handled in hook
+    } catch (error: any) {
+      console.error("Failed to update instructor:", error);
+      // Provide detailed error feedback
+      if (error?.message?.includes("already exists")) {
+        push({
+          type: "error",
+          message: `An instructor with this email already exists. Please use a different email.`,
+        });
+      } else if (error?.message?.includes("Invalid")) {
+        push({
+          type: "error",
+          message: error.message,
+        });
+      } else {
+        push({
+          type: "error",
+          message: "Failed to update instructor. Please try again.",
+        });
+      }
     } finally {
       setFormLoading(false);
     }
@@ -575,6 +782,36 @@ export default function Instructors() {
     }
   };
 
+  const handleSendAnnouncement = async () => {
+    if (!announcementData.subject.trim() || !announcementData.message.trim()) {
+      push({
+        type: "error",
+        message: "Subject and message are required",
+      });
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      await sendBroadcast({
+        subject: announcementData.subject,
+        message: announcementData.message,
+        instructorIds: announcementData.sendToAll ? undefined : selectedIds,
+      });
+      setAnnouncementOpen(false);
+      setAnnouncementData({
+        subject: "",
+        message: "",
+        sendToAll: true,
+      });
+      setSelectedIds([]);
+    } catch (error) {
+      // Error handled in hook
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
   const StatusBadge = ({ status }: { status: string }) => {
     const variants = {
       active: "bg-green-100 text-green-700 border-green-200",
@@ -621,28 +858,37 @@ export default function Instructors() {
   };
 
   return (
-    <main className="p-6 space-y-8">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-secondary mb-2">
+    <main className="p-3 sm:p-4 md:p-6 space-y-4 md:space-y-6 lg:space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-start lg:items-center lg:justify-between gap-3 md:gap-4">
+        <div className="flex-1">
+          <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-secondary mb-1 sm:mb-2">
             Instructors Management
           </h2>
-          <p className="text-gray-600">
+          <p className="text-sm sm:text-base text-gray-600">
             Manage instructor accounts, monitor performance, and track
             engagement
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
           <Button
             variant="outline"
-            className="border-gray-300"
+            className="border-gray-300 text-sm sm:text-base"
             onClick={handleExport}
             disabled={loading}
+            size="sm"
           >
-            <Download className="w-4 h-4 mr-2" /> Export Data
+            <Download className="w-4 h-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Export Data</span>
+            <span className="sm:hidden">Export</span>
           </Button>
-          <Button onClick={() => setCreateOpen(true)}>
-            <UserPlus className="w-4 h-4 mr-2" /> Add Instructor
+          <Button
+            onClick={() => setCreateOpen(true)}
+            size="sm"
+            className="text-sm sm:text-base"
+          >
+            <UserPlus className="w-4 h-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Add Instructor</span>
+            <span className="sm:hidden">Add</span>
           </Button>
         </div>
       </div>
@@ -754,7 +1000,7 @@ export default function Instructors() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-5 bg-gray-100">
+        <TabsList className="grid w-full max-w-full sm:max-w-2xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 bg-gray-100 gap-1">
           <TabsTrigger value="all" className="data-[state=active]:bg-white">
             All ({instructors.length})
           </TabsTrigger>
@@ -782,14 +1028,14 @@ export default function Instructors() {
       </Tabs>
 
       {/* Filters and Search */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-        <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
+      <div className="bg-white rounded-lg sm:rounded-xl p-3 sm:p-4 shadow-sm border border-gray-200">
+        <div className="flex flex-col md:flex-row md:items-center justify-between space-y-3 md:space-y-0 gap-3">
           <div className="flex flex-wrap gap-2">
             <Select
               value={specializationFilter}
               onValueChange={setSpecializationFilter}
             >
-              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-48">
+              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-full sm:w-40 md:w-48">
                 <SelectValue placeholder="All Specializations" />
               </SelectTrigger>
               <SelectContent>
@@ -830,7 +1076,7 @@ export default function Instructors() {
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-48">
+              <SelectTrigger className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm w-full sm:w-40 md:w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -843,40 +1089,42 @@ export default function Instructors() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center space-x-2">
-            <div className="relative w-64">
+          <div className="flex items-center space-x-2 w-full md:w-auto">
+            <div className="relative flex-1 md:w-64">
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 id="instructor-search"
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search instructors... (Cmd+K)"
+                placeholder="Search instructors..."
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`text-gray-600 hover:text-primary ${
-                viewMode === "grid" ? "bg-primary/10 text-primary" : ""
-              }`}
-              onClick={() => setViewMode("grid")}
-              title="Grid View"
-            >
-              <Grid2x2 className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`text-gray-600 hover:text-primary ${
-                viewMode === "table" ? "bg-primary/10 text-primary" : ""
-              }`}
-              onClick={() => setViewMode("table")}
-              title="Table View"
-            >
-              <List className="w-5 h-5" />
-            </Button>
+            <div className="flex items-center space-x-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`text-gray-600 hover:text-primary ${
+                  viewMode === "grid" ? "bg-primary/10 text-primary" : ""
+                }`}
+                onClick={() => setViewMode("grid")}
+                title="Grid View"
+              >
+                <Grid2x2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`text-gray-600 hover:text-primary ${
+                  viewMode === "table" ? "bg-primary/10 text-primary" : ""
+                }`}
+                onClick={() => setViewMode("table")}
+                title="Table View"
+              >
+                <List className="w-4 h-4 sm:w-5 sm:h-5" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -935,23 +1183,23 @@ export default function Instructors() {
 
       {/* Grid View */}
       {!loading && viewMode === "grid" && filteredInstructors.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
           {paginatedInstructors.map((instructor) => (
             <div
               key={instructor._id}
-              className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
+              className="bg-white rounded-lg sm:rounded-xl p-4 sm:p-5 md:p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
             >
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg">
+              <div className="flex justify-between items-start mb-3 sm:mb-4">
+                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-linear-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-base sm:text-lg shrink-0">
                     {instructor.firstName?.[0]}
                     {instructor.lastName?.[0]}
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">
                       {instructor.name}
                     </h3>
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
+                    <p className="text-xs sm:text-sm text-gray-500 flex items-center gap-1 truncate">
                       <Mail className="w-3 h-3" />
                       {instructor.email}
                     </p>
@@ -1043,7 +1291,7 @@ export default function Instructors() {
 
                 <p className="text-sm text-gray-600 flex items-center gap-1">
                   <Calendar className="w-4 h-4" />
-                  Joined {new Date(instructor.createdAt).toLocaleDateString()}
+                  Joined {formatDate(instructor.createdAt)}
                 </p>
               </div>
 
@@ -1216,7 +1464,11 @@ export default function Instructors() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(it.createdAt).toLocaleDateString()}
+                      {new Date(it.createdAt).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <DropdownMenu>
@@ -1335,7 +1587,9 @@ export default function Instructors() {
       )}
 
       {/* Performance Analytics - Now with Real Data */}
-      <PerformanceAnalytics />
+      <div data-section="performance-analytics">
+        <PerformanceAnalytics />
+      </div>
 
       {specializationDistribution.length > 0 && (
         <div className="bg-card rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
@@ -1385,34 +1639,82 @@ export default function Instructors() {
           Quick Actions
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <button className="flex items-center space-x-3 p-4 bg-primary/5 hover:bg-primary/10 rounded-lg">
+          <button
+            onClick={() => setCreateOpen(true)}
+            disabled={formLoading}
+            aria-label="Add new instructor"
+            className="flex items-center space-x-3 p-4 bg-primary/5 hover:bg-primary/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+          >
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <UserPlus className="text-white w-5 h-5" />
+              {formLoading ? (
+                <Loader2 className="text-white w-5 h-5 animate-spin" />
+              ) : (
+                <UserPlus className="text-white w-5 h-5" />
+              )}
             </div>
             <div className="text-left">
               <p className="font-medium text-secondary">Add Instructor</p>
               <p className="text-sm text-gray-600">New instructor</p>
             </div>
           </button>
-          <button className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg">
+          <button
+            onClick={() => setAnnouncementOpen(true)}
+            disabled={formLoading || instructors.length === 0}
+            aria-label="Send announcement to all instructors"
+            className="flex items-center space-x-3 p-4 bg-accent/5 hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
+          >
             <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
-              <ArrowUp className="text-white w-5 h-5 rotate-90" />
+              <Mail className="text-white w-5 h-5" />
             </div>
             <div className="text-left">
               <p className="font-medium text-secondary">Send Announcement</p>
               <p className="text-sm text-gray-600">All instructors</p>
             </div>
           </button>
-          <button className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg">
+          <button
+            onClick={handleExport}
+            disabled={loading || formLoading || instructors.length === 0}
+            aria-label="Export instructor data"
+            className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
             <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-              <ArrowUp className="text-white w-5 h-5 rotate-180" />
+              {loading ? (
+                <Loader2 className="text-white w-5 h-5 animate-spin" />
+              ) : (
+                <Download className="text-white w-5 h-5" />
+              )}
             </div>
             <div className="text-left">
               <p className="font-medium text-secondary">Export Data</p>
               <p className="text-sm text-gray-600">Instructor reports</p>
             </div>
           </button>
-          <button className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg">
+          <button
+            onClick={() => {
+              // Scroll to performance analytics section
+              const analyticsSection = document.querySelector(
+                '[data-section="performance-analytics"]'
+              );
+              if (analyticsSection) {
+                analyticsSection.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+                push({
+                  type: "success",
+                  message: "Scrolled to performance analytics",
+                });
+              } else {
+                push({
+                  type: "info",
+                  message: "Performance analytics displayed above",
+                });
+              }
+            }}
+            disabled={formLoading}
+            aria-label="View performance analytics"
+            className="flex items-center space-x-3 p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
+          >
             <div className="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center">
               <Star className="text-white w-5 h-5" />
             </div>
@@ -1473,6 +1775,22 @@ export default function Instructors() {
                 placeholder="instructor@example.com"
                 required
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Password <span className="text-red-500">*</span>
+              </label>
+              <Input
+                type="password"
+                value={formData.password || ""}
+                onChange={(e) => handleFormChange("password", e.target.value)}
+                placeholder="Minimum 6 characters"
+                required
+                minLength={6}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Password must be at least 6 characters long
+              </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -1833,9 +2151,7 @@ export default function Instructors() {
                 <div>
                   <p className="text-sm text-gray-500">Joined Date</p>
                   <p className="font-medium">
-                    {new Date(
-                      selectedInstructor.createdAt
-                    ).toLocaleDateString()}
+                    {formatDateTime(selectedInstructor.createdAt)}
                   </p>
                 </div>
               </div>
@@ -1932,6 +2248,149 @@ export default function Instructors() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Announcement Dialog */}
+      <Dialog open={announcementOpen} onOpenChange={setAnnouncementOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Send Announcement to Instructors</DialogTitle>
+            <DialogDescription>
+              Compose and send an announcement to{" "}
+              {announcementData.sendToAll
+                ? "all instructors"
+                : `${selectedIds.length} selected instructor(s)`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="flex items-center space-x-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <Mail className="w-5 h-5 text-blue-600" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900">
+                  Recipients:{" "}
+                  {announcementData.sendToAll
+                    ? `All instructors (${instructors.length})`
+                    : `${selectedIds.length} selected`}
+                </p>
+                <p className="text-xs text-blue-700">
+                  {announcementData.sendToAll
+                    ? "This announcement will be sent to all instructors"
+                    : "This announcement will be sent to selected instructors only"}
+                </p>
+              </div>
+            </div>
+
+            {!announcementData.sendToAll && selectedIds.length === 0 && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  Please select instructors from the list or toggle "Send to
+                  All" option
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setAnnouncementData((prev) => ({
+                    ...prev,
+                    sendToAll: !prev.sendToAll,
+                  }))
+                }
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg border transition-colors ${
+                  announcementData.sendToAll
+                    ? "bg-primary text-white border-primary"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                {announcementData.sendToAll ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                <span className="text-sm font-medium">
+                  Send to all instructors
+                </span>
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Subject <span className="text-red-500">*</span>
+              </label>
+              <Input
+                type="text"
+                value={announcementData.subject}
+                onChange={(e) =>
+                  setAnnouncementData((prev) => ({
+                    ...prev,
+                    subject: e.target.value,
+                  }))
+                }
+                placeholder="Enter announcement subject"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Message <span className="text-red-500">*</span>
+              </label>
+              <Textarea
+                value={announcementData.message}
+                onChange={(e) =>
+                  setAnnouncementData((prev) => ({
+                    ...prev,
+                    message: e.target.value,
+                  }))
+                }
+                rows={8}
+                placeholder="Enter your announcement message..."
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {announcementData.message.length} characters
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setAnnouncementOpen(false);
+                setAnnouncementData({
+                  subject: "",
+                  message: "",
+                  sendToAll: true,
+                });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendAnnouncement}
+              disabled={
+                formLoading ||
+                !announcementData.subject.trim() ||
+                !announcementData.message.trim() ||
+                (!announcementData.sendToAll && selectedIds.length === 0)
+              }
+            >
+              {formLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="w-4 h-4 mr-2" />
+                  Send Announcement
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

@@ -227,11 +227,11 @@ export const usePayments = () => {
 
     // Export payment report
     const exportReport = useCallback(
-        async (filters: { format?: string; startDate?: string; endDate?: string } = {}) => {
+        async (type: string, filters: { format?: string; startDate?: string; endDate?: string; status?: string } = {}) => {
             setLoading(true);
             setError(null);
             try {
-                await paymentsService.exportReport(filters);
+                await paymentsService.exportReport({ ...filters, type });
                 push({ message: 'Report exported successfully', type: 'success' });
             } catch (err: any) {
                 const errorMsg = err?.message || err?.response?.data?.message || 'Failed to export report';

@@ -57,8 +57,8 @@ export function useProducts(initialParams?: GetProductsParams): UseProductsResul
         setError(null);
         try {
             const fetchParams = {
-                page: params?.page || pagination.page,
-                limit: params?.limit || pagination.limit,
+                page: params?.page || 1,
+                limit: params?.limit || 10,
                 ...params
             };
             const response = await productsService.getAllProducts(fetchParams);
@@ -81,7 +81,7 @@ export function useProducts(initialParams?: GetProductsParams): UseProductsResul
         } finally {
             setLoading(false);
         }
-    }, [push, pagination.page, pagination.limit]);
+    }, [push]);
 
     const createProduct = useCallback(async (data: ProductFormData): Promise<Product | null> => {
         setLoading(true);
@@ -242,11 +242,12 @@ export function useProducts(initialParams?: GetProductsParams): UseProductsResul
         await fetchProducts(initialParams);
     }, [fetchProducts, initialParams]);
 
-    // Initial fetch
+    // Initial fetch - only run once on mount
     useEffect(() => {
         fetchProducts(initialParams);
         fetchStats();
-    }, [fetchProducts, fetchStats, initialParams]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return {
         products,
