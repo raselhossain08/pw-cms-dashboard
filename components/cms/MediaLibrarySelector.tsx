@@ -161,7 +161,7 @@ export function MediaLibrarySelector({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -234,58 +234,83 @@ export function MediaLibrarySelector({
                       : "space-y-2"
                   )}
                 >
-                  {mediaFiles.map((file: any) => (
-                    <div
-                      key={file._id}
-                      onClick={() => setSelectedUrl(file.url)}
-                      className={cn(
-                        "relative cursor-pointer rounded-lg border-2 transition-all hover:shadow-lg",
-                        selectedUrl === file.url
-                          ? "border-blue-500 ring-2 ring-blue-200"
-                          : "border-gray-200 hover:border-blue-300"
-                      )}
-                    >
-                      {view === "grid" ? (
-                        <div className="aspect-square relative overflow-hidden rounded-lg">
-                          <Image
-                            src={file.url}
-                            alt={file.description || "Media"}
-                            fill
-                            className="object-cover"
-                          />
-                          {selectedUrl === file.url && (
-                            <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
-                              <div className="bg-blue-500 rounded-full p-2">
-                                <Check className="w-6 h-6 text-white" />
+                  {mediaFiles.map((file: any, index: number) => {
+                    // Handle complex object IDs by serializing them properly
+                    const rawId = file._id || file.id;
+                    const fileId =
+                      typeof rawId === "object"
+                        ? JSON.stringify(rawId)
+                        : String(rawId || `file-${index}`);
+                    const uniqueKey = `media-file-${index}-${fileId.replace(
+                      /[^a-zA-Z0-9-_]/g,
+                      "-"
+                    )}`;
+
+                    return (
+                      <div
+                        key={uniqueKey}
+                        onClick={() => setSelectedUrl(file.url)}
+                        className={cn(
+                          "relative cursor-pointer rounded-lg border-2 transition-all hover:shadow-lg",
+                          selectedUrl === file.url
+                            ? "border-blue-500 ring-2 ring-blue-200"
+                            : "border-gray-200 hover:border-blue-300"
+                        )}
+                      >
+                        {view === "grid" ? (
+                          <div className="aspect-square relative overflow-hidden rounded-lg">
+                            {file.url ? (
+                              <Image
+                                src={file.url}
+                                alt={file.description || "Media"}
+                                fill
+                                className="object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                <ImageIcon className="w-12 h-12 text-gray-400" />
                               </div>
+                            )}
+                            {selectedUrl === file.url && (
+                              <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                                <div className="bg-blue-500 rounded-full p-2">
+                                  <Check className="w-6 h-6 text-white" />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3 p-3">
+                            <div className="relative w-16 h-16 rounded overflow-hidden flex-shrink-0">
+                              {file.url ? (
+                                <Image
+                                  src={file.url}
+                                  alt={file.description || "Media"}
+                                  fill
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                  <ImageIcon className="w-4 h-4 text-gray-400" />
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-3 p-3">
-                          <div className="relative w-16 h-16 rounded overflow-hidden flex-shrink-0">
-                            <Image
-                              src={file.url}
-                              alt={file.description || "Media"}
-                              fill
-                              className="object-cover"
-                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">
+                                {file.description || file.filename}
+                              </p>
+                              <p className="text-sm text-gray-500">
+                                {new Date(file.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                            {selectedUrl === file.url && (
+                              <Check className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                            )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">
-                              {file.description || file.filename}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {new Date(file.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          {selectedUrl === file.url && (
-                            <Check className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </ScrollArea>

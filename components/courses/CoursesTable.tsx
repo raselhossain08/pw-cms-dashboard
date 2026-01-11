@@ -214,31 +214,19 @@ export default function CoursesTable({
       result = result.filter((course) => {
         const searchTerm = filters.instructor.toLowerCase();
 
-        // Check instructors array first
-        if (
-          course.instructors &&
-          Array.isArray(course.instructors) &&
-          course.instructors.length > 0
-        ) {
-          return course.instructors.some((inst: any) => {
-            if (typeof inst === "object" && inst !== null) {
-              const name = `${inst.firstName || ""} ${
-                inst.lastName || ""
+        // Search instructor names now that we have populated instructor details
+        if (course.instructors && Array.isArray(course.instructors)) {
+          return course.instructors.some((instructor: any) => {
+            if (typeof instructor === "object" && instructor !== null) {
+              const instructorName = `${instructor.firstName || ""} ${
+                instructor.lastName || ""
               }`.toLowerCase();
-              return name.includes(searchTerm);
+              return instructorName.includes(searchTerm);
             }
             return false;
           });
         }
-
-        // Fallback to single instructor
-        const instructor =
-          typeof course.instructor === "object" ? course.instructor : null;
-        if (!instructor) return false;
-        const instructorName = `${instructor.firstName || ""} ${
-          instructor.lastName || ""
-        }`.toLowerCase();
-        return instructorName.includes(searchTerm);
+        return false;
       });
     }
 
@@ -608,19 +596,17 @@ export default function CoursesTable({
                   const enrolled = course.enrollmentCount || 0;
                   const maxStudents = course.maxStudents || 0;
 
-                  // Smart instructor display: prioritize instructors array, fallback to instructor
-                  const displayInstructors =
-                    course.instructors &&
-                    Array.isArray(course.instructors) &&
-                    course.instructors.length > 0
-                      ? course.instructors
-                      : typeof course.instructor === "object" &&
-                        course.instructor
-                      ? [course.instructor]
+                  // Use populated instructor objects
+                  const instructors =
+                    course.instructors && Array.isArray(course.instructors)
+                      ? course.instructors.filter(
+                          (instructor) =>
+                            instructor && typeof instructor === "object"
+                        )
                       : [];
 
-                  const primaryInstructor = displayInstructors[0] || null;
-                  const instructorCount = displayInstructors.length;
+                  const instructorCount = instructors.length;
+                  const primaryInstructor = instructors[0] || null;
 
                   return (
                     <TableRow
@@ -689,10 +675,9 @@ export default function CoursesTable({
                       </TableCell>
 
                       <TableCell className="hidden lg:table-cell">
-                        {primaryInstructor &&
-                        typeof primaryInstructor === "object" ? (
+                        {primaryInstructor ? (
                           <div className="flex items-center gap-2">
-                            {primaryInstructor.avatar && (
+                            {primaryInstructor.avatar ? (
                               <div className="relative w-8 h-8 rounded-full overflow-hidden bg-gray-100">
                                 <Image
                                   src={primaryInstructor.avatar}
@@ -702,6 +687,13 @@ export default function CoursesTable({
                                   fill
                                   className="object-cover"
                                 />
+                              </div>
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                <span className="text-xs font-semibold text-primary">
+                                  {primaryInstructor.firstName?.charAt(0) ||
+                                    "?"}
+                                </span>
                               </div>
                             )}
                             <div>
@@ -721,7 +713,7 @@ export default function CoursesTable({
                           </div>
                         ) : (
                           <span className="text-xs text-gray-400">
-                            No instructor
+                            No instructors assigned
                           </span>
                         )}
                       </TableCell>
