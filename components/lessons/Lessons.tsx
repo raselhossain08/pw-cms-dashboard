@@ -216,6 +216,18 @@ export default function Lessons() {
   const [searchLoading, setSearchLoading] = React.useState(false);
   const [editModuleOpen, setEditModuleOpen] = React.useState(false);
   const [editModuleData, setEditModuleData] = React.useState<any>(null);
+  const [addLessonToModuleOpen, setAddLessonToModuleOpen] =
+    React.useState(false);
+  const [removeLessonFromModuleOpen, setRemoveLessonFromModuleOpen] =
+    React.useState(false);
+  const [selectedLessonForModule, setSelectedLessonForModule] = React.useState<
+    string | null
+  >(null);
+  const [selectedModuleForLesson, setSelectedModuleForLesson] =
+    React.useState<string>("");
+  const [moduleActionType, setModuleActionType] = React.useState<
+    "add" | "remove"
+  >("add");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1320,6 +1332,38 @@ export default function Lessons() {
     deleteLessonMutation.mutate(lessonId);
   };
 
+  // Module lesson management handlers
+  const handleAddLessonToModule = (lessonId: string) => {
+    setSelectedLessonForModule(lessonId);
+    setModuleActionType("add");
+    setAddLessonToModuleOpen(true);
+  };
+
+  const handleRemoveLessonFromModule = (lessonId: string, moduleId: string) => {
+    setSelectedLessonForModule(lessonId);
+    setSelectedModuleForLesson(moduleId);
+    setModuleActionType("remove");
+    setRemoveLessonFromModuleOpen(true);
+  };
+
+  const confirmAddLessonToModule = () => {
+    if (selectedLessonForModule && selectedModuleForLesson) {
+      addLessonToModuleMutation.mutate({
+        moduleId: selectedModuleForLesson,
+        lessonId: selectedLessonForModule,
+      });
+    }
+  };
+
+  const confirmRemoveLessonFromModule = () => {
+    if (selectedLessonForModule && selectedModuleForLesson) {
+      removeLessonFromModuleMutation.mutate({
+        moduleId: selectedModuleForLesson,
+        lessonId: selectedLessonForModule,
+      });
+    }
+  };
+
   // Bulk delete mutation with optimistic updates
   const bulkDeleteMutation = useMutation({
     mutationFn: (lessonIds: string[]) =>
@@ -1404,6 +1448,74 @@ export default function Lessons() {
     },
     onSettled: () => {
       // Refetch to ensure consistency
+      queryClient.invalidateQueries({
+        queryKey: ["lessons", selectedCourseId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["course-modules"] });
+    },
+  });
+
+  // Add lesson to module mutation
+  const addLessonToModuleMutation = useMutation({
+    mutationFn: ({
+      moduleId,
+      lessonId,
+    }: {
+      moduleId: string;
+      lessonId: string;
+    }) => modulesService.addLessonToModule(moduleId, lessonId),
+    onError: (error) => {
+      console.error("Failed to add lesson to module:", error);
+      push({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to add lesson to module",
+      });
+    },
+    onSuccess: () => {
+      push({ type: "success", message: "Lesson added to module successfully" });
+      setAddLessonToModuleOpen(false);
+      setSelectedLessonForModule(null);
+      setSelectedModuleForLesson("");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["lessons", selectedCourseId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["course-modules"] });
+    },
+  });
+
+  // Remove lesson from module mutation
+  const removeLessonFromModuleMutation = useMutation({
+    mutationFn: ({
+      moduleId,
+      lessonId,
+    }: {
+      moduleId: string;
+      lessonId: string;
+    }) => modulesService.removeLessonFromModule(moduleId, lessonId),
+    onError: (error) => {
+      console.error("Failed to remove lesson from module:", error);
+      push({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to remove lesson from module",
+      });
+    },
+    onSuccess: () => {
+      push({
+        type: "success",
+        message: "Lesson removed from module successfully",
+      });
+      setRemoveLessonFromModuleOpen(false);
+      setSelectedLessonForModule(null);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: ["lessons", selectedCourseId],
       });
@@ -2294,6 +2406,35 @@ export default function Lessons() {
                                             Analytics
                                           </DropdownMenuItem>
                                           <DropdownMenuSeparator />
+                                          {lesson.moduleId ? (
+                                            <DropdownMenuItem
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleRemoveLessonFromModule(
+                                                  lesson.id,
+                                                  lesson.moduleId!
+                                                );
+                                              }}
+                                              className="text-orange-600 focus:text-orange-600"
+                                            >
+                                              <Trash2 className="w-4 h-4 mr-2" />
+                                              Remove from Module
+                                            </DropdownMenuItem>
+                                          ) : (
+                                            <DropdownMenuItem
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleAddLessonToModule(
+                                                  lesson.id
+                                                );
+                                              }}
+                                              className="text-blue-600 focus:text-blue-600"
+                                            >
+                                              <Folder className="w-4 h-4 mr-2" />
+                                              Add to Module
+                                            </DropdownMenuItem>
+                                          )}
+                                          <DropdownMenuSeparator />
                                           <DropdownMenuItem
                                             onClick={async (e) => {
                                               e.stopPropagation();
@@ -2861,10 +3002,11 @@ export default function Lessons() {
                                               variant="ghost"
                                               size="sm"
                                               onClick={() => {
-                                                // Remove from module (unassign)
-                                                handleUpdateLesson(lesson.id, {
-                                                  moduleId: undefined,
-                                                });
+                                                // Remove from module with confirmation dialog
+                                                handleRemoveLessonFromModule(
+                                                  lesson.id,
+                                                  lesson.moduleId!
+                                                );
                                               }}
                                               className="h-7 px-2 text-slate-600 hover:text-orange-600 hover:bg-orange-50"
                                               title="Remove from module"
@@ -5891,6 +6033,149 @@ export default function Lessons() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Add Lesson to Module Dialog */}
+        <Dialog
+          open={addLessonToModuleOpen}
+          onOpenChange={(v) => !v && setAddLessonToModuleOpen(false)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Folder className="w-5 h-5 text-primary" />
+                Add Lesson to Module
+              </DialogTitle>
+              <DialogDescription>
+                Select a module to add this lesson to. The lesson will be
+                organized within the selected module.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="module-select">Select Module *</Label>
+                <Select
+                  value={selectedModuleForLesson}
+                  onValueChange={setSelectedModuleForLesson}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a module..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {moduleList
+                      .filter((m: any) => m.course?._id === selectedCourseId)
+                      .map((module: any) => (
+                        <SelectItem key={module._id} value={module._id}>
+                          <div className="flex items-center gap-2">
+                            <Folder className="w-4 h-4 text-primary" />
+                            <span>{module.title}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {module.lessonsCount || 0} lessons
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedLessonForModule && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <Info className="w-4 h-4 text-blue-600 mt-0.5" />
+                    <div className="text-xs text-blue-700">
+                      <p className="font-medium">Lesson Assignment</p>
+                      <p>
+                        This lesson will be added to the selected module and
+                        will be visible to students when they access the module.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAddLessonToModuleOpen(false)}
+                disabled={addLessonToModuleMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={confirmAddLessonToModule}
+                disabled={
+                  !selectedModuleForLesson ||
+                  addLessonToModuleMutation.isPending
+                }
+                className="bg-primary hover:bg-primary/90"
+              >
+                {addLessonToModuleMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add to Module
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Remove Lesson from Module Dialog */}
+        <AlertDialog
+          open={removeLessonFromModuleOpen}
+          onOpenChange={(v) => !v && setRemoveLessonFromModuleOpen(false)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-orange-600" />
+                Remove Lesson from Module?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This will remove the lesson from the module but will not delete
+                the lesson permanently. The lesson will still exist in the
+                course and can be added to other modules or accessed
+                independently.
+                <br />
+                <br />
+                <strong>Note:</strong> To permanently delete a lesson from the
+                course, use the delete option in the lesson's dropdown menu.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                disabled={removeLessonFromModuleMutation.isPending}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmRemoveLessonFromModule}
+                disabled={removeLessonFromModuleMutation.isPending}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                {removeLessonFromModuleMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Removing...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Remove from Module
+                  </>
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Media Library Selector */}
         <MediaLibrarySelector

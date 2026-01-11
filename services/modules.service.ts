@@ -195,6 +195,36 @@ class ModulesService {
 
     return await response.blob();
   }
+
+  async addLessonToModule(moduleId: string, lessonId: string) {
+    try {
+      const { data } = await apiClient.post(`/course-modules/${moduleId}/lessons/${lessonId}`);
+      return data;
+    } catch (error) {
+      console.error(`Failed to add lesson ${lessonId} to module ${moduleId}:`, error);
+      throw error;
+    }
+  }
+
+  async removeLessonFromModule(moduleId: string, lessonId: string) {
+    try {
+      const { data } = await apiClient.delete(`/course-modules/${moduleId}/lessons/${lessonId}`);
+      return data;
+    } catch (error) {
+      console.error(`Failed to remove lesson ${lessonId} from module ${moduleId}:`, error);
+      throw error;
+    }
+  }
+
+  async addLessonsToModule(moduleId: string, lessonIds: string[]) {
+    try {
+      const { data } = await apiClient.post(`/course-modules/${moduleId}/lessons/bulk-add`, { lessonIds });
+      return data;
+    } catch (error) {
+      console.error(`Failed to add lessons to module ${moduleId}:`, error);
+      throw error;
+    }
+  }
 }
 
 export const modulesService = new ModulesService();
