@@ -37,6 +37,7 @@ import {
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { MediaLibrarySelector } from "@/components/cms/MediaLibrarySelector";
+import { MultiSelect } from "@/components/ui/multi-select";
 
 interface EditCourseProps {
   courseId: string;
@@ -194,47 +195,30 @@ function EditCourse({ courseId }: EditCourseProps) {
   // Set instructors when both course and instructors are loaded
   React.useEffect(() => {
     if (course && instructors.length > 0) {
-      const instructorIds: string[] = [];
+      const instructorIds = new Set<string>();
 
       // Handle primary instructor
       if (course.instructorId) {
-        instructorIds.push(course.instructorId);
-
-        // Add to instructors list if not found
-        const found = instructors.find((i) => i._id === course.instructorId);
-        if (!found && course.instructorObject) {
-          setInstructors((prev) => {
-            if (prev.some((i) => i._id === course.instructorId)) {
-              return prev;
-            }
-            return [
-              {
-                _id: course.instructorId,
-                ...course.instructorObject,
-              },
-              ...prev,
-            ];
-          });
-        }
+        instructorIds.add(course.instructorId);
       }
 
       // Handle multiple instructors array
       if (course.instructors && Array.isArray(course.instructors)) {
         course.instructors.forEach((inst: any) => {
           const instId = typeof inst === "string" ? inst : inst._id || inst.id;
-          if (instId && !instructorIds.includes(instId)) {
-            instructorIds.push(instId);
+          if (instId) {
+            instructorIds.add(instId);
           }
         });
       }
 
-      // Remove duplicates and set selected instructors
-      const uniqueIds = [...new Set(instructorIds)];
-      if (uniqueIds.length > 0) {
-        setSelectedInstructors(uniqueIds);
-      }
+      const validInstructorIds = [...instructorIds].filter((id) =>
+        instructors.some((inst) => inst._id === id)
+      );
+
+      setSelectedInstructors(validInstructorIds);
     }
-  }, [course?.instructorId, course?.instructors, instructors]);
+  }, [course, instructors]);
 
   React.useEffect(() => {
     if (course) {

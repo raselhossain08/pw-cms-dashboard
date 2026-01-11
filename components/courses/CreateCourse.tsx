@@ -8,6 +8,7 @@ import { coursesService } from "@/services/courses.service";
 import { uploadService } from "@/services/upload.service";
 import { courseCategoriesService } from "@/services/course-categories.service";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
 import {
   CheckCircle,
   Plus,
@@ -34,11 +35,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/shared/RichTextEditor";
 import { MediaLibrarySelector } from "@/components/cms/MediaLibrarySelector";
+// MultiSelect component removed - not available in current UI library
 
 export default function CreateCourse() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const moduleId = searchParams.get("moduleId"); // Get moduleId from query params
+  const { user } = useAuth();
   const { push } = useToast();
   const qc = useQueryClient();
   const [selectedCats, setSelectedCats] = React.useState<string[]>([]);
@@ -90,7 +93,11 @@ export default function CreateCourse() {
         }
         const data = await response.json();
         if (data && Array.isArray(data.data)) {
-          setInstructors(data.data);
+          // Filter out the logged-in user from the instructors list
+          const filteredInstructors = data.data.filter(
+            (instructor: any) => instructor._id !== user?.id
+          );
+          setInstructors(filteredInstructors);
         } else {
           setInstructors([]);
         }
@@ -99,8 +106,10 @@ export default function CreateCourse() {
         push({ type: "error", message: "Failed to load instructors" });
       }
     };
-    fetchInstructors();
-  }, [push]);
+    if (user?.id) {
+      fetchInstructors();
+    }
+  }, [push, user?.id]);
 
   // Fetch categories from API
   const { data: categoriesData } = useQuery({
@@ -265,16 +274,6 @@ export default function CreateCourse() {
               push({
                 type: "error",
                 message: "Course description is required",
-              });
-              setIsSaving(false);
-              setActiveTab("basic");
-              return;
-            }
-
-            if (instructorsList.length === 0) {
-              push({
-                type: "error",
-                message: "At least one instructor must be selected",
               });
               setIsSaving(false);
               setActiveTab("basic");
